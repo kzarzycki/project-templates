@@ -22,7 +22,7 @@ jobs:
           fi
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "{{ python_version | default('3.12', true) }}"
       - name: pre-commit
         run: |
           pipx run pre-commit run --all-files

@@ -1,6 +1,6 @@
 {
   "name": "project-templates",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Scaffold new repositories from Copier templates with sensible engineering conventions baked in (git, pinned pre-commit hooks, CLAUDE.md, CI, language toolchain). Provides the bootstrap-project skill that auto-triggers on 'new project' intent.",
   "author": {
     "name": "Krzysztof Zarzycki"
