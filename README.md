@@ -1,6 +1,6 @@
 # project-templates
 
-Copier templates for new repositories, with my conventions baked in — git init,
+Copier templates for new repositories, with sensible engineering conventions baked in — git init,
 pinned pre-commit hooks, `CLAUDE.md`, CI, and a language toolchain — plus the
 `bootstrap-project` Claude Code skill that drives them.
 

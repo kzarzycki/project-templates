@@ -1,8 +1,8 @@
 ---
 name: bootstrap-project
 description: >
-  Scaffold a brand-new project repository with the user's own conventions baked
-  in — directory layout, git init, pinned pre-commit hooks (ruff/biome/markdownlint
+  Scaffold a brand-new project repository with sensible engineering conventions
+  baked in — directory layout, git init, pinned pre-commit hooks (ruff/biome/markdownlint
   + detect-secrets + gitleaks + dangling-symlink check), CLAUDE.md, LICENSE,
   README, GitHub Actions CI, and a language toolchain — then make the first
   commit. Deterministic: a Copier template driven by scripts. Supports Python
@@ -22,8 +22,8 @@ description: >
 # Bootstrap Project
 
 Creates a new repository from the Copier template that ships in this same repo
-(the `new-project/` template, dispatched by the root `copier.yml`), applying the
-user's conventions. The template is the source of truth; this skill only
+(the `new-project/` template, dispatched by the root `copier.yml`), applying
+good engineering conventions. The template is the source of truth; this skill only
 recognizes intent, gathers two inputs, and runs the deterministic script.
 
 ## Flow
