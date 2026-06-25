@@ -1,0 +1,4 @@
+# Local generation scratch (CI and manual test runs)
+/_out/
+*.local
+.DS_Store

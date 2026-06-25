@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        language: [python, node, content]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Install copier + pre-commit
+        run: uv tool install copier && uv tool install pre-commit
+      - name: Generate a ${{ matrix.language }} project from the local checkout
+        env:
+          BOOTSTRAP_TEMPLATE_SRC: ${{ github.workspace }}
+        run: |
+          git config --global user.name "CI"
+          git config --global user.email "ci@example.com"
+          skills/bootstrap-project/scripts/bootstrap.sh \
+            --name ci-proj --language "${{ matrix.language }}" --dest _out/ci-proj
+      - name: Assert one clean commit with the trailer
+        working-directory: _out/ci-proj
+        run: |
+          test "$(git rev-list --all --count)" = "1"
+          test -z "$(git status -s)"
+          git log -1 --format='%b' | grep -q 'Co-Authored-By: Claude'

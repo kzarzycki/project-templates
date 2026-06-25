@@ -1,0 +1,82 @@
+# Managed by Copier — edit the template, then `copier update`.
+# Run locally: pre-commit run --all-files   ·   Update pins: pre-commit autoupdate
+default_install_hook_types: [pre-commit, commit-msg, pre-push]
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+        exclude: '\.jsonc$'
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=1024"]
+
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v4.0.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]
+
+  # Ported from dotagents: reject staged symlinks whose target doesn't resolve.
+  - repo: local
+    hooks:
+      - id: check-symlinks
+        name: reject dangling symlinks
+        entry: scripts/check-symlinks.sh
+        language: script
+        types: [symlink]
+{% if language == 'python' %}
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.12
+    hooks:
+      - id: ruff-check
+        args: ["--fix"]
+      - id: ruff-format
+  - repo: local
+    hooks:
+      - id: pytest
+        name: pytest (pre-push)
+        entry: uv run pytest -q
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+{% endif %}
+{% if language == 'node' %}
+  - repo: local
+    hooks:
+      - id: biome-check
+        name: biome check
+        entry: npx --no-install -- @biomejs/biome check --write --no-errors-on-unmatched
+        language: system
+        types_or: [javascript, ts, json]
+        pass_filenames: true
+      - id: vitest
+        name: vitest (pre-push)
+        entry: npm test
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+{% endif %}
+{% if language == 'content' %}
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.45.0
+    hooks:
+      - id: markdownlint
+        args: ["--fix"]
+{% endif %}
+{% if include_docker %}
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.13.1-beta
+    hooks:
+      - id: hadolint-docker
+        args: ["--ignore", "DL3008"]
+{% endif %}

@@ -1,0 +1,8 @@
+{
+  // Relax line length — prose wraps naturally.
+  "MD013": false,
+  // Allow inline HTML in docs.
+  "MD033": false,
+  // First line need not be a top-level heading.
+  "MD041": false
+}

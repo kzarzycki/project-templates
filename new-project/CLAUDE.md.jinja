@@ -1,0 +1,29 @@
+# {{ project_name }}
+
+{{ description }}
+
+## Conventions
+
+- **Commits:** Conventional Commits (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`). Optional scope: `feat(api):`.
+- **Branches:** `feat/<kebab-case>`, `fix/<kebab-case>`.
+- **Before committing:** show the diff and the message. Hooks run on commit; run `pre-commit run --all-files` to check everything.
+- **Secrets:** never commit `.env`. CI fails if `.env` is tracked. Add false positives to `.gitleaks.toml`.
+{% if language == 'python' %}
+## Tooling (Python)
+
+- `uv sync` — install deps · `uv add <pkg>` — add a dep
+- `uv run pytest` — tests · `uv run ruff check . && uv run ruff format .` — lint + format
+- Layout: `src/{{ module_name }}/`, tests in `tests/`. Python >= {{ python_version }}.
+{% endif %}
+{% if language == 'node' %}
+## Tooling (Node / TypeScript)
+
+- `npm install` — install deps · `npm test` — vitest · `npm run check` — biome lint+format · `npm run typecheck` — tsc
+- Layout: `src/`, tests in `tests/`. ESM, Node >= {{ node_version }}.
+{% endif %}
+{% if language == 'content' %}
+## Tooling (Content)
+
+- `npx markdownlint-cli '**/*.md'` — lint markdown
+- Content lives in `docs/`. Prose, not code.
+{% endif %}

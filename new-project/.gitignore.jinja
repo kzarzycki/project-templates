@@ -1,0 +1,39 @@
+# Secrets / local env
+.env
+.env.*
+!.env.example
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
+{% if language == 'python' %}
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+dist/
+build/
+*.egg-info/
+.coverage
+htmlcov/
+{% endif %}
+{% if language == 'node' %}
+# Node
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+coverage/
+.wrangler/
+{% endif %}
+{% if language == 'content' %}
+# Content build artifacts
+_site/
+.cache/
+{% endif %}

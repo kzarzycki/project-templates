@@ -1,0 +1,32 @@
+# {{ project_name }}
+
+{{ description }}
+
+## Setup
+
+{% if language == 'python' %}
+```bash
+uv sync                       # install dependencies
+uv tool install pre-commit    # if not already installed
+pre-commit install            # enable git hooks
+uv run pytest                 # run tests
+```
+{% endif %}
+{% if language == 'node' %}
+```bash
+npm install                   # install dependencies
+pre-commit install            # enable git hooks (needs: uv tool install pre-commit)
+npm test                      # run tests
+npm run check                 # lint + format (biome)
+```
+{% endif %}
+{% if language == 'content' %}
+```bash
+pre-commit install            # enable git hooks (needs: uv tool install pre-commit)
+npx markdownlint-cli '**/*.md'
+```
+{% endif %}
+
+## License
+
+{% if license == 'none' %}Unlicensed — all rights reserved.{% else %}{{ license }} © {{ year }} {{ author }}{% endif %}

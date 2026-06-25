@@ -1,0 +1,19 @@
+{
+  "name": "{{ project_name }}",
+  "version": "0.1.0",
+  "description": "{{ description }}",
+  "type": "module",
+  "private": true,
+  "engines": { "node": ">={{ node_version }}" },
+  "scripts": {
+    "test": "vitest run",
+    "check": "biome check --write .",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.0.0",
+    "@types/node": "^24.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.0.0"
+  }
+}
