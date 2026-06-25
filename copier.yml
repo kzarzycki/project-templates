@@ -95,4 +95,4 @@ _exclude:
   - "{% if language != 'content' %}docs{% endif %}"
 
 _tasks:
-  - "bash '{{ _copier_conf.src_path }}/_post_gen.sh' '{{ language }}' '{{ include_release_please }}'"
+  - "bash '{{ _copier_conf.src_path }}/_post_gen.sh' '{{ language }}'"
