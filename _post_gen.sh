@@ -17,8 +17,11 @@ esac
 
 # 1. git init (skip if already a repo). fresh_repo distinguishes scaffolding into
 #    a new dir from adopting the template onto an existing repo — the force-install
-#    and auto-commit below are only safe on a repo we created.
-if ! git rev-parse --git-dir >/dev/null 2>&1; then
+#    and auto-commit below are only safe on a repo we created. Test for .git in THIS
+#    directory, not via parent traversal: when the project is generated inside an
+#    existing worktree (e.g. CI into _out/), git would otherwise resolve the parent
+#    repo and wrongly treat a brand-new project as an adoption.
+if [ ! -e .git ]; then
   git init -q
   git branch -m main 2>/dev/null || true
   fresh_repo=true
