@@ -1,0 +1,6 @@
+## Tooling (Node / TypeScript)
+
+- `npm install` — install deps · `npm install <pkg>` — add a dep
+- `npm test` — tests (vitest) · `npm run check` — biome lint + format · `npm run typecheck` — tsc
+- CI gates **changed-file coverage**: every changed source line must be covered, via `@vitest/coverage-v8` + `scripts/check-coverage.mjs`.
+- Layout: `src/`, tests in `tests/`. Node >= {{ node_version }}, ESM (`"type": "module"`).

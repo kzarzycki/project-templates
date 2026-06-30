@@ -1,0 +1,10 @@
+# {{ project_name }}
+
+{{ description }}
+
+{% include "templates/_base/_claude_conventions.md.jinja" %}
+{% include "templates/_lang/" ~ language ~ "/_claude_tooling.md.jinja" %}
+## MCP server
+
+- Server entrypoint: {% if language == 'python' %}`src/{{ module_name }}/server.py`{% endif %}{% if language == 'node' %}`src/server.ts`{% endif %}. It registers tools and speaks MCP over stdio.
+- `scripts/smoke{% if language == 'python' %}_server.py{% endif %}{% if language == 'node' %}-server.mjs{% endif %}` boots the server and asserts it constructs — CI runs the same on top of the {{ language }} test gate.

@@ -1,0 +1,36 @@
+[tools]
+{% include "templates/_lang/" ~ language ~ "/_mise_tools.part" -%}
+pre-commit = "latest"
+{% if language == 'python' %}
+[tasks.test]
+run = "uv run pytest"
+
+[tasks.lint]
+run = "uv run ruff check ."
+
+[tasks.fmt]
+run = "uv run ruff format ."
+
+[tasks.smoke]
+run = "uv run python scripts/smoke_server.py"
+
+[tasks.bootstrap]
+run = "uv sync && pre-commit install --install-hooks"
+{% endif %}{% if language == 'node' %}
+[tasks.test]
+run = "npm test"
+
+[tasks.lint]
+run = "npm run check"
+
+[tasks.fmt]
+run = "npm run check"
+
+[tasks.smoke]
+run = "node scripts/smoke-server.mjs"
+
+[tasks.bootstrap]
+run = "npm install && pre-commit install --install-hooks"
+{% endif %}
+[hooks]
+postinstall = "pre-commit install --install-hooks"

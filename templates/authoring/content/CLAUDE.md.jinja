@@ -1,0 +1,11 @@
+# {{ project_name }}
+
+{{ description }}
+
+{% include "templates/_base/_claude_conventions.md.jinja" %}
+## Tooling (content)
+
+- `pre-commit run --all-files` — lint everything (markdownlint autofixes via `--fix`).
+- `markdownlint .` — lint Markdown · style overrides live in `.markdownlint.jsonc`.
+- CI runs a link check (lychee) over all `*.md`; broken links fail the build.
+- Docs live in `docs/`; start from `docs/index.md`.

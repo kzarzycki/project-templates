@@ -1,0 +1,11 @@
+# {{ project_name }}
+
+{{ description }}
+
+{% include "templates/_base/_claude_conventions.md.jinja" %}
+## Tooling (Claude Code skills)
+
+- Edit `SKILL.md` (the skill's instructions + trigger description) and add supporting files alongside it.
+- `.claude-plugin/plugin.json` is the plugin manifest. Keep `name` and `version` current.
+- `python3 scripts/validate-skill.py` checks SKILL.md frontmatter and plugin.json — CI runs the same.
+- No runtime/test toolchain: this package ships prose + assets, not compiled code.

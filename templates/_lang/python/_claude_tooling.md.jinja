@@ -1,0 +1,6 @@
+## Tooling (Python)
+
+- `uv sync` — install deps · `uv add <pkg>` — add a dep
+- `uv run pytest` — tests · `uv run ruff check . && uv run ruff format .` — lint + format
+- CI gates **diff coverage**: 100% of changed lines, via `diff-cover` over `pytest --cov`.
+- Layout: `src/{{ module_name }}/`, tests in `tests/`. Python >= {{ python_version }}.

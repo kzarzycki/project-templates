@@ -1,0 +1,12 @@
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Ensure .env is not tracked
+        run: |
+          if git ls-files --error-unmatch .env >/dev/null 2>&1; then
+            echo "::error::.env is tracked in git — remove it and add it to .gitignore" >&2
+            exit 1
+          fi
+      - name: pre-commit
+        run: pipx run pre-commit run --all-files --show-diff-on-failure

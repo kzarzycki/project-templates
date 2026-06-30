@@ -1,0 +1,6 @@
+## Tooling (Java)
+
+- `./gradlew build` — compile + check · `./gradlew test` — tests
+- `./gradlew spotlessApply` — format · `./gradlew spotlessCheck` — verify formatting
+- CI gates **diff coverage**: 100% of changed lines, via `diff-cover` over the JaCoCo XML report.
+- Layout: `src/main/java/`, tests in `src/test/java/`. Java toolchain {{ java_version }}, JUnit 5.

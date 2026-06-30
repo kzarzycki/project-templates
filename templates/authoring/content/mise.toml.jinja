@@ -1,0 +1,14 @@
+[tools]
+pre-commit = "latest"
+
+[tasks.lint]
+run = "pre-commit run --all-files"
+
+[tasks.markdownlint]
+run = "markdownlint ."
+
+[tasks.bootstrap]
+run = "pre-commit install --install-hooks"
+
+[hooks]
+postinstall = "pre-commit install --install-hooks"

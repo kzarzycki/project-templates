@@ -1,0 +1,26 @@
+/**
+ * MCP server for {{ project_name }}.
+ *
+ * Built on the official @modelcontextprotocol/sdk. Register tools on the server
+ * and connect it to a transport (stdio) in main().
+ */
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+
+export function buildServer(): McpServer {
+  const server = new McpServer({ name: "{{ project_name }}", version: "0.1.0" });
+
+  server.tool("ping", "Health-check tool — replace with your own.", async () => ({
+    content: [{ type: "text", text: "pong from {{ project_name }}" }],
+  }));
+
+  return server;
+}
+
+export async function main(): Promise<void> {
+  await buildServer().connect(new StdioServerTransport());
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  void main();
+}

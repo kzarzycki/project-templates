@@ -1,0 +1,12 @@
+
+# Java / Gradle
+.gradle/
+build/
+target/
+*.class
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+bin/
+out/
+.idea/
+*.iml

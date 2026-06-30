@@ -1,0 +1,12 @@
+package com.example.{{ module_name }};
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+import org.junit.jupiter.api.Test;
+
+class AppTest {
+  @Test
+  void hello() {
+    assertEquals("hello from {{ project_name }}", App.hello());
+  }
+}

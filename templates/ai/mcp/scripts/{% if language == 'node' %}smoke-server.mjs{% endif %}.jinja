@@ -1,0 +1,10 @@
+#!/usr/bin/env node
+// Smoke check: construct the MCP server and confirm it builds. No transport.
+import { buildServer } from "../src/server.ts";
+
+const server = buildServer();
+if (!server) {
+  console.error("mcp server smoke: buildServer() returned nothing");
+  process.exit(1);
+}
+console.log("mcp server smoke: buildServer() OK");

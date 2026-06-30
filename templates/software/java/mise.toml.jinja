@@ -1,0 +1,18 @@
+[tools]
+{% include "templates/_lang/java/_mise_tools.part" -%}
+pre-commit = "latest"
+
+[tasks.test]
+run = "./gradlew test"
+
+[tasks.lint]
+run = "./gradlew spotlessCheck"
+
+[tasks.fmt]
+run = "./gradlew spotlessApply"
+
+[tasks.bootstrap]
+run = "./gradlew build && pre-commit install --install-hooks"
+
+[hooks]
+postinstall = "pre-commit install --install-hooks"

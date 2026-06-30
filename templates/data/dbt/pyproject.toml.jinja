@@ -1,0 +1,19 @@
+[project]
+name = "{{ project_name }}"
+version = "0.1.0"
+description = "{{ description }}"
+requires-python = ">={{ python_version }}"
+dependencies = [
+    "dbt-core>=1.9",
+    # Swap for your warehouse adapter, e.g. dbt-postgres, dbt-bigquery, dbt-databricks.
+    "dbt-snowflake>=1.9",
+]
+
+[dependency-groups]
+dev = [
+    "sqlfluff>=3",
+    "sqlfluff-templater-dbt>=3",
+]
+
+[tool.uv]
+package = false

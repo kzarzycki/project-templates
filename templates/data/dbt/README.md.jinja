@@ -1,0 +1,23 @@
+# {{ project_name }}
+
+{{ description }}
+
+## Setup
+
+```bash
+uv sync                       # install dbt-core + adapter
+uv tool install pre-commit    # if not already installed
+pre-commit install            # enable git hooks
+uv run dbt deps               # install dbt packages
+uv run dbt parse              # validate the project (no warehouse needed)
+```
+
+Configure your warehouse connection in `profiles.yml` (kept out of git). Then:
+
+```bash
+uv run dbt build              # run + test models
+```
+
+## License
+
+{% if license == 'none' %}Unlicensed — all rights reserved.{% else %}{{ license }} © {{ year }} {{ author }}{% endif %}

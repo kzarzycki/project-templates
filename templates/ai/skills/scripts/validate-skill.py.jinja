@@ -1,0 +1,46 @@
+#!/usr/bin/env python3
+"""Validate the skill package: SKILL.md frontmatter + .claude-plugin/plugin.json.
+
+Schema-presence check only (no external deps): the YAML frontmatter must be a
+fenced `---` block exposing `name:` and `description:`; plugin.json must parse as
+JSON and carry a non-empty `name`. Runs in CI on ubuntu-latest's stock python3.
+"""
+
+import json
+import re
+import sys
+from pathlib import Path
+
+errors: list[str] = []
+
+skill = Path("SKILL.md")
+if not skill.is_file():
+    errors.append("SKILL.md is missing")
+else:
+    text = skill.read_text(encoding="utf-8")
+    m = re.match(r"^---\n(.*?)\n---\n", text, re.DOTALL)
+    if not m:
+        errors.append("SKILL.md has no `---` YAML frontmatter block")
+    else:
+        front = m.group(1)
+        for key in ("name", "description"):
+            if not re.search(rf"^{key}\s*:", front, re.MULTILINE):
+                errors.append(f"SKILL.md frontmatter missing `{key}:`")
+
+plugin = Path(".claude-plugin/plugin.json")
+if not plugin.is_file():
+    errors.append(".claude-plugin/plugin.json is missing")
+else:
+    try:
+        data = json.loads(plugin.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        errors.append(f".claude-plugin/plugin.json is not valid JSON: {exc}")
+    else:
+        if not isinstance(data, dict) or not data.get("name"):
+            errors.append(".claude-plugin/plugin.json missing non-empty `name`")
+
+if errors:
+    for e in errors:
+        print(f"::error::{e}")
+    sys.exit(1)
+print("skill package valid: SKILL.md frontmatter + plugin.json OK")
