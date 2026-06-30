@@ -1,0 +1,10 @@
+# {{ project_name }}
+
+{{ description }}
+
+## Setup
+
+{% include "templates/_lang/node/_readme_setup.md.jinja" %}
+## License
+
+{% if license == 'none' %}Unlicensed — all rights reserved.{% else %}{{ license }} © {{ year }} {{ author }}{% endif %}

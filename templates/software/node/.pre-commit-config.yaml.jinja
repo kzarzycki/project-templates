@@ -1,0 +1,6 @@
+# Managed by Copier — edit the template, then `copier update`.
+# Run locally: pre-commit run --all-files   ·   Update pins: pre-commit autoupdate
+default_install_hook_types: [pre-commit, commit-msg, pre-push]
+repos:
+{% include "templates/_base/_precommit.yml.jinja" -%}
+{% include "templates/_lang/node/_precommit.yml.jinja" -%}

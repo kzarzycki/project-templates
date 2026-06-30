@@ -1,0 +1,12 @@
+# {{ project_name }}
+
+{{ description }}
+
+{% include "templates/_base/_claude_conventions.md.jinja" %}
+## Tooling (dbt)
+
+- `uv sync` — install Python deps (dbt-core + adapter) · `uv run dbt deps` — install dbt packages
+- `uv run dbt build` — run + test models · `uv run dbt test` — tests only · `uv run dbt parse` — validate without a warehouse
+- `uv run sqlfluff lint models/` — lint SQL · `uv run sqlfluff fix models/` — autofix
+- Models live in `models/`. Dialect is configured in `.sqlfluff` (default: `snowflake`, templater `dbt`).
+- The warehouse connection (`profiles.yml`) is environment-specific — keep credentials out of git; CI runs `dbt parse` until secrets are wired.

@@ -1,6 +1,6 @@
-_subdirectory: new-project
 _templates_suffix: .jinja
 _answers_file: .copier-answers.yml
+_subdirectory: "templates/{{ project_type }}"
 _envops:
   keep_trailing_newline: true
 
@@ -9,53 +9,65 @@ project_name:
   type: str
   help: Project name (kebab-case, e.g. my-cool-tool)
 
+project_type:
+  type: str
+  help: Which project type?
+  choices:
+    Python service / library:   software/python
+    Node / TypeScript:          software/node
+    Java / JVM:                 software/java
+    dbt project:                data/dbt
+    Docs / research / markdown: authoring/content
+    Claude Code skills:         ai/skills
+    MCP server:                 ai/mcp
+
+# ---- Shown only for parametric leaves (ai/mcp can sit on either toolchain) ----
 language:
   type: str
-  help: Primary language / project type
-  choices:
-    "Python — uv + ruff + pytest": python
-    "Node / TypeScript — npm + biome + vitest": node
-    "Content / docs — markdown only": content
+  help: Which language toolchain?
+  choices: [python, node]
+  when: "{{ project_type == 'ai/mcp' }}"
+  default: python
 
-# ---- Optionals (sensible defaults; bootstrap.sh fills author/email/year from git) ----
+# ---- Optionals (bootstrap fills author/email from git) ----
 description:
   type: str
-  default: "A new {{ language }} project."
+  default: "A new {{ project_type }} project."
 
 author:
   type: str
   default: "Your Name"
-  help: Author (bootstrap.sh injects this from `git config user.name`)
+  help: Author (bootstrap injects this from `git config user.name`)
 
 email:
   type: str
   default: "you@example.com"
-  help: Author email (bootstrap.sh injects this from `git config user.email`)
+  help: Author email (bootstrap injects this from `git config user.email`)
 
 license:
   type: str
   default: MIT
   choices: [MIT, Apache-2.0, none]
 
+include_mise:
+  type: bool
+  default: true
+  help: Add a mise.toml pinning the runtime + bootstrap tools?
+
 python_version:
   type: str
-  default: "3.12"
-  when: "{{ language == 'python' }}"
+  default: "3.14"
+  when: "{{ project_type == 'software/python' or (project_type == 'ai/mcp' and language == 'python') }}"
 
 node_version:
   type: str
   default: "24"
-  when: "{{ language == 'node' }}"
+  when: "{{ project_type == 'software/node' or (project_type == 'ai/mcp' and language == 'node') }}"
 
-include_docker:
-  type: bool
-  default: false
-  help: Add a Dockerfile and a hadolint pre-commit hook?
-
-include_release_please:
-  type: bool
-  default: false
-  help: Add release-please (conventional-commit driven releases)?
+java_version:
+  type: str
+  default: "21"
+  when: "{{ project_type == 'software/java' }}"
 
 # ---- Computed (not asked) ----
 module_name:
@@ -68,31 +80,13 @@ year:
   when: false
   default: "2026"
 
-# ---- Render control ----
 _exclude:
   - "*.pyc"
   - "__pycache__"
   - "copier.yml"
   - "_post_gen.sh"
   - "{% if license == 'none' %}LICENSE{% endif %}"
-  # optional features
-  - "{% if not include_docker %}Dockerfile{% endif %}"
-  - "{% if not include_release_please %}release-please-config.json{% endif %}"
-  - "{% if not include_release_please %}.release-please-manifest.json{% endif %}"
-  - "{% if not include_release_please %}.github/workflows/release-please.yml{% endif %}"
-  # python pack
-  - "{% if language != 'python' %}pyproject.toml{% endif %}"
-  - "{% if language != 'python' %}src/{{ module_name }}{% endif %}"
-  - "{% if language != 'python' %}tests/test_smoke.py{% endif %}"
-  # node pack
-  - "{% if language != 'node' %}package.json{% endif %}"
-  - "{% if language != 'node' %}tsconfig.json{% endif %}"
-  - "{% if language != 'node' %}biome.json{% endif %}"
-  - "{% if language != 'node' %}src/index.ts{% endif %}"
-  - "{% if language != 'node' %}tests/smoke.test.ts{% endif %}"
-  # content pack
-  - "{% if language != 'content' %}.markdownlint.jsonc{% endif %}"
-  - "{% if language != 'content' %}docs{% endif %}"
+  - "{% if not include_mise %}mise.toml{% endif %}"
 
 _tasks:
-  - "bash '{{ _copier_conf.src_path }}/_post_gen.sh' '{{ language }}'"
+  - "bash '{{ _copier_conf.src_path }}/_post_gen.sh' '{{ project_type }}' '{{ language | default('', true) }}'"

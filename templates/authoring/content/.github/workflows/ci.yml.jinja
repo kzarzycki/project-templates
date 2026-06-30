@@ -1,0 +1,11 @@
+{% include "templates/_base/_ci_header.yml.jinja" %}
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+{% include "templates/_base/_ci_steps.yml.jinja" %}
+      - name: Link check
+        uses: lycheeverse/lychee-action@8646ba30535128ac92d33dfc9133794bfdd9b411 # v2.8.0
+        with:
+          args: "--no-progress './**/*.md'"
+          fail: true

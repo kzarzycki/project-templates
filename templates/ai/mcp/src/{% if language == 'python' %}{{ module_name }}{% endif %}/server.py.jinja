@@ -1,0 +1,26 @@
+"""MCP server for {{ project_name }}.
+
+Built on the official `mcp` SDK (FastMCP). Add your tools as functions
+decorated with `@server.tool()` and run with `python -m {{ module_name }}.server`.
+"""
+
+from mcp.server.fastmcp import FastMCP
+
+
+def build_server() -> FastMCP:
+    server = FastMCP("{{ project_name }}")
+
+    @server.tool()
+    def ping() -> str:
+        """Health-check tool — replace with your own."""
+        return "pong from {{ project_name }}"
+
+    return server
+
+
+def main() -> None:
+    build_server().run()
+
+
+if __name__ == "__main__":
+    main()

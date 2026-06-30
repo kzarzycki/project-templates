@@ -1,0 +1,26 @@
+{
+  "name": "{{ project_name }}",
+  "version": "0.1.0",
+  "description": "{{ description }}",
+  "type": "module",
+  "private": true,
+  "bin": { "{{ project_name }}": "src/server.ts" },
+  "engines": { "node": ">={{ node_version }}" },
+  "scripts": {
+    "test": "vitest run",
+    "coverage": "vitest run --coverage",
+    "check": "biome check --write .",
+    "typecheck": "tsc --noEmit",
+    "smoke": "node scripts/smoke-server.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.0.0",
+    "@types/node": "^24.0.0",
+    "@vitest/coverage-v8": "^3.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.0.0"
+  }
+}

@@ -1,0 +1,13 @@
+[sqlfluff]
+# Hardcoded defaults — adjust `dialect` to your warehouse (bigquery, postgres, …).
+dialect = snowflake
+# `jinja` templater resolves dbt builtins (ref/source/config) without a warehouse
+# connection, so linting stays offline. Switch to `dbt` for full compilation.
+templater = jinja
+max_line_length = 120
+
+[sqlfluff:templater:jinja]
+apply_dbt_builtins = true
+
+[sqlfluff:rules:capitalisation.keywords]
+capitalisation_policy = lower

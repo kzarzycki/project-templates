@@ -1,0 +1,6 @@
+from {{ module_name }} import build_server
+
+
+def test_build_server():
+    server = build_server()
+    assert server is not None

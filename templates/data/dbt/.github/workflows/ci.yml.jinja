@@ -1,0 +1,27 @@
+{% include "templates/_base/_ci_header.yml.jinja" %}
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+{% include "templates/_base/_ci_steps.yml.jinja" %}
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "{{ python_version }}"
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          enable-cache: true
+      - run: uv sync
+      - run: uv run dbt deps
+      # `dbt parse` validates the project graph without a warehouse connection,
+      # so CI stays green on a fresh repo. Wire `dbt build` / `dbt test` below
+      # once warehouse credentials are available as repo secrets.
+      - run: uv run dbt parse
+      # - name: Build + test
+      #   env:
+      #     DBT_PROFILES_DIR: ${% raw %}{{ github.workspace }}{% endraw %}
+      #     SNOWFLAKE_ACCOUNT: ${% raw %}{{ secrets.SNOWFLAKE_ACCOUNT }}{% endraw %}
+      #     SNOWFLAKE_USER: ${% raw %}{{ secrets.SNOWFLAKE_USER }}{% endraw %}
+      #     SNOWFLAKE_PASSWORD: ${% raw %}{{ secrets.SNOWFLAKE_PASSWORD }}{% endraw %}
+      #   run: |
+      #     uv run dbt build
+      #     uv run dbt test

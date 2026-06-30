@@ -1,0 +1,13 @@
+  - repo: local
+    hooks:
+      - id: spotless
+        name: spotless check
+        entry: ./gradlew spotlessCheck
+        language: system
+        pass_filenames: false
+      - id: gradle-test
+        name: gradle test (pre-push)
+        entry: ./gradlew test
+        language: system
+        pass_filenames: false
+        stages: [pre-push]

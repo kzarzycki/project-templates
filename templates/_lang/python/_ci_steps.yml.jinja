@@ -1,0 +1,16 @@
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "{{ python_version }}"
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          enable-cache: true
+      - run: uv sync
+      - run: uv run pytest --cov --cov-report=xml
+      # Diff coverage gates PRs only. On a push to main, github.base_ref is empty
+      # and origin/main == HEAD, so the diff would be empty and the gate a no-op —
+      # gate the PR, where the base branch is a real, different ref.
+      - name: Diff coverage
+        if: {% raw %}${{ github.event_name == 'pull_request' }}{% endraw %}
+        env:
+          BASE_REF: {% raw %}${{ github.base_ref }}{% endraw %}
+        run: uv run diff-cover coverage.xml --compare-branch="origin/$BASE_REF" --fail-under=100

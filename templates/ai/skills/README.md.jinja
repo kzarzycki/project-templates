@@ -1,0 +1,17 @@
+# {{ project_name }}
+
+{{ description }}
+
+## Setup
+
+```bash
+uv tool install pre-commit    # if not already installed
+pre-commit install            # enable git hooks
+python3 scripts/validate-skill.py   # validate the skill package
+```
+
+Edit `SKILL.md` for the skill body and `.claude-plugin/plugin.json` for the manifest.
+
+## License
+
+{% if license == 'none' %}Unlicensed — all rights reserved.{% else %}{{ license }} © {{ year }} {{ author }}{% endif %}

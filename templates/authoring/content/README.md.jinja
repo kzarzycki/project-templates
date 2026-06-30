@@ -1,0 +1,17 @@
+# {{ project_name }}
+
+{{ description }}
+
+## Setup
+
+```bash
+uv tool install pre-commit    # if not already installed
+pre-commit install            # enable git hooks
+pre-commit run --all-files    # lint Markdown
+```
+
+Docs live in `docs/`; start from `docs/index.md`.
+
+## License
+
+{% if license == 'none' %}Unlicensed — all rights reserved.{% else %}{{ license }} © {{ year }} {{ author }}{% endif %}

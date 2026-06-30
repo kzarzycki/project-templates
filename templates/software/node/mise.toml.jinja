@@ -1,0 +1,18 @@
+[tools]
+{% include "templates/_lang/node/_mise_tools.part" -%}
+pre-commit = "latest"
+
+[tasks.test]
+run = "npm test"
+
+[tasks.lint]
+run = "npm run check"
+
+[tasks.fmt]
+run = "npm run check"
+
+[tasks.bootstrap]
+run = "npm install && pre-commit install --install-hooks"
+
+[hooks]
+postinstall = "pre-commit install --install-hooks"

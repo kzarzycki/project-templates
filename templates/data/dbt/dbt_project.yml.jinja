@@ -1,0 +1,22 @@
+name: "{{ project_name | replace('-', '_') }}"
+version: "0.1.0"
+config-version: 2
+
+profile: "{{ project_name | replace('-', '_') }}"
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+test-paths: ["tests"]
+analysis-paths: ["analyses"]
+snapshot-paths: ["snapshots"]
+
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  {{ project_name | replace('-', '_') }}:
+    example:
+      +materialized: view

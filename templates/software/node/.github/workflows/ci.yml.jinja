@@ -1,0 +1,7 @@
+{% include "templates/_base/_ci_header.yml.jinja" %}
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+{% include "templates/_base/_ci_steps.yml.jinja" -%}
+{% include "templates/_lang/node/_ci_steps.yml.jinja" -%}

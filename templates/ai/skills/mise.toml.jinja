@@ -1,0 +1,11 @@
+[tools]
+pre-commit = "latest"
+
+[tasks.validate]
+run = "python3 scripts/validate-skill.py"
+
+[tasks.bootstrap]
+run = "pre-commit install --install-hooks"
+
+[hooks]
+postinstall = "pre-commit install --install-hooks"

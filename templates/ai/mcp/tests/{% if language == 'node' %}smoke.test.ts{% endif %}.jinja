@@ -1,0 +1,6 @@
+import { expect, test } from "vitest";
+import { buildServer } from "../src/server.ts";
+
+test("buildServer constructs", () => {
+  expect(buildServer()).toBeDefined();
+});

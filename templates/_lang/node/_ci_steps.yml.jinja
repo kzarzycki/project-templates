@@ -1,0 +1,13 @@
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "{{ node_version }}"
+      - run: npm ci
+      - run: npx vitest run --coverage
+      # Diff coverage gates PRs only. On a push to main, github.base_ref is empty
+      # and origin/main == HEAD, so the diff would be empty and the gate a no-op —
+      # gate the PR, where the base branch is a real, different ref.
+      - name: Changed-file coverage gate
+        if: {% raw %}${{ github.event_name == 'pull_request' }}{% endraw %}
+        env:
+          BASE_REF: {% raw %}${{ github.base_ref }}{% endraw %}
+        run: node scripts/check-coverage.mjs

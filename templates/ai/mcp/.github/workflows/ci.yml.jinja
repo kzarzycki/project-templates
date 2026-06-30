@@ -1,0 +1,12 @@
+{% include "templates/_base/_ci_header.yml.jinja" %}
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+{% include "templates/_base/_ci_steps.yml.jinja" -%}
+{% include "templates/_lang/" ~ language ~ "/_ci_steps.yml.jinja" %}
+{% if language == 'python' %}      - name: MCP server smoke check
+        run: uv run python scripts/smoke_server.py
+{% endif %}{% if language == 'node' %}      - name: MCP server smoke check
+        run: node scripts/smoke-server.mjs
+{% endif %}

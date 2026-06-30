@@ -1,0 +1,16 @@
+# Example dbt profile. Copy to ~/.dbt/profiles.yml (or set DBT_PROFILES_DIR) and
+# fill in real values — do NOT commit a profiles.yml with credentials. The profile
+# name must match `profile:` in dbt_project.yml.
+{{ project_name | replace('-', '_') }}:
+  target: dev
+  outputs:
+    dev:
+      type: snowflake
+{% raw %}      account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+      user: "{{ env_var('SNOWFLAKE_USER') }}"
+      password: "{{ env_var('SNOWFLAKE_PASSWORD') }}"{% endraw %}
+      role: TRANSFORMER
+      database: ANALYTICS
+      warehouse: TRANSFORMING
+      schema: dbt_dev
+      threads: 4

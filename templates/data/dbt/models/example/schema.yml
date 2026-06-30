@@ -1,0 +1,13 @@
+version: 2
+
+models:
+  - name: my_model
+    description: "Example model — replace with your own."
+    columns:
+      - name: id
+        description: "Surrogate key."
+        data_tests:
+          - unique
+          - not_null
+      - name: message
+        description: "Example string column."

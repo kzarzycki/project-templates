@@ -1,0 +1,22 @@
+[tools]
+python = "{{ python_version }}"
+uv = "latest"
+pre-commit = "latest"
+
+[tasks.deps]
+run = "uv run dbt deps"
+
+[tasks.build]
+run = "uv run dbt build"
+
+[tasks.test]
+run = "uv run dbt test"
+
+[tasks.lint]
+run = "uv run sqlfluff lint models/"
+
+[tasks.bootstrap]
+run = "uv sync && pre-commit install --install-hooks"
+
+[hooks]
+postinstall = "pre-commit install --install-hooks"
