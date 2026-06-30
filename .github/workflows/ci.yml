@@ -26,6 +26,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
+      # The java leaf runs spotless (google-java-format) in its pre-commit hook at
+      # scaffold time, which needs a JDK matching the template's default java_version.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
       - name: Install copier + pre-commit
         run: uv tool install copier && uv tool install pre-commit
       - name: Generate a ${{ matrix.type }} project from the local checkout
