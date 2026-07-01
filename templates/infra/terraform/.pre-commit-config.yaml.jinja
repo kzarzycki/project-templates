@@ -1,0 +1,13 @@
+# Managed by Copier — edit the template, then `copier update`.
+# Run locally: pre-commit run --all-files   ·   Update pins: pre-commit autoupdate
+default_install_hook_types: [pre-commit, commit-msg, pre-push]
+repos:
+{% include "templates/_base/_precommit.yml.jinja" %}
+  # terraform_validate is intentionally omitted — it needs `terraform init` with
+  # provider downloads, too heavy/fragile for a commit hook. Run `mise run validate`
+  # (and CI does the same). fmt + tflint stay fast and offline.
+  - repo: https://github.com/antonbabenko/pre-commit-terraform
+    rev: v1.108.0
+    hooks:
+      - id: terraform_fmt
+      - id: terraform_tflint

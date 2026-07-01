@@ -1,0 +1,13 @@
+# {{ project_name }}
+
+{{ description }}
+
+{% include "templates/_base/_claude_conventions.md.jinja" %}
+## Tooling (Terraform)
+
+- `mise install` — terraform + tflint + pre-commit, pinned in `mise.toml`
+- `mise run fmt` — `terraform fmt -recursive` · `mise run lint` — tflint
+- `mise run validate` — `terraform init -backend=false` + `terraform validate` (offline)
+- `mise run plan` — `terraform init` + `terraform plan`
+- Pre-commit runs `terraform_fmt` + `terraform_tflint` on commit; tflint config is `.tflint.hcl`.
+- State and `*.tfvars` hold secrets — gitignored, never committed. The `.terraform.lock.hcl` lockfile IS committed. Configure the backend per environment.

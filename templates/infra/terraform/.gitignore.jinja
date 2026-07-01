@@ -1,0 +1,12 @@
+{% include "templates/_base/_gitignore.part" %}
+# Terraform — state and vars hold secrets; the lockfile (.terraform.lock.hcl) IS committed.
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+crash.*.log
+# Plan files hold secrets in plaintext — never commit.
+tfplan
+*.tfplan

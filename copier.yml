@@ -20,6 +20,7 @@ project_type:
     Docs / research / markdown: authoring/content
     Claude Code skills:         ai/skills
     MCP server:                 ai/mcp
+    Infrastructure (Terraform): infra/terraform
 
 # ---- Shown only for parametric leaves (ai/mcp can sit on either toolchain) ----
 language:
@@ -69,6 +70,17 @@ java_version:
   default: "21"
   when: "{{ project_type == 'software/java' }}"
 
+terraform_version:
+  type: str
+  default: "1.13.5"
+  when: "{{ project_type == 'infra/terraform' }}"
+
+include_example:
+  type: bool
+  default: true
+  when: "{{ project_type == 'infra/terraform' }}"
+  help: Include a starter main.tf / versions.tf? Turn off when adopting into an existing repo.
+
 # ---- Computed (not asked) ----
 module_name:
   type: str
@@ -87,6 +99,8 @@ _exclude:
   - "_post_gen.sh"
   - "{% if license == 'none' %}LICENSE{% endif %}"
   - "{% if not include_mise %}mise.toml{% endif %}"
+  - "{% if not include_example %}main.tf{% endif %}"
+  - "{% if not include_example %}versions.tf{% endif %}"
 
 _tasks:
   - "bash '{{ _copier_conf.src_path }}/_post_gen.sh' '{{ project_type }}' '{{ language | default('', true) }}'"

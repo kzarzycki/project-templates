@@ -1,0 +1,20 @@
+# {{ project_name }}
+
+{{ description }}
+
+## Setup
+
+```bash
+mise install                  # terraform + tflint + pre-commit, pinned
+mise run bootstrap            # install git hooks
+mise run validate             # init (no backend) + validate
+```
+
+Common tasks: `mise run fmt` · `mise run lint` · `mise run plan`.
+
+State and `*.tfvars` hold secrets and are gitignored — configure the backend and
+provider for your environment.
+
+## License
+
+{% if license == 'none' %}Unlicensed — all rights reserved.{% else %}{{ license }} © {{ year }} {{ author }}{% endif %}

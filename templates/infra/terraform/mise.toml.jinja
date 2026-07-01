@@ -1,0 +1,27 @@
+[tools]
+terraform = "{{ terraform_version }}"
+tflint = "latest"
+pre-commit = "latest"
+
+[tasks.fmt]
+description = "Format all Terraform files."
+run = "terraform fmt -recursive"
+
+[tasks.validate]
+description = "Validate the configuration offline (no backend, no providers to download beyond init)."
+run = "terraform init -backend=false -input=false && terraform validate"
+
+[tasks.lint]
+description = "Lint with tflint."
+run = "tflint --init && tflint --recursive"
+
+[tasks.plan]
+description = "Show the plan without applying."
+run = "terraform init -input=false && terraform plan"
+
+[tasks.bootstrap]
+description = "Install git hooks."
+run = "pre-commit install --install-hooks"
+
+[hooks]
+postinstall = "pre-commit install --install-hooks"

@@ -1,0 +1,9 @@
+version: 2
+updates:
+  - package-ecosystem: terraform
+    directory: "/"
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+{% include "templates/_base/_dependabot_actions.part" -%}
