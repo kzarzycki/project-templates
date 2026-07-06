@@ -1,0 +1,20 @@
+name: {{ project_name }}
+version: 0.1.0
+description: {{ description }}
+author: {{ author }}
+# Which agent platforms to deploy to.
+# Resolution order: --target flag > this field > auto-detect from filesystem.
+# Accepted values: vscode, agents, copilot, claude, cursor, opencode, codex,
+# gemini, antigravity, windsurf, kiro, agent-skills, all
+targets:
+- claude
+- codex
+dependencies:
+  # dotagents is a private repo — colleagues need GitHub access to `apm install` these.
+  apm:
+{%- for tk in toolkit_stack.split() %}
+    - kzarzycki/dotagents/toolkits/{{ tk }}
+{%- endfor %}
+  mcp: []
+includes: auto
+scripts: {}

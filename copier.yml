@@ -50,6 +50,16 @@ license:
   default: MIT
   choices: [MIT, Apache-2.0, none]
 
+toolkit_stack:
+  type: str
+  default: "agents dev"
+  help: "Agent toolkit stack for .agents-toolkit (whitespace-separated toolkit names, e.g. 'xebia dev')"
+
+shared_apm:
+  type: bool
+  default: false
+  help: Generate an apm.yml declaring the toolkit stack as APM dependencies (for repos meant to be shared)?
+
 include_mise:
   type: bool
   default: true
@@ -101,6 +111,7 @@ _exclude:
   - "{% if not include_mise %}mise.toml{% endif %}"
   - "{% if not include_example %}main.tf{% endif %}"
   - "{% if not include_example %}versions.tf{% endif %}"
+  - "{% if not shared_apm %}apm.yml{% endif %}"
 
 _tasks:
   - "bash '{{ _copier_conf.src_path }}/_post_gen.sh' '{{ project_type }}' '{{ language | default('', true) }}'"
