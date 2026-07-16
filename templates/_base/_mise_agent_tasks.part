@@ -9,7 +9,7 @@ fnox = "1.30.0"
 [tasks.agent-sync]
 description = "Install locked APM dependencies and compile Claude Code and Codex configuration."
 run = """
-command -v apm >/dev/null || { echo 'error: apm 0.23.1 is required' >&2; exit 127; }
+command -v apm >/dev/null || { echo "error: apm 0.23.1 is required; run 'mise install'" >&2; exit 127; }
 if [ -f apm.lock.yaml ]; then
   apm install --frozen --target claude,codex
 else
@@ -21,10 +21,10 @@ apm compile --target claude,codex
 [tasks.agent-check]
 description = "Validate APM sources, generated files, and fnox declarations."
 run = """
-command -v apm >/dev/null || { echo 'error: apm 0.23.1 is required' >&2; exit 127; }
-command -v python3 >/dev/null || { echo 'error: python3 is required' >&2; exit 127; }
+command -v apm >/dev/null || { echo "error: apm 0.23.1 is required; run 'mise install'" >&2; exit 127; }
+command -v python3 >/dev/null || { echo "error: python3 is required; run 'mise install'" >&2; exit 127; }
 {% if include_fnox -%}
-command -v fnox >/dev/null || { echo 'error: fnox 1.30.0 is required' >&2; exit 127; }
+command -v fnox >/dev/null || { echo "error: fnox 1.30.0 is required; run 'mise install'" >&2; exit 127; }
 {% endif -%}
 apm compile --validate --target claude,codex
 apm audit --ci --no-policy
@@ -39,9 +39,9 @@ fnox check --all --non-interactive --if-missing error
 description = "Launch Claude Code with this repository's machine bindings."
 run = """
 {% if include_fnox -%}
-command -v fnox >/dev/null || { echo 'error: fnox 1.30.0 is required' >&2; exit 127; }
+command -v fnox >/dev/null || { echo "error: fnox 1.30.0 is required; run 'mise install'" >&2; exit 127; }
 {% endif -%}
-command -v claude >/dev/null || { echo 'error: claude is required' >&2; exit 127; }
+command -v claude >/dev/null || { echo "error: claude is required; install Claude Code and add 'claude' to PATH" >&2; exit 127; }
 {% if include_fnox -%}
 fnox exec --non-interactive --if-missing error -- claude
 {% else -%}
@@ -53,9 +53,9 @@ claude
 description = "Launch Codex with this repository's machine bindings."
 run = """
 {% if include_fnox -%}
-command -v fnox >/dev/null || { echo 'error: fnox 1.30.0 is required' >&2; exit 127; }
+command -v fnox >/dev/null || { echo "error: fnox 1.30.0 is required; run 'mise install'" >&2; exit 127; }
 {% endif -%}
-command -v codex >/dev/null || { echo 'error: codex is required' >&2; exit 127; }
+command -v codex >/dev/null || { echo "error: codex is required; install Codex and add 'codex' to PATH" >&2; exit 127; }
 {% if include_fnox -%}
 fnox exec --non-interactive --if-missing error -- codex
 {% else -%}

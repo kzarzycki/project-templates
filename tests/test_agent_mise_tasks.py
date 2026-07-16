@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 
 from tests.test_agent_layer_generation import render
+
+
+MISE = shutil.which("mise")
+assert MISE is not None
 
 
 def fake_executable(directory: Path, name: str) -> None:
@@ -40,13 +45,13 @@ class AgentMiseTasksTest(unittest.TestCase):
                 "MISE_OFFLINE": "true",
                 "MISE_STATE_DIR": str(self.bin / "mise-state"),
                 "MISE_TRUSTED_CONFIG_PATHS": str(self.project),
-                "PATH": f"{self.bin}:{self.env['PATH']}",
+                "PATH": f"{self.bin}:/usr/bin:/bin",
             }
         )
 
     def run_task(self, task: str, *arguments: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            ["mise", "run", "--skip-tools", task, "--", *arguments],
+            [MISE, "run", "--skip-tools", task, "--", *arguments],
             cwd=self.project,
             env=self.env,
             capture_output=True,
@@ -66,6 +71,17 @@ class AgentMiseTasksTest(unittest.TestCase):
                 f"{self.bin}/apm compile --target claude,codex",
             ],
             self.commands(),
+        )
+
+    def test_sync_missing_apm_explains_how_to_install_it(self) -> None:
+        (self.bin / "apm").unlink()
+
+        result = self.run_task("agent-sync")
+
+        self.assertEqual(127, result.returncode)
+        self.assertIn(
+            "error: apm 0.23.1 is required; run 'mise install'",
+            result.stderr,
         )
 
     def test_sync_uses_frozen_install_when_lock_exists(self) -> None:
@@ -110,7 +126,7 @@ class AgentMiseTasksTest(unittest.TestCase):
         )
 
         result = subprocess.run(
-            ["mise", "run", "--skip-tools", "agent-codex", "--", "--help"],
+            [MISE, "run", "--skip-tools", "agent-codex", "--", "--help"],
             cwd=project,
             env={**self.env, "MISE_TRUSTED_CONFIG_PATHS": str(project)},
             capture_output=True,

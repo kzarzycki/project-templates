@@ -110,11 +110,11 @@ class AgentLayerGenerationTest(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, rendered)
         for remediation in (
-            "error: apm 0.23.1 is required",
-            "error: fnox 1.30.0 is required",
-            "error: claude is required",
-            "error: codex is required",
-            "error: python3 is required",
+            "error: apm 0.23.1 is required; run 'mise install'",
+            "error: fnox 1.30.0 is required; run 'mise install'",
+            "error: python3 is required; run 'mise install'",
+            "error: claude is required; install Claude Code and add 'claude' to PATH",
+            "error: codex is required; install Codex and add 'codex' to PATH",
         ):
             self.assertIn(remediation, (project / "mise.toml").read_text())
 
