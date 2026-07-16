@@ -1,5 +1,6 @@
 [tools]
 pre-commit = "latest"
+{% include "templates/_base/_mise_agent_tasks.part" %}
 
 [tasks.lint]
 run = "pre-commit run --all-files"

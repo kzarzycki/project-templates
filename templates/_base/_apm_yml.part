@@ -10,11 +10,7 @@ targets:
 - claude
 - codex
 dependencies:
-  # dotagents is a private repo — colleagues need GitHub access to `apm install` these.
-  apm:
-{%- for tk in toolkit_stack.split() %}
-    - kzarzycki/dotagents/toolkits/{{ tk }}
-{%- endfor %}
+  apm: []
   mcp: []
 includes: auto
 scripts: {}

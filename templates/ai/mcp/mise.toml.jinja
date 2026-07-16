@@ -1,6 +1,7 @@
 [tools]
 {% include "templates/_lang/" ~ language ~ "/_mise_tools.part" -%}
 pre-commit = "latest"
+{% include "templates/_base/_mise_agent_tasks.part" %}
 {% if language == 'python' %}
 [tasks.test]
 run = "uv run pytest"

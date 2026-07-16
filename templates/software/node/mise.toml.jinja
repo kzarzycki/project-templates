@@ -1,6 +1,7 @@
 [tools]
 {% include "templates/_lang/node/_mise_tools.part" -%}
 pre-commit = "latest"
+{% include "templates/_base/_mise_agent_tasks.part" %}
 
 [tasks.test]
 run = "npm test"

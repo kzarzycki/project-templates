@@ -1,0 +1,38 @@
+{% if include_agent_layer and include_fnox -%}
+fnox = "1.30.0"
+{% endif -%}
+{% if include_agent_layer %}
+
+[tasks.agent-sync]
+description = "Install locked APM dependencies and compile Claude Code and Codex configuration."
+run = """
+command -v apm >/dev/null || { echo 'error: apm 0.23.1 is required' >&2; exit 127; }
+if [ -f apm.lock.yaml ]; then
+  apm install --frozen --target claude,codex
+else
+  apm install --target claude,codex
+fi
+apm compile --target claude,codex
+"""
+
+[tasks.agent-check]
+description = "Validate APM sources, generated files, and fnox declarations."
+run = """
+command -v apm >/dev/null || { echo 'error: apm 0.23.1 is required' >&2; exit 127; }
+apm compile --validate --target claude,codex
+apm audit --ci --no-policy
+if [ -f .mcp.json ]; then python3 -m json.tool .mcp.json >/dev/null; fi
+if [ -f .codex/config.toml ]; then python3 -c 'import tomllib; tomllib.load(open(".codex/config.toml", "rb"))'; fi
+{% if include_fnox -%}
+fnox check --all --non-interactive --if-missing error
+{% endif -%}
+"""
+
+[tasks.agent-claude]
+description = "Launch Claude Code with this repository's machine bindings."
+run = "{% if include_fnox %}fnox exec --non-interactive --if-missing error -- {% endif %}claude"
+
+[tasks.agent-codex]
+description = "Launch Codex with this repository's machine bindings."
+run = "{% if include_fnox %}fnox exec --non-interactive --if-missing error -- {% endif %}codex"
+{% endif -%}

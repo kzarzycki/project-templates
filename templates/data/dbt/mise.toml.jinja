@@ -2,6 +2,7 @@
 python = "{{ python_version }}"
 uv = "latest"
 pre-commit = "latest"
+{% include "templates/_base/_mise_agent_tasks.part" %}
 
 [tasks.deps]
 run = "uv run dbt deps"

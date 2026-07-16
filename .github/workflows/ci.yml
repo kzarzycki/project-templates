@@ -18,8 +18,11 @@ jobs:
           - { type: software/python }
           - { type: software/node }
           - { type: software/java }
+          - { type: data/dbt }
           - { type: authoring/content }
+          - { type: ai/skills }
           - { type: ai/mcp, language: python }
+          - { type: infra/terraform }
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
@@ -44,6 +47,7 @@ jobs:
           git config --global user.email "ci@example.com"
           args=(--name ci-proj --type "$PROJECT_TYPE" --dest _out/ci-proj)
           [ -n "$LANGUAGE" ] && args+=(--language "$LANGUAGE")
+          args+=(include_agent_layer=true include_fnox=true)
           skills/bootstrap-project/scripts/bootstrap.sh "${args[@]}"
       - name: Assert one clean commit with the trailer
         working-directory: _out/ci-proj
@@ -51,3 +55,12 @@ jobs:
           test "$(git rev-list --all --count)" = "1"
           test -z "$(git status -s)"
           git log -1 --format='%b' | grep -q 'Co-Authored-By: Claude'
+          test -f apm.yml
+          test -f fnox.toml
+          test -f .apm/instructions/project.instructions.md
+          test ! -e .agents-toolkit
+          test ! -e scripts/agent-layer
+          grep -q '^\[tasks.agent-sync\]$' mise.toml
+          grep -q '^\[tasks.agent-check\]$' mise.toml
+          grep -q '^\[tasks.agent-claude\]$' mise.toml
+          grep -q '^\[tasks.agent-codex\]$' mise.toml

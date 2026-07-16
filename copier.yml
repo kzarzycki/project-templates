@@ -50,20 +50,22 @@ license:
   default: MIT
   choices: [MIT, Apache-2.0, none]
 
-toolkit_stack:
-  type: str
-  default: "agents dev"
-  help: "Agent toolkit stack for .agents-toolkit (whitespace-separated toolkit names, e.g. 'xebia dev')"
-
-shared_apm:
-  type: bool
-  default: false
-  help: Generate an apm.yml declaring the toolkit stack as APM dependencies (for repos meant to be shared)?
-
 include_mise:
   type: bool
   default: true
   help: Add a mise.toml pinning the runtime + bootstrap tools?
+
+include_agent_layer:
+  type: bool
+  default: true
+  when: "{{ include_mise }}"
+  help: Add the APM source and mise tasks for Claude Code and Codex?
+
+include_fnox:
+  type: bool
+  default: true
+  when: "{{ include_mise and include_agent_layer }}"
+  help: Add an empty fnox contract for project-owned machine bindings?
 
 python_version:
   type: str
@@ -109,9 +111,11 @@ _exclude:
   - "_post_gen.sh"
   - "{% if license == 'none' %}LICENSE{% endif %}"
   - "{% if not include_mise %}mise.toml{% endif %}"
+  - "{% if not (include_mise and include_agent_layer) %}apm.yml{% endif %}"
+  - "{% if not (include_mise and include_agent_layer) %}.apm{% endif %}"
+  - "{% if not (include_mise and include_agent_layer and include_fnox) %}fnox.toml{% endif %}"
   - "{% if not include_example %}main.tf{% endif %}"
   - "{% if not include_example %}versions.tf{% endif %}"
-  - "{% if not shared_apm %}apm.yml{% endif %}"
 
 _tasks:
   - "bash '{{ _copier_conf.src_path }}/_post_gen.sh' '{{ project_type }}' '{{ language | default('', true) }}'"
