@@ -79,6 +79,11 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertIn("test -f apm.yml", workflow)
         self.assertIn("test -f fnox.toml", workflow)
         self.assertIn("test ! -e .agents-toolkit", workflow)
+        self.assertIn("jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db", workflow)
+        self.assertIn(
+            "mise exec terraform@1.13.5 tflint@latest --",
+            workflow,
+        )
 
     def test_enabled_layer_generates_framework_without_project_policy(self) -> None:
         project = render(

@@ -35,6 +35,9 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
+      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
+        with:
+          install: false
       - name: Install copier + pre-commit
         run: uv tool install copier && uv tool install pre-commit
       - name: Generate a ${{ matrix.type }} project from the local checkout
@@ -48,7 +51,12 @@ jobs:
           args=(--name ci-proj --type "$PROJECT_TYPE" --dest _out/ci-proj)
           [ -n "$LANGUAGE" ] && args+=(--language "$LANGUAGE")
           args+=(include_agent_layer=true include_fnox=true)
-          skills/bootstrap-project/scripts/bootstrap.sh "${args[@]}"
+          if [ "$PROJECT_TYPE" = "infra/terraform" ]; then
+            mise exec terraform@1.13.5 tflint@latest -- \
+              skills/bootstrap-project/scripts/bootstrap.sh "${args[@]}"
+          else
+            skills/bootstrap-project/scripts/bootstrap.sh "${args[@]}"
+          fi
       - name: Assert one clean commit with the trailer
         working-directory: _out/ci-proj
         run: |
