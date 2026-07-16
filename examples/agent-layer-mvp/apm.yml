@@ -1,0 +1,29 @@
+name: agent-layer-mvp
+version: 0.1.0
+description: Example of one project-owned agent configuration compiled for Claude Code and Codex.
+author: CI
+targets:
+- claude
+- codex
+dependencies:
+  apm: []
+  mcp:
+  - name: agent-layer-canary
+    registry: false
+    transport: stdio
+    command: fnox
+    args:
+    - exec
+    - --profile
+    - local
+    - --no-defaults
+    - --non-interactive
+    - --if-missing
+    - error
+    - --
+    - uv
+    - run
+    - python
+    - scripts/mcp_canary.py
+includes: auto
+scripts: {}

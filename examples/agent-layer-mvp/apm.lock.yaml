@@ -1,0 +1,28 @@
+lockfile_version: '1'
+generated_at: '2026-07-16T10:58:17.991597+00:00'
+dependencies: []
+mcp_servers:
+- agent-layer-canary
+mcp_configs:
+  agent-layer-canary:
+    name: agent-layer-canary
+    transport: stdio
+    args:
+    - exec
+    - --profile
+    - local
+    - --no-defaults
+    - --non-interactive
+    - --if-missing
+    - error
+    - --
+    - uv
+    - run
+    - python
+    - scripts/mcp_canary.py
+    registry: false
+    command: fnox
+local_deployed_files:
+- .claude/rules/project.md
+local_deployed_file_hashes:
+  .claude/rules/project.md: sha256:631f57db7a0fbd35aff985850d23b3f783fe7d639c1a43c5dcee2df715d1732f

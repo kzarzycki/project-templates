@@ -1,0 +1,6 @@
+[mcp_servers.agent-layer-canary]
+command = "fnox"
+args = [ "exec", "--profile", "local", "--no-defaults", "--non-interactive", "--if-missing", "error", "--", "uv", "run", "python", "scripts/mcp_canary.py",]
+id = ""
+
+[mcp_servers.agent-layer-canary.env]
