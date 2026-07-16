@@ -58,6 +58,8 @@ Copier does not install APM or fnox, contact a secret provider, compile agent
 files, or launch an agent. `mise install` installs the pinned tools after
 generation. Use `include_agent_layer=false` to omit the layer or
 `include_fnox=false` to keep APM and the launch tasks without fnox wrapping.
+Codex loads the generated `.codex/config.toml` only after the repository is
+trusted; the trust decision is machine state and is not committed to the repo.
 
 ## Use it via Claude
 

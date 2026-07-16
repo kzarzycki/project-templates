@@ -196,6 +196,12 @@ class AgentLayerExampleTest(unittest.TestCase):
         self.assertIn("mise run agent-check", workflow)
         self.assertIn("mise exec -- uv run pytest", workflow)
 
+    def test_readme_explains_codex_project_trust(self) -> None:
+        readme = (ROOT / "README.md").read_text().lower()
+
+        self.assertIn(".codex/config.toml", readme)
+        self.assertIn("trusted", readme)
+
 
 if __name__ == "__main__":
     unittest.main()

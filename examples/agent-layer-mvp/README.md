@@ -22,6 +22,9 @@ mise run agent-codex
 `.apm/`. Both launch tasks resolve the `local` fnox profile in a fresh child
 process. The MCP command resolves the separate `mcp-local` profile, so
 `AGENT_LAYER_CANARY` is added to the MCP child and not the agent process.
+Codex reads `.codex/config.toml` after this repository is trusted. The first
+interactive Codex session records that machine-local trust decision; an
+untrusted or unattended session ignores the project config.
 
 `scripts/check_native_auth.sh` confirms that `gh` can use its credential-store
 login while `GITHUB_TOKEN` and `GH_TOKEN` are absent. It calls `gh auth status`,

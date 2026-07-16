@@ -91,7 +91,8 @@ token.
 
 Set `include_agent_layer=false` to omit APM and all four commands. Set
 `include_fnox=false` to retain APM and the commands without fnox configuration
-or wrapping.
+or wrapping. Codex loads `.codex/config.toml` only for a trusted repository;
+that trust decision belongs to the developer's machine, not the scaffold.
 
 ## Notes
 

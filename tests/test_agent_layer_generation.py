@@ -57,6 +57,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
                 self.assertIn(expected, document)
             self.assertIn("project-owned", document)
             self.assertIn("mise install", document)
+            self.assertIn("trusted", document.lower())
 
         self.assertNotIn("apm install", wrapper)
         self.assertNotIn("fnox check", wrapper)
