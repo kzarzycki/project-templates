@@ -71,6 +71,11 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertTrue(
             (project / ".apm/instructions/project.instructions.md").is_file()
         )
+        instruction = (
+            project / ".apm/instructions/project.instructions.md"
+        ).read_text()
+        self.assertIn("description: Project-wide instructions", instruction)
+        self.assertIn('applyTo: "**"', instruction)
         self.assertFalse((project / ".agents-toolkit").exists())
         self.assertFalse((project / "scripts/agent-layer").exists())
 
