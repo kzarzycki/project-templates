@@ -51,4 +51,8 @@ for kv in "${extra_data[@]:-}"; do
 done
 
 echo "Scaffolding '$name' ($type) → $dest"
-copier copy --trust --defaults "${data[@]}" "$template" "$dest"
+vcs_ref=()
+if [ -d "$template/.git" ] || [ -f "$template/.git" ]; then
+  vcs_ref+=(--vcs-ref=HEAD)
+fi
+copier copy --trust --defaults "${vcs_ref[@]}" "${data[@]}" "$template" "$dest"
