@@ -23,8 +23,8 @@ mise run agent-codex
 process. The canary receives only the synthetic `AGENT_LAYER_CANARY` value.
 
 `scripts/check_native_auth.sh` confirms that `gh` can use its credential-store
-login while `GITHUB_TOKEN` is absent. It calls `gh auth status`, suppresses its
-output, and never extracts or copies the token into fnox.
+login while `GITHUB_TOKEN` and `GH_TOKEN` are absent. It calls `gh auth status`,
+suppresses its output, and never extracts or copies the token into fnox.
 
 ## Inspect the result
 

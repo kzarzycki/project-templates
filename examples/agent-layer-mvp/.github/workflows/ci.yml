@@ -19,6 +19,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
       - name: Ensure .env is not tracked
         run: |
           if git ls-files --error-unmatch .env >/dev/null 2>&1; then
@@ -26,15 +27,10 @@ jobs:
             exit 1
           fi
       - name: pre-commit
-        run: pipx run pre-commit run --all-files --show-diff-on-failure
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
-        with:
-          python-version: "3.14"
-      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
-        with:
-          enable-cache: true
-      - run: uv sync
-      - run: uv run pytest --cov --cov-report=xml
+        run: mise exec -- pre-commit run --all-files --show-diff-on-failure
+      - run: mise exec -- uv sync --locked
+      - run: mise run agent-check
+      - run: mise exec -- uv run pytest --cov --cov-report=xml
       # Diff coverage gates PRs only. On a push to main, github.base_ref is empty
       # and origin/main == HEAD, so the diff would be empty and the gate a no-op —
       # gate the PR, where the base branch is a real, different ref.
@@ -42,4 +38,4 @@ jobs:
         if: ${{ github.event_name == 'pull_request' }}
         env:
           BASE_REF: ${{ github.base_ref }}
-        run: uv run diff-cover coverage.xml --compare-branch="origin/$BASE_REF" --fail-under=100
+        run: mise exec -- uv run diff-cover coverage.xml --compare-branch="origin/$BASE_REF" --fail-under=100

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import shutil
 import subprocess
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -15,28 +17,20 @@ class AgentLayerExampleTest(unittest.TestCase):
     def test_mcp_client_calls_fnox_wrapped_canary(self) -> None:
         fnox = shutil.which("fnox")
         if fnox is None:
-            self.skipTest("fnox is not installed")
+            self.fail("fnox is required; run 'mise install'")
 
         from mcp import ClientSession, StdioServerParameters
         from mcp.client.stdio import stdio_client
 
-        async def call_canary() -> tuple[list[str], str]:
+        claude = json.loads((ROOT / ".mcp.json").read_text())["mcpServers"]["agent-layer-canary"]
+        codex = tomllib.loads((ROOT / ".codex/config.toml").read_text())["mcp_servers"][
+            "agent-layer-canary"
+        ]
+
+        async def call_canary(command: str, arguments: list[str]) -> tuple[list[str], str]:
             parameters = StdioServerParameters(
-                command=fnox,
-                args=[
-                    "exec",
-                    "--profile",
-                    "local",
-                    "--no-defaults",
-                    "--non-interactive",
-                    "--if-missing",
-                    "error",
-                    "--",
-                    "uv",
-                    "run",
-                    "python",
-                    "scripts/mcp_canary.py",
-                ],
+                command=fnox if command == "fnox" else command,
+                args=arguments,
                 cwd=ROOT,
             )
             async with (
@@ -49,9 +43,11 @@ class AgentLayerExampleTest(unittest.TestCase):
                 text = result.content[0].text
                 return [tool.name for tool in tools.tools], text
 
-        tools, result = asyncio.run(call_canary())
-        self.assertIn("probe", tools)
-        self.assertEqual("canary-ok", result)
+        for target, config in (("claude", claude), ("codex", codex)):
+            with self.subTest(target=target):
+                tools, result = asyncio.run(call_canary(config["command"], config["args"]))
+                self.assertIn("probe", tools)
+                self.assertEqual("canary-ok", result)
 
     def test_canary_requires_fnox_binding(self) -> None:
         env = os.environ.copy()
@@ -116,17 +112,23 @@ class AgentLayerExampleTest(unittest.TestCase):
         self.assertEqual("", result.stdout)
         self.assertEqual("", result.stderr)
 
-    def test_native_auth_rejects_environment_token(self) -> None:
-        result = subprocess.run(
-            ["scripts/check_native_auth.sh"],
-            cwd=ROOT,
-            env={**os.environ, "GITHUB_TOKEN": "synthetic-not-a-token"},
-            capture_output=True,
-            text=True,
-        )
+    def test_native_auth_rejects_environment_tokens(self) -> None:
+        for variable in ("GITHUB_TOKEN", "GH_TOKEN"):
+            with self.subTest(variable=variable):
+                env = os.environ.copy()
+                env.pop("GITHUB_TOKEN", None)
+                env.pop("GH_TOKEN", None)
+                env[variable] = "synthetic-not-a-token"
+                result = subprocess.run(
+                    ["scripts/check_native_auth.sh"],
+                    cwd=ROOT,
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                )
 
-        self.assertNotEqual(0, result.returncode)
-        self.assertIn("GITHUB_TOKEN must be unset", result.stderr)
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn("environment GitHub tokens must be unset", result.stderr)
 
     def test_apm_mcp_runs_canary_through_local_fnox_profile(self) -> None:
         manifest = (ROOT / "apm.yml").read_text()
@@ -147,6 +149,18 @@ class AgentLayerExampleTest(unittest.TestCase):
             "fnox check --profile local --no-defaults --all --non-interactive",
             mise,
         )
+
+    def test_project_launches_select_the_local_fnox_profile(self) -> None:
+        mise = (ROOT / "mise.toml").read_text()
+
+        self.assertEqual(2, mise.count("fnox exec --profile local --no-defaults"))
+
+    def test_ci_installs_mise_tools_before_protocol_test(self) -> None:
+        workflow = (ROOT / ".github/workflows/ci.yml").read_text()
+
+        self.assertIn("jdx/mise-action", workflow)
+        self.assertIn("mise run agent-check", workflow)
+        self.assertIn("mise exec -- uv run pytest", workflow)
 
 
 if __name__ == "__main__":

@@ -36,7 +36,7 @@ description = "Launch Claude Code with this repository's machine bindings."
 run = """
 command -v fnox >/dev/null || { echo "error: fnox 1.30.0 is required; run 'mise install'" >&2; exit 127; }
 command -v claude >/dev/null || { echo "error: claude is required; install Claude Code and add 'claude' to PATH" >&2; exit 127; }
-fnox exec --non-interactive --if-missing error -- claude
+fnox exec --profile local --no-defaults --non-interactive --if-missing error -- claude
 """
 
 [tasks.agent-codex]
@@ -44,7 +44,7 @@ description = "Launch Codex with this repository's machine bindings."
 run = """
 command -v fnox >/dev/null || { echo "error: fnox 1.30.0 is required; run 'mise install'" >&2; exit 127; }
 command -v codex >/dev/null || { echo "error: codex is required; install Codex and add 'codex' to PATH" >&2; exit 127; }
-fnox exec --non-interactive --if-missing error -- codex
+fnox exec --profile local --no-defaults --non-interactive --if-missing error -- codex
 """
 
 

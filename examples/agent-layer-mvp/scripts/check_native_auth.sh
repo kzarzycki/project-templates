@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -eu
 
-if [ -n "${GITHUB_TOKEN:-}" ]; then
-  echo "error: GITHUB_TOKEN must be unset; use gh's native credential-store login" >&2
+if [ -n "${GITHUB_TOKEN:-}" ] || [ -n "${GH_TOKEN:-}" ]; then
+  echo "error: environment GitHub tokens must be unset; use gh's native credential-store login" >&2
   exit 1
 fi
 
