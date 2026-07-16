@@ -1,5 +1,5 @@
 lockfile_version: '1'
-generated_at: '2026-07-16T10:58:17.991597+00:00'
+generated_at: '2026-07-16T11:18:09.783424+00:00'
 dependencies: []
 mcp_servers:
 - agent-layer-canary
@@ -10,7 +10,7 @@ mcp_configs:
     args:
     - exec
     - --profile
-    - local
+    - mcp-local
     - --no-defaults
     - --non-interactive
     - --if-missing

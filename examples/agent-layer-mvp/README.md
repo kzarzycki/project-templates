@@ -20,7 +20,8 @@ mise run agent-codex
 
 `agent-sync` compiles the committed Claude and Codex files from `apm.yml` and
 `.apm/`. Both launch tasks resolve the `local` fnox profile in a fresh child
-process. The canary receives only the synthetic `AGENT_LAYER_CANARY` value.
+process. The MCP command resolves the separate `mcp-local` profile, so
+`AGENT_LAYER_CANARY` is added to the MCP child and not the agent process.
 
 `scripts/check_native_auth.sh` confirms that `gh` can use its credential-store
 login while `GITHUB_TOKEN` and `GH_TOKEN` are absent. It calls `gh auth status`,
@@ -39,7 +40,7 @@ suppresses its output, and never extracts or copies the token into fnox.
 ```bash
 uv sync
 uv run pytest
-fnox exec --profile local --no-defaults --non-interactive \
+fnox exec --profile mcp-local --no-defaults --non-interactive \
   --if-missing error -- python3 scripts/mcp_canary.py --probe
 env -u GITHUB_TOKEN scripts/check_native_auth.sh
 ```

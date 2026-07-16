@@ -130,23 +130,27 @@ class AgentLayerExampleTest(unittest.TestCase):
                 self.assertNotEqual(0, result.returncode)
                 self.assertIn("environment GitHub tokens must be unset", result.stderr)
 
-    def test_apm_mcp_runs_canary_through_local_fnox_profile(self) -> None:
+    def test_apm_mcp_runs_canary_through_mcp_local_fnox_profile(self) -> None:
         manifest = (ROOT / "apm.yml").read_text()
 
         for expected in (
             "agent-layer-canary",
             "fnox",
             "--profile",
-            "local",
+            "mcp-local",
             "scripts/mcp_canary.py",
         ):
             self.assertIn(expected, manifest)
 
-    def test_project_check_selects_its_local_fnox_profile(self) -> None:
+    def test_project_check_selects_both_fnox_profiles(self) -> None:
         mise = (ROOT / "mise.toml").read_text()
 
         self.assertIn(
             "fnox check --profile local --no-defaults --all --non-interactive",
+            mise,
+        )
+        self.assertIn(
+            "fnox check --profile mcp-local --no-defaults --all --non-interactive",
             mise,
         )
 
@@ -154,6 +158,36 @@ class AgentLayerExampleTest(unittest.TestCase):
         mise = (ROOT / "mise.toml").read_text()
 
         self.assertEqual(2, mise.count("fnox exec --profile local --no-defaults"))
+
+    def test_agent_profile_does_not_receive_mcp_canary(self) -> None:
+        fnox = shutil.which("fnox")
+        if fnox is None:
+            self.fail("fnox is required; run 'mise install'")
+
+        env = os.environ.copy()
+        env.pop("AGENT_LAYER_CANARY", None)
+        result = subprocess.run(
+            [
+                fnox,
+                "exec",
+                "--profile",
+                "local",
+                "--no-defaults",
+                "--non-interactive",
+                "--if-missing",
+                "error",
+                "--",
+                "python3",
+                "-c",
+                "import os; raise SystemExit('AGENT_LAYER_CANARY' in os.environ)",
+            ],
+            cwd=ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
 
     def test_ci_installs_mise_tools_before_protocol_test(self) -> None:
         workflow = (ROOT / ".github/workflows/ci.yml").read_text()

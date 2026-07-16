@@ -29,6 +29,7 @@ apm audit --ci --no-policy
 if [ -f .mcp.json ]; then python3 -m json.tool .mcp.json >/dev/null; fi
 if [ -f .codex/config.toml ]; then python3 -c 'import tomllib; tomllib.load(open(".codex/config.toml", "rb"))'; fi
 fnox check --profile local --no-defaults --all --non-interactive --if-missing error
+fnox check --profile mcp-local --no-defaults --all --non-interactive --if-missing error
 """
 
 [tasks.agent-claude]

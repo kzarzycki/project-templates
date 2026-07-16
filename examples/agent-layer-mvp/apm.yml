@@ -15,7 +15,7 @@ dependencies:
     args:
     - exec
     - --profile
-    - local
+    - mcp-local
     - --no-defaults
     - --non-interactive
     - --if-missing

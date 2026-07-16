@@ -4,4 +4,7 @@ env = "exec"
 if_missing = "error"
 
 [profiles.local.secrets]
+AGENT_LAYER_ENV = { default = "local" }
+
+[profiles.mcp-local.secrets]
 AGENT_LAYER_CANARY = { default = "local-profile-canary" }
