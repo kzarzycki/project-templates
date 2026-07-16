@@ -1,3 +1,7 @@
+{% set leaf_pins_python = project_type in ['software/python', 'data/dbt'] or (project_type == 'ai/mcp' and (language | default('')) == 'python') -%}
+{% if include_agent_layer and not leaf_pins_python -%}
+python = "3.14"
+{% endif -%}
 {% if include_agent_layer -%}
 "github:microsoft/apm" = "0.23.1"
 {% endif -%}

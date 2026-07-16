@@ -127,6 +127,17 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertFalse((project / ".agents-toolkit").exists())
         self.assertNotIn("agent-sync", (project / "mise.toml").read_text())
 
+    def test_agent_layer_pins_python_when_leaf_does_not(self) -> None:
+        project = render(
+            "software/node",
+            include_mise=True,
+            include_agent_layer=True,
+            include_fnox=False,
+        )
+
+        mise = tomllib.loads((project / "mise.toml").read_text())
+        self.assertEqual("3.14", mise["tools"].get("python"))
+
     def test_agent_layer_is_disabled_without_mise(self) -> None:
         project = render(
             include_mise=False,
