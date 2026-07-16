@@ -40,6 +40,27 @@ def render(project_type: str = "software/python", **answers: object) -> Path:
 
 
 class AgentLayerGenerationTest(unittest.TestCase):
+    def test_public_docs_explain_agent_layer_scaffold_and_activation(self) -> None:
+        readme = (ROOT / "README.md").read_text()
+        skill = (ROOT / "skills/bootstrap-project/SKILL.md").read_text()
+        wrapper = (ROOT / "skills/bootstrap-project/scripts/bootstrap.sh").read_text()
+
+        for document in (readme, skill):
+            for expected in (
+                "include_agent_layer",
+                "include_fnox",
+                "mise run agent-sync",
+                "mise run agent-check",
+                "mise run agent-claude",
+                "mise run agent-codex",
+            ):
+                self.assertIn(expected, document)
+            self.assertIn("project-owned", document)
+            self.assertIn("mise install", document)
+
+        self.assertNotIn("apm install", wrapper)
+        self.assertNotIn("fnox check", wrapper)
+
     def test_ci_covers_every_leaf_and_agent_layer_contract(self) -> None:
         workflow = (ROOT / ".github/workflows/ci.yml").read_text()
         for project_type in (

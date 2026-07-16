@@ -48,10 +48,12 @@ script.
 2. **For `ai/mcp` only, pick the toolchain.** Pass `--language python` or
    `--language node` (default python). No other type takes `--language`.
 3. **Infer optionals from context — don't interrogate.** `description`,
-   `license` (default MIT), `include_mise` (default true), and the runtime
-   version (`python_version`/`node_version`/`java_version`) default sensibly —
-   see the root `copier.yml` for the full question set. Pass an optional only
-   when the user clearly wants it (e.g. "Apache licensed" → `license=Apache-2.0`).
+   `license` (default MIT), `include_mise` (default true),
+   `include_agent_layer` (default true with mise), `include_fnox` (default true
+   with the agent layer), and the runtime version
+   (`python_version`/`node_version`/`java_version`) default sensibly — see the
+   root `copier.yml` for the full question set. Pass an optional only when the
+   user clearly wants it (e.g. "Apache licensed" → `license=Apache-2.0`).
    Author/email are resolved automatically from `git config`.
 4. **Run the wrapper** (never re-implement scaffolding, never re-run `_tasks`):
 
@@ -66,6 +68,30 @@ script.
    to `gh repo create` (confirm-gated; declining leaves the local commit intact).
 5. **Relay the result** — the generated path and what was created. Don't dump
    file contents.
+
+## Generated agent layer
+
+The default scaffold includes project-owned APM sources for Claude Code and
+Codex, an empty fnox machine-binding contract, and these commands:
+
+```bash
+mise install
+mise run agent-sync
+mise run agent-check
+mise run agent-claude
+mise run agent-codex
+```
+
+The bootstrap wrapper only renders the files. It does not install APM or fnox,
+resolve a provider, compile target files, or launch an agent. The generated
+project owns its instructions, skills, MCP definitions, endpoints, fnox
+profiles/providers, CLI dependencies, and target-specific additions. Native CLI
+authentication stays native; a working `gh auth login` does not need a copied
+token.
+
+Set `include_agent_layer=false` to omit APM and all four commands. Set
+`include_fnox=false` to retain APM and the commands without fnox configuration
+or wrapping.
 
 ## Notes
 

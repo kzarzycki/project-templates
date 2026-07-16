@@ -35,6 +35,30 @@ copier copy --trust gh:your-org/project-templates my-tool \
 See `copier.yml` for every question. Post-generation (`_post_gen.sh`) runs git
 init, installs deps, installs hooks, and makes the first commit.
 
+## Repository agent layer
+
+With `include_mise=true` and `include_agent_layer=true` (both defaults), every
+project gets APM sources targeting Claude Code and Codex plus four mise tasks:
+
+```bash
+mise install
+mise run agent-sync
+mise run agent-check
+mise run agent-claude
+mise run agent-codex
+```
+
+The template supplies the compiler contract and task names. Instructions,
+skills, concrete MCP servers, CLI dependencies, endpoints, and agent-specific
+additions are project-owned. `include_fnox=true` adds an empty `fnox.toml` for
+machine bindings; the project chooses its profiles and providers. Native CLI
+credentials such as `gh auth login` remain in the CLI credential store.
+
+Copier does not install APM or fnox, contact a secret provider, compile agent
+files, or launch an agent. `mise install` installs the pinned tools after
+generation. Use `include_agent_layer=false` to omit the layer or
+`include_fnox=false` to keep APM and the launch tasks without fnox wrapping.
+
 ## Use it via Claude
 
 Ask Claude to "start a new python project called my-tool" — the
