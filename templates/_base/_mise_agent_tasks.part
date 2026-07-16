@@ -1,3 +1,6 @@
+{% if include_agent_layer -%}
+"github:microsoft/apm" = "0.23.1"
+{% endif -%}
 {% if include_agent_layer and include_fnox -%}
 fnox = "1.30.0"
 {% endif -%}
@@ -19,6 +22,10 @@ apm compile --target claude,codex
 description = "Validate APM sources, generated files, and fnox declarations."
 run = """
 command -v apm >/dev/null || { echo 'error: apm 0.23.1 is required' >&2; exit 127; }
+command -v python3 >/dev/null || { echo 'error: python3 is required' >&2; exit 127; }
+{% if include_fnox -%}
+command -v fnox >/dev/null || { echo 'error: fnox 1.30.0 is required' >&2; exit 127; }
+{% endif -%}
 apm compile --validate --target claude,codex
 apm audit --ci --no-policy
 if [ -f .mcp.json ]; then python3 -m json.tool .mcp.json >/dev/null; fi
@@ -30,9 +37,29 @@ fnox check --all --non-interactive --if-missing error
 
 [tasks.agent-claude]
 description = "Launch Claude Code with this repository's machine bindings."
-run = "{% if include_fnox %}fnox exec --non-interactive --if-missing error -- {% endif %}claude"
+run = """
+{% if include_fnox -%}
+command -v fnox >/dev/null || { echo 'error: fnox 1.30.0 is required' >&2; exit 127; }
+{% endif -%}
+command -v claude >/dev/null || { echo 'error: claude is required' >&2; exit 127; }
+{% if include_fnox -%}
+fnox exec --non-interactive --if-missing error -- claude
+{% else -%}
+claude
+{% endif -%}
+"""
 
 [tasks.agent-codex]
 description = "Launch Codex with this repository's machine bindings."
-run = "{% if include_fnox %}fnox exec --non-interactive --if-missing error -- {% endif %}codex"
+run = """
+{% if include_fnox -%}
+command -v fnox >/dev/null || { echo 'error: fnox 1.30.0 is required' >&2; exit 127; }
+{% endif -%}
+command -v codex >/dev/null || { echo 'error: codex is required' >&2; exit 127; }
+{% if include_fnox -%}
+fnox exec --non-interactive --if-missing error -- codex
+{% else -%}
+codex
+{% endif -%}
+"""
 {% endif -%}

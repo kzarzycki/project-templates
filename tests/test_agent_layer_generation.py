@@ -11,7 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def render(**answers: object) -> Path:
+def render(project_type: str = "software/python", **answers: object) -> Path:
     scratch = Path(tempfile.mkdtemp(prefix="project-template-test-"))
     template = scratch / "template"
     shutil.copytree(
@@ -29,7 +29,7 @@ def render(**answers: object) -> Path:
         "--data",
         "project_name=agent-layer-test",
         "--data",
-        "project_type=software/python",
+        f"project_type={project_type}",
     ]
     for key, value in answers.items():
         rendered = str(value).lower() if isinstance(value, bool) else str(value)
@@ -86,6 +86,8 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertIn("mcp: []", apm)
 
         mise = tomllib.loads((project / "mise.toml").read_text())
+        self.assertEqual("0.23.1", mise["tools"].get("github:microsoft/apm"))
+        self.assertEqual("1.30.0", mise["tools"]["fnox"])
         self.assertEqual(
             {"agent-sync", "agent-check", "agent-claude", "agent-codex"},
             set(mise["tasks"]) & {
@@ -102,11 +104,19 @@ class AgentLayerGenerationTest(unittest.TestCase):
         ).lower()
         for forbidden in (
             ".agents-toolkit",
-            "kzarzycki/dotagents",
+            "dotagents",
             "1password",
             "github_token",
         ):
             self.assertNotIn(forbidden, rendered)
+        for remediation in (
+            "error: apm 0.23.1 is required",
+            "error: fnox 1.30.0 is required",
+            "error: claude is required",
+            "error: codex is required",
+            "error: python3 is required",
+        ):
+            self.assertIn(remediation, (project / "mise.toml").read_text())
 
     def test_disabled_layer_leaves_no_agent_framework(self) -> None:
         project = render(include_mise=True, include_agent_layer=False)
@@ -128,6 +138,31 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertFalse((project / "apm.yml").exists())
         self.assertFalse((project / "fnox.toml").exists())
         self.assertFalse((project / ".apm").exists())
+
+    def test_disabled_layer_is_absent_from_every_leaf(self) -> None:
+        leaves = (
+            ("software/python", {}),
+            ("software/node", {}),
+            ("software/java", {}),
+            ("data/dbt", {}),
+            ("authoring/content", {}),
+            ("ai/skills", {}),
+            ("ai/mcp", {"language": "python"}),
+            ("infra/terraform", {"include_example": False}),
+        )
+        for project_type, extra in leaves:
+            with self.subTest(project_type=project_type):
+                project = render(
+                    project_type,
+                    include_mise=True,
+                    include_agent_layer=False,
+                    **extra,
+                )
+                self.assertFalse((project / "apm.yml").exists())
+                self.assertFalse((project / "fnox.toml").exists())
+                self.assertFalse((project / ".apm").exists())
+                self.assertFalse((project / ".agents-toolkit").exists())
+                self.assertNotIn("agent-sync", (project / "mise.toml").read_text())
 
 
 if __name__ == "__main__":
