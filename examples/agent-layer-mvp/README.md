@@ -6,7 +6,25 @@ project-owned agent configuration for Claude Code and Codex.
 Copier created `apm.yml`, `fnox.toml`, the `.apm/` instruction seed, and the
 `agent-*` tasks in `mise.toml`. This project then added its canary instruction,
 local stdio MCP server, synthetic fnox profile, and native GitHub CLI auth check.
-Those additions belong to this project; they are not template defaults.
+Those additions belong to this project.
+
+## Demonstration fixtures
+
+The example uses these fixtures to make its boundaries observable and testable:
+
+- The canary instruction, `scripts/mcp_canary.py`, Python `mcp` dependency, and
+  generated target files prove that both compiled MCP configurations work.
+- `AGENT_LAYER_CANARY` proves that a value can be scoped to the MCP child.
+- The `local` and `mcp-local` profile names illustrate separate process scopes;
+  projects choose names that match their own environments.
+- `scripts/check_native_auth.sh` proves one local setup: `gh` can authenticate
+  from its credential store without an environment token. It is not a reusable
+  authentication policy. Environment tokens remain valid for CI, containers,
+  ephemeral machines, and projects that choose them explicitly.
+- The CI workflow uses explicit `mise exec` calls for its non-interactive shell;
+  activated local shells can invoke the selected tools directly.
+
+These fixtures are project-specific example code, not Copier template defaults.
 
 ## Try it
 
@@ -25,10 +43,6 @@ process. The MCP command resolves the separate `mcp-local` profile, so
 Codex reads `.codex/config.toml` after this repository is trusted. The first
 interactive Codex session records that machine-local trust decision; an
 untrusted or unattended session ignores the project config.
-
-`scripts/check_native_auth.sh` confirms that `gh` can use its credential-store
-login while `GITHUB_TOKEN` and `GH_TOKEN` are absent. It calls `gh auth status`,
-suppresses its output, and never extracts or copies the token into fnox.
 
 ## Inspect the result
 

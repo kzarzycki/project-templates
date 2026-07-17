@@ -5,6 +5,8 @@ pre-commit = "latest"
 "github:microsoft/apm" = "0.23.1"
 fnox = "1.30.0"
 
+# Example-owned profile selection below exercises separate agent and MCP process
+# scopes. The profile names and `--no-defaults` choice are not template policy.
 
 [tasks.agent-sync]
 description = "Install locked APM dependencies and compile Claude Code and Codex configuration."

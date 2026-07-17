@@ -6,7 +6,10 @@ readme = "README.md"
 requires-python = ">=3.14"
 license = "MIT"
 authors = [{ name = "CI", email = "ci@example.com" }]
-dependencies = ["mcp>=1.26,<2"]
+dependencies = [
+  # Demonstration MCP dependency for the canary server; the template does not add it.
+  "mcp>=1.26,<2",
+]
 
 [build-system]
 requires = ["setuptools>=68"]

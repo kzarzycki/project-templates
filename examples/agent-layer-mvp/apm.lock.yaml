@@ -25,4 +25,4 @@ mcp_configs:
 local_deployed_files:
 - .claude/rules/project.md
 local_deployed_file_hashes:
-  .claude/rules/project.md: sha256:631f57db7a0fbd35aff985850d23b3f783fe7d639c1a43c5dcee2df715d1732f
+  .claude/rules/project.md: sha256:5c656cad351fa4454f18c675d26a56142f121f3db357801028d13fadfbef8028

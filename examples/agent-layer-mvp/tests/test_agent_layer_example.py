@@ -202,6 +202,29 @@ class AgentLayerExampleTest(unittest.TestCase):
         self.assertIn(".codex/config.toml", readme)
         self.assertIn("trusted", readme)
 
+    def test_demonstration_fixtures_state_their_scope(self) -> None:
+        readme = (ROOT / "README.md").read_text()
+        native_auth = (ROOT / "scripts/check_native_auth.sh").read_text()
+        fnox = (ROOT / "fnox.toml").read_text()
+        canary = (ROOT / "scripts/mcp_canary.py").read_text()
+        manifest = (ROOT / "apm.yml").read_text()
+        instruction = (ROOT / ".apm/instructions/project.instructions.md").read_text()
+        mise = (ROOT / "mise.toml").read_text()
+        workflow = (ROOT / ".github/workflows/ci.yml").read_text()
+        pyproject = (ROOT / "pyproject.toml").read_text()
+        readme_flat = " ".join(readme.split())
+
+        self.assertIn("## Demonstration fixtures", readme)
+        self.assertIn("not a reusable authentication policy", readme_flat)
+        self.assertIn("Demonstration-only", native_auth)
+        self.assertIn("Synthetic demonstration values", fnox)
+        self.assertIn("Demonstration-only MCP server", canary)
+        self.assertIn("Demonstration-only MCP acceptance fixture", manifest)
+        self.assertIn("Demonstration-only instruction", instruction)
+        self.assertIn("Example-owned profile selection", mise)
+        self.assertIn("Example-specific agent-layer acceptance commands", workflow)
+        self.assertIn("Demonstration MCP dependency", pyproject)
+
 
 if __name__ == "__main__":
     unittest.main()

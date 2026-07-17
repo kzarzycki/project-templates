@@ -8,6 +8,7 @@ targets:
 dependencies:
   apm: []
   mcp:
+  # Demonstration-only MCP acceptance fixture; projects define their own servers.
   - name: agent-layer-canary
     registry: false
     transport: stdio

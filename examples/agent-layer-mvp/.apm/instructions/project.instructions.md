@@ -3,6 +3,9 @@ description: Agent-layer MVP example behavior
 applyTo: "**"
 ---
 
+Demonstration-only instruction: the acceptance tests use this behavior. Project
+instructions should describe the project's actual agent behavior.
+
 # agent-layer-mvp
 
 This repository demonstrates project-owned instructions, MCP configuration,

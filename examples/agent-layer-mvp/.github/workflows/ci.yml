@@ -19,6 +19,8 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      # Example-specific agent-layer acceptance commands use mise explicitly in
+      # this non-interactive CI shell. Activated local shells can call tools directly.
       - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
       - name: Ensure .env is not tracked
         run: |

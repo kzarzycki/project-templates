@@ -1,4 +1,5 @@
-# Project-owned machine bindings. Add providers, profiles, and values here.
+# Synthetic demonstration values. Real secrets belong in provider references or
+# uncommitted local configuration; profile names should match the project.
 root = true
 env = "exec"
 if_missing = "error"

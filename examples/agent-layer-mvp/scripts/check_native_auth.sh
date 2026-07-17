@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Demonstration-only acceptance check for keyring-backed local gh auth.
+# This is not a general policy: environment tokens are valid in CI, containers,
+# ephemeral machines, and projects that choose them explicitly.
 set -eu
 
 if [ -n "${GITHUB_TOKEN:-}" ] || [ -n "${GH_TOKEN:-}" ]; then
