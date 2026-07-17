@@ -202,6 +202,30 @@ class AgentLayerExampleTest(unittest.TestCase):
         self.assertIn(".codex/config.toml", readme)
         self.assertIn("trusted", readme)
 
+    def test_example_records_qualified_tool_versions(self) -> None:
+        mise = tomllib.loads((ROOT / "mise.toml").read_text())
+        instructions = (ROOT / "AGENTS.md").read_text()
+        workflow = (ROOT / ".github/workflows/ci.yml").read_text()
+        hooks = (ROOT / ".pre-commit-config.yaml").read_text()
+
+        self.assertEqual(
+            {
+                "python": "3.14",
+                "uv": "0.11.29",
+                "pre-commit": "4.6.0",
+                "github:microsoft/apm": "0.25.0",
+                "fnox": "1.30.0",
+            },
+            mise["tools"],
+        )
+        self.assertIn("<!-- APM Version: 0.25.0 -->", instructions)
+        self.assertIn(
+            "jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea",
+            workflow,
+        )
+        for revision in ("v6.0.0", "v8.30.1", "v4.4.0", "v1.27.0", "v0.15.22"):
+            self.assertIn(f"rev: {revision}", hooks)
+
     def test_demonstration_fixtures_state_their_scope(self) -> None:
         readme = (ROOT / "README.md").read_text()
         native_auth = (ROOT / "scripts/check_native_auth.sh").read_text()

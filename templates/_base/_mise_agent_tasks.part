@@ -3,7 +3,8 @@
 python = "3.14"
 {% endif -%}
 {% if include_agent_layer -%}
-"github:microsoft/apm" = "0.23.1"
+{% set apm_version = "0.25.0" %}
+"github:microsoft/apm" = "{{ apm_version }}"
 {% endif -%}
 {% if include_agent_layer and include_fnox -%}
 fnox = "1.30.0"
@@ -13,7 +14,7 @@ fnox = "1.30.0"
 [tasks.agent-sync]
 description = "Install locked APM dependencies and compile Claude Code and Codex configuration."
 run = """
-command -v apm >/dev/null || { echo "error: apm 0.23.1 is required; run 'mise install'" >&2; exit 127; }
+command -v apm >/dev/null || { echo "error: apm {{ apm_version }} is required; run 'mise install'" >&2; exit 127; }
 if [ -f apm.lock.yaml ]; then
   apm install --frozen --target claude,codex
 else
@@ -25,7 +26,7 @@ apm compile --target claude,codex
 [tasks.agent-check]
 description = "Validate APM sources, generated files, and fnox declarations."
 run = """
-command -v apm >/dev/null || { echo "error: apm 0.23.1 is required; run 'mise install'" >&2; exit 127; }
+command -v apm >/dev/null || { echo "error: apm {{ apm_version }} is required; run 'mise install'" >&2; exit 127; }
 command -v python3 >/dev/null || { echo "error: python3 is required; run 'mise install'" >&2; exit 127; }
 {% if include_fnox -%}
 command -v fnox >/dev/null || { echo "error: fnox 1.30.0 is required; run 'mise install'" >&2; exit 127; }

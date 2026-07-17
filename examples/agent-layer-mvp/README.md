@@ -48,7 +48,7 @@ untrusted or unattended session ignores the project config.
 
 - `AGENTS.md` and `.claude/rules/project.md` contain the compiled instruction.
 - `.mcp.json` and `.codex/config.toml` contain the target-native MCP definitions.
-- `apm.lock.yaml` records the APM and MCP resolution.
+- `apm.lock.yaml` records APM's resolved deployments and MCP configuration.
 - `fnox.toml` contains a non-sensitive local profile; real projects replace it
   with their own local or company provider references.
 

@@ -27,6 +27,7 @@ copier copy --trust gh:your-org/project-templates my-tool \
 | `software/python`   | Python service / library (uv · ruff · pytest)         |
 | `software/node`     | Node / TypeScript (npm · biome · vitest)              |
 | `software/java`     | Java / JVM (Gradle · Spotless · JaCoCo)               |
+| `infra/terraform`   | Infrastructure (Terraform · TFLint)                    |
 | `data/dbt`          | dbt project (sqlfluff · dbt build/test)               |
 | `authoring/content` | docs, research, markdown (markdownlint · link-check)  |
 | `ai/skills`         | a Claude Code skills / plugin repo                    |
@@ -98,6 +99,7 @@ templates/
   _base/              universal governance — included whole by every leaf
   _lang/{python,node,java}/   language toolchains — included by coded leaves
   software/{python,node,java}/
+  infra/terraform/
   data/dbt/
   authoring/content/
   ai/{skills,mcp}/

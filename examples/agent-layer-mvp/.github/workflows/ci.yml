@@ -21,7 +21,7 @@ jobs:
           persist-credentials: false
       # Example-specific agent-layer acceptance commands use mise explicitly in
       # this non-interactive CI shell. Activated local shells can call tools directly.
-      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
       - name: Ensure .env is not tracked
         run: |
           if git ls-files --error-unmatch .env >/dev/null 2>&1; then

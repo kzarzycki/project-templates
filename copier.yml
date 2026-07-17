@@ -79,12 +79,12 @@ node_version:
 
 java_version:
   type: str
-  default: "21"
+  default: "25"
   when: "{{ project_type == 'software/java' }}"
 
 terraform_version:
   type: str
-  default: "1.13.5"
+  default: "1.15.8"
   when: "{{ project_type == 'infra/terraform' }}"
 
 include_example:

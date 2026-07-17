@@ -1,2 +1,2 @@
 python = "{{ python_version }}"
-uv = "latest"
+uv = "0.11.29"

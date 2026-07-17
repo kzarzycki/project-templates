@@ -17,7 +17,17 @@ def render(project_type: str = "software/python", **answers: object) -> Path:
     shutil.copytree(
         ROOT,
         template,
-        ignore=shutil.ignore_patterns(".git", ".superpowers", "__pycache__", "_out"),
+        ignore=shutil.ignore_patterns(
+            ".git",
+            ".superpowers",
+            ".pytest_cache",
+            ".ruff_cache",
+            ".venv",
+            "__pycache__",
+            "_out",
+            "apm_modules",
+            "node_modules",
+        ),
     )
     destination = scratch / "project"
     command = [
@@ -75,14 +85,18 @@ class AgentLayerGenerationTest(unittest.TestCase):
             "infra/terraform",
         ):
             self.assertIn(f"type: {project_type}", workflow)
+        self.assertIn("{ type: ai/mcp, language: python }", workflow)
+        self.assertIn("{ type: ai/mcp, language: node }", workflow)
         self.assertIn("include_agent_layer=true", workflow)
         self.assertIn("include_fnox=true", workflow)
         self.assertIn("test -f apm.yml", workflow)
         self.assertIn("test -f fnox.toml", workflow)
         self.assertIn("test ! -e .agents-toolkit", workflow)
-        self.assertIn("jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db", workflow)
         self.assertIn(
-            "mise exec terraform@1.13.5 tflint@latest --",
+            "jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea", workflow
+        )
+        self.assertIn(
+            "mise exec terraform@1.15.8 tflint@0.63.1 --",
             workflow,
         )
 
@@ -113,11 +127,12 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertIn("mcp: []", apm)
 
         mise = tomllib.loads((project / "mise.toml").read_text())
-        self.assertEqual("0.23.1", mise["tools"].get("github:microsoft/apm"))
+        self.assertEqual("0.25.0", mise["tools"].get("github:microsoft/apm"))
         self.assertEqual("1.30.0", mise["tools"]["fnox"])
         self.assertEqual(
             {"agent-sync", "agent-check", "agent-claude", "agent-codex"},
-            set(mise["tasks"]) & {
+            set(mise["tasks"])
+            & {
                 "agent-sync",
                 "agent-check",
                 "agent-claude",
@@ -137,13 +152,19 @@ class AgentLayerGenerationTest(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, rendered)
         for remediation in (
-            "error: apm 0.23.1 is required; run 'mise install'",
+            "error: apm 0.25.0 is required; run 'mise install'",
             "error: fnox 1.30.0 is required; run 'mise install'",
             "error: python3 is required; run 'mise install'",
             "error: claude is required; install Claude Code and add 'claude' to PATH",
             "error: codex is required; install Codex and add 'codex' to PATH",
         ):
             self.assertIn(remediation, (project / "mise.toml").read_text())
+
+    def test_apm_version_has_one_template_source(self) -> None:
+        partial = (ROOT / "templates/_base/_mise_agent_tasks.part").read_text()
+
+        self.assertIn('{% set apm_version = "0.25.0" %}', partial)
+        self.assertEqual(1, partial.count("0.25.0"))
 
     def test_disabled_layer_leaves_no_agent_framework(self) -> None:
         project = render(include_mise=True, include_agent_layer=False)

@@ -6,20 +6,20 @@ readme = "README.md"
 requires-python = ">={{ python_version }}"
 {% if license != 'none' %}license = "{{ license }}"
 {% endif %}authors = [{ name = "{{ author }}", email = "{{ email }}" }]
-dependencies = ["mcp>=1.0"]
+dependencies = ["mcp>=1.28,<2"]
 
 [project.scripts]
 {{ module_name }} = "{{ module_name }}.server:main"
 
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=83"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [dependency-groups]
-dev = ["pytest>=8", "pytest-cov>=5", "diff-cover>=9", "ruff>=0.15"]
+dev = ["pytest>=9.1", "pytest-cov>=7.1", "diff-cover>=10.3", "ruff>=0.15.22"]
 
 [tool.ruff]
 line-length = 100

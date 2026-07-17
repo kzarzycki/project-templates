@@ -8,18 +8,18 @@ license = "MIT"
 authors = [{ name = "CI", email = "ci@example.com" }]
 dependencies = [
   # Demonstration MCP dependency for the canary server; the template does not add it.
-  "mcp>=1.26,<2",
+  "mcp>=1.28,<2",
 ]
 
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=83"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [dependency-groups]
-dev = ["pytest>=8", "pytest-cov>=5", "diff-cover>=9", "ruff>=0.15"]
+dev = ["pytest>=9.1", "pytest-cov>=7.1", "diff-cover>=10.3", "ruff>=0.15.22"]
 
 [tool.ruff]
 line-length = 100
