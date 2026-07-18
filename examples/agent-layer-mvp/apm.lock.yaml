@@ -1,0 +1,50 @@
+lockfile_version: '1'
+generated_at: '2026-07-17T07:33:28.630153+00:00'
+dependencies: []
+deployments:
+- kind: project-relative
+  target: claude
+  value: .claude/rules/project.md
+  runtime: null
+  scope: project
+  owners:
+  - .
+  active_owner: .
+  content_hash: sha256:a687c2e71f677b10ed4efdf2b18ff9e18b963194b0f33028e7e01794b4371217
+- kind: uri
+  target: mcp
+  value: agent-layer-canary
+  runtime: codex
+  scope: project
+  owners:
+  - .
+  active_owner: .
+  content_hash: null
+mcp_servers:
+- agent-layer-canary
+mcp_configs:
+  agent-layer-canary:
+    name: agent-layer-canary
+    transport: stdio
+    args:
+    - exec
+    - --profile
+    - mcp-local
+    - --no-defaults
+    - --non-interactive
+    - --if-missing
+    - error
+    - --
+    - uv
+    - run
+    - python
+    - scripts/mcp_canary.py
+    registry: false
+    command: fnox
+mcp_target_servers:
+  codex:
+  - agent-layer-canary
+local_deployed_files:
+- .claude/rules/project.md
+local_deployed_file_hashes:
+  .claude/rules/project.md: sha256:a687c2e71f677b10ed4efdf2b18ff9e18b963194b0f33028e7e01794b4371217

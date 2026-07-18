@@ -1,0 +1,14 @@
+# Records the answers used to generate this project.
+# Do not edit by hand — `copier update` rewrites it. Edit the template instead.
+_commit: HEAD
+_src_path: ../..
+author: CI
+description: Example of one project-owned coding agent configuration compiled for Claude Code and Codex.
+email: ci@example.com
+include_agent_layer: true
+include_fnox: true
+include_mise: true
+license: MIT
+project_name: agent-layer-mvp
+project_type: software/python
+python_version: '3.14'

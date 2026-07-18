@@ -1,0 +1,85 @@
+{% set leaf_pins_python = project_type in ['software/python', 'data/dbt'] or (project_type == 'ai/mcp' and (language | default('')) == 'python') -%}
+{% if include_agent_layer and not leaf_pins_python -%}
+python = "3.14"
+{% endif -%}
+{% if include_agent_layer -%}
+{% set apm_version = "0.25.0" %}
+"github:microsoft/apm" = "{{ apm_version }}"
+{% endif -%}
+{% if include_agent_layer and include_fnox -%}
+fnox = "1.30.0"
+{% endif -%}
+{% if include_agent_layer %}
+
+[tasks.agent-sync]
+description = "Install locked APM dependencies and compile coding agent configuration."
+run = """
+command -v apm >/dev/null || { echo "error: apm {{ apm_version }} is required; run 'mise install'" >&2; exit 127; }
+if [ -f apm.lock.yaml ]; then
+  apm install --frozen
+else
+  apm install
+fi
+apm compile
+"""
+
+[tasks.agent-check]
+{% if include_fnox -%}
+description = "Validate APM sources, generated coding agent files, and fnox declarations."
+{% else -%}
+description = "Validate APM sources and generated coding agent files."
+{% endif -%}
+run = """
+command -v apm >/dev/null || { echo "error: apm {{ apm_version }} is required; run 'mise install'" >&2; exit 127; }
+command -v python3 >/dev/null || { echo "error: python3 is required; run 'mise install'" >&2; exit 127; }
+{% if include_fnox -%}
+command -v fnox >/dev/null || { echo "error: fnox 1.30.0 is required; run 'mise install'" >&2; exit 127; }
+{% endif -%}
+apm compile --validate
+apm audit --ci --no-policy
+# Add native-output validation for every implemented coding agent here.
+if [ -f .mcp.json ]; then python3 -m json.tool .mcp.json >/dev/null; fi
+if [ -f .codex/config.toml ]; then python3 -c 'import tomllib; tomllib.load(open(".codex/config.toml", "rb"))'; fi
+{% if include_fnox -%}
+fnox check --all --non-interactive --if-missing error
+{% endif -%}
+"""
+
+# Launcher tasks are coding-agent-specific. Add one only when the coding agent
+# has a stable CLI.
+[tasks.agent-claude]
+{% if include_fnox -%}
+description = "Launch Claude Code with this repository's machine bindings."
+{% else -%}
+description = "Launch Claude Code."
+{% endif -%}
+run = """
+{% if include_fnox -%}
+command -v fnox >/dev/null || { echo "error: fnox 1.30.0 is required; run 'mise install'" >&2; exit 127; }
+{% endif -%}
+command -v claude >/dev/null || { echo "error: claude is required; install Claude Code and add 'claude' to PATH" >&2; exit 127; }
+{% if include_fnox -%}
+fnox exec --non-interactive --if-missing error -- claude
+{% else -%}
+claude
+{% endif -%}
+"""
+
+[tasks.agent-codex]
+{% if include_fnox -%}
+description = "Launch Codex with this repository's machine bindings."
+{% else -%}
+description = "Launch Codex."
+{% endif -%}
+run = """
+{% if include_fnox -%}
+command -v fnox >/dev/null || { echo "error: fnox 1.30.0 is required; run 'mise install'" >&2; exit 127; }
+{% endif -%}
+command -v codex >/dev/null || { echo "error: codex is required; install Codex and add 'codex' to PATH" >&2; exit 127; }
+{% if include_fnox -%}
+fnox exec --non-interactive --if-missing error -- codex
+{% else -%}
+codex
+{% endif -%}
+"""
+{% endif -%}

@@ -1,2 +1,2 @@
 java = "temurin-{{ java_version }}"
-gradle = "latest"
+gradle = "9.6.1"

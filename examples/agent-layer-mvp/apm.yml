@@ -1,0 +1,32 @@
+name: agent-layer-mvp
+version: 0.1.0
+description: Example of one project-owned coding agent configuration compiled for Claude Code and Codex.
+author: CI
+# Add each coding agent's APM mapping here. Claude Code and Codex are the
+# currently implemented and acceptance-tested integrations.
+targets:
+- claude
+- codex
+dependencies:
+  apm: []
+  mcp:
+  # Demonstration-only MCP acceptance fixture; projects define their own servers.
+  - name: agent-layer-canary
+    registry: false
+    transport: stdio
+    command: fnox
+    args:
+    - exec
+    - --profile
+    - mcp-local
+    - --no-defaults
+    - --non-interactive
+    - --if-missing
+    - error
+    - --
+    - uv
+    - run
+    - python
+    - scripts/mcp_canary.py
+includes: auto
+scripts: {}

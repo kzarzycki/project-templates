@@ -5,11 +5,12 @@
 #
 # Usage:
 #   bootstrap.sh --name my-tool --type software/python [--dest DIR] \
-#     [--language python|node] [key=value ...]
+#     [--language python|node] [terraform_version=VERSION] [key=value ...]
 #
 # project_type: software/python | software/node | software/java | data/dbt
-#             | authoring/content | ai/skills | ai/mcp
+#             | authoring/content | ai/skills | ai/mcp | infra/terraform
 # --language (python|node) applies only to ai/mcp (it picks the toolchain).
+# terraform_version=VERSION applies only to infra/terraform.
 set -euo pipefail
 
 # Template source. Defaults to the published repo (a `gh:` URL so copier records
@@ -31,7 +32,7 @@ while [ $# -gt 0 ]; do
 done
 
 [ -n "$name" ] || { echo "error: --name is required" >&2; exit 2; }
-[ -n "$type" ] || { echo "error: --type is required (software/python|software/node|software/java|data/dbt|authoring/content|ai/skills|ai/mcp)" >&2; exit 2; }
+[ -n "$type" ] || { echo "error: --type is required (software/python|software/node|software/java|data/dbt|authoring/content|ai/skills|ai/mcp|infra/terraform)" >&2; exit 2; }
 [ -n "$dest" ] || dest="$name"
 
 author="$(git config user.name 2>/dev/null || echo 'Your Name')"
@@ -51,4 +52,8 @@ for kv in "${extra_data[@]:-}"; do
 done
 
 echo "Scaffolding '$name' ($type) → $dest"
-copier copy --trust --defaults "${data[@]}" "$template" "$dest"
+vcs_ref=()
+if [ -d "$template/.git" ] || [ -f "$template/.git" ]; then
+  vcs_ref+=(--vcs-ref=HEAD)
+fi
+copier copy --trust --defaults "${vcs_ref[@]}" "${data[@]}" "$template" "$dest"

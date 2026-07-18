@@ -1,0 +1,22 @@
+{
+  "mcpServers": {
+    "agent-layer-canary": {
+      "type": "stdio",
+      "command": "fnox",
+      "args": [
+        "exec",
+        "--profile",
+        "mcp-local",
+        "--no-defaults",
+        "--non-interactive",
+        "--if-missing",
+        "error",
+        "--",
+        "uv",
+        "run",
+        "python",
+        "scripts/mcp_canary.py"
+      ]
+    }
+  }
+}

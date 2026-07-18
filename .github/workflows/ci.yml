@@ -9,7 +9,44 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          version: "0.11.29"
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
+        with:
+          install: false
+      - name: Install root test tools
+        run: uv tool install copier==9.17.0
+      - name: Run root unittest suite
+        run: >-
+          python3 -m unittest
+          tests.test_agent_layer_generation
+          tests.test_agent_mise_tasks
+          tests.test_bootstrap_local_source
+          tests.test_version_contract
+      - name: Install example tools
+        working-directory: examples/agent-layer-mvp
+        run: mise install
+      - name: Check example coding-agent contract
+        working-directory: examples/agent-layer-mvp
+        run: mise run agent-check
+      - name: Run example behavioral tests
+        working-directory: examples/agent-layer-mvp
+        run: mise run test
+      - name: Lint example
+        working-directory: examples/agent-layer-mvp
+        run: mise run lint
+
   generate:
     runs-on: ubuntu-latest
     strategy:
@@ -18,22 +55,33 @@ jobs:
           - { type: software/python }
           - { type: software/node }
           - { type: software/java }
+          - { type: data/dbt }
           - { type: authoring/content }
+          - { type: ai/skills }
           - { type: ai/mcp, language: python }
+          - { type: ai/mcp, language: node }
+          - { type: infra/terraform }
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          version: "0.11.29"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24"
       # The java leaf runs spotless (google-java-format) in its pre-commit hook at
       # scaffold time, which needs a JDK matching the template's default java_version.
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
         with:
           distribution: temurin
-          java-version: "21"
+          java-version: "25"
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
+        with:
+          install: false
       - name: Install copier + pre-commit
-        run: uv tool install copier && uv tool install pre-commit
+        run: uv tool install copier==9.17.0 && uv tool install pre-commit==4.6.0
       - name: Generate a ${{ matrix.type }} project from the local checkout
         env:
           BOOTSTRAP_TEMPLATE_SRC: ${{ github.workspace }}
@@ -44,10 +92,25 @@ jobs:
           git config --global user.email "ci@example.com"
           args=(--name ci-proj --type "$PROJECT_TYPE" --dest _out/ci-proj)
           [ -n "$LANGUAGE" ] && args+=(--language "$LANGUAGE")
-          skills/bootstrap-project/scripts/bootstrap.sh "${args[@]}"
+          args+=(include_agent_layer=true include_fnox=true)
+          if [ "$PROJECT_TYPE" = "infra/terraform" ]; then
+            mise exec terraform@1.15.8 tflint@0.63.1 -- \
+              skills/bootstrap-project/scripts/bootstrap.sh "${args[@]}"
+          else
+            skills/bootstrap-project/scripts/bootstrap.sh "${args[@]}"
+          fi
       - name: Assert one clean commit with the trailer
         working-directory: _out/ci-proj
         run: |
           test "$(git rev-list --all --count)" = "1"
           test -z "$(git status -s)"
           git log -1 --format='%b' | grep -q 'Co-Authored-By: Claude'
+          test -f apm.yml
+          test -f fnox.toml
+          test -f .apm/instructions/project.instructions.md
+          test ! -e .agents-toolkit
+          test ! -e scripts/agent-layer
+          grep -q '^\[tasks.agent-sync\]$' mise.toml
+          grep -q '^\[tasks.agent-check\]$' mise.toml
+          grep -q '^\[tasks.agent-claude\]$' mise.toml
+          grep -q '^\[tasks.agent-codex\]$' mise.toml

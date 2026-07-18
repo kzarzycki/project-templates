@@ -35,11 +35,11 @@ Durable, reusable lessons. Each entry is the gotcha + the fix, actionable cold.
 ## Java / Gradle / spotless
 
 - **Spotless runs google-java-format on the Gradle *daemon* JVM, not the compile
-  `toolchain`.** Pinning `toolchain { languageVersion = of(21) }` does not control
-  which JVM formats the code — that's `JAVA_HOME` / `org.gradle.java.home`.
-- **google-java-format 1.34.1 needs JDK ≥24 at runtime** (references
-  `com.sun.tools.javac.tree.JCTree$JCAnyPattern`); on an older daemon JVM it dies
-  with `NoClassDefFoundError`. Match the daemon JDK to a version the pinned
-  google-java-format supports (1.34.1 works on JDK 21+ for ordinary code), or pin
-  an older format version. Set up the JDK explicitly in CI rather than relying on
-  the runner default.
+  `toolchain`.** A Java 25 compile toolchain does not make a daemon started under
+  an older `JAVA_HOME` run on Java 25; `JAVA_HOME` or `org.gradle.java.home`
+  selects that runtime.
+- **Keep the daemon JDK aligned with google-java-format.** The current template
+  pins Java 25 and google-java-format 1.35.0, and mise and CI launch Gradle with
+  Java 25. An older ambient daemon can still fail before compilation with a
+  formatter linkage error, so set up the JDK explicitly rather than relying on
+  the runner or workstation default.

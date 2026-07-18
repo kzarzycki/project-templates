@@ -3,6 +3,10 @@
 .env.*
 !.env.example
 
+# Coding-agent generated/cache state
+apm_modules/
+fnox.local.toml
+
 # OS / editor
 .DS_Store
 *.swp

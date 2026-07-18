@@ -1,0 +1,11 @@
+# Synthetic demonstration values. Real secrets belong in provider references or
+# uncommitted local configuration; profile names should match the project.
+root = true
+env = "exec"
+if_missing = "error"
+
+[profiles.local.secrets]
+AGENT_LAYER_ENV = { default = "local" }
+
+[profiles.mcp-local.secrets]
+AGENT_LAYER_CANARY = { default = "local-profile-canary" }

@@ -28,10 +28,11 @@ Spec + Tech Design; this records only what implementation and live CI added.
   (base, all three lang mixins, a base-only leaf, the parametric mcp leaf).
 - `astral-sh/setup-uv` with `enable-cache: true` hard-fails in a repo with no
   `uv.lock`. Dropped caching (the template repo has no Python project of its own).
-- The java leaf's scaffold commit runs spotless (google-java-format) in a
-  pre-commit hook. The generate-job had no JDK set up, so it ran on the runner's
-  default JVM and google-java-format 1.34.1 crashed. Pinned JDK 21 (the template's
-  default `java_version`); 1.34.1 is verified to work there.
+- In PR #3, the java leaf's scaffold commit ran spotless (google-java-format) in
+  a pre-commit hook. The generate job had no JDK set up, so it ran on the runner's
+  default JVM and google-java-format 1.34.1 crashed. That PR pinned JDK 21, the
+  template default at the time. The current pins are JDK 25 and
+  google-java-format 1.35.0.
 
 ## Process
 
@@ -45,6 +46,7 @@ Spec + Tech Design; this records only what implementation and live CI added.
 
 - Decide whether the Decision Spec + Tech Design should be versioned under
   `docs/design/` rather than left as `.workflow/` tooling state.
-- End-user robustness for spotless relies on the pinned toolchain (mise + Gradle
-  `toolchain` = 21). A user committing with a mismatched ambient JDK can still hit
-  the google-java-format crash; not addressed beyond the pinned environment.
+- In PR #3, end-user robustness for spotless relied on mise and a Gradle Java 21
+  toolchain. A mismatched ambient daemon JDK could still trigger the formatter
+  crash; that describes the PR #3 implementation, not the template's current
+  JDK 25 and google-java-format 1.35.0 pins.
