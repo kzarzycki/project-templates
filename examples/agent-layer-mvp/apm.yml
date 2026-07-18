@@ -2,6 +2,8 @@ name: agent-layer-mvp
 version: 0.1.0
 description: Example of one project-owned coding agent configuration compiled for Claude Code and Codex.
 author: CI
+# Add each coding agent's APM mapping here. Claude Code and Codex are the
+# currently implemented and acceptance-tested integrations.
 targets:
 - claude
 - codex

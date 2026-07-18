@@ -3,7 +3,7 @@
 .env.*
 !.env.example
 
-# Agent layer generated/cache state
+# Coding-agent generated/cache state
 apm_modules/
 fnox.local.toml
 

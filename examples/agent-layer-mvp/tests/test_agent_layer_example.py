@@ -235,6 +235,7 @@ class AgentLayerExampleTest(unittest.TestCase):
         instruction = (ROOT / ".apm/instructions/project.instructions.md").read_text()
         mise = (ROOT / "mise.toml").read_text()
         workflow = (ROOT / ".github/workflows/ci.yml").read_text()
+        gitignore = (ROOT / ".gitignore").read_text()
         pyproject = (ROOT / "pyproject.toml").read_text()
         readme_flat = " ".join(readme.split())
 
@@ -246,7 +247,9 @@ class AgentLayerExampleTest(unittest.TestCase):
         self.assertIn("Demonstration-only MCP acceptance fixture", manifest)
         self.assertIn("Demonstration-only instruction", instruction)
         self.assertIn("Example-owned profile selection", mise)
-        self.assertIn("Example-specific agent-layer acceptance commands", workflow)
+        self.assertIn("Example-specific coding-agent acceptance commands", workflow)
+        self.assertIn("# Coding-agent generated/cache state", gitignore)
+        self.assertNotIn("# Agent layer generated/cache state", gitignore)
         self.assertIn("Demonstration MCP dependency", pyproject)
 
 

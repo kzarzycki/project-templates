@@ -110,12 +110,24 @@ class AgentLayerGenerationTest(unittest.TestCase):
 
     def test_agent_task_extension_seams_are_local_and_apm_selects_targets(self) -> None:
         apm = (ROOT / "templates/_base/_apm_yml.part").read_text()
+        example_apm = (ROOT / "examples/agent-layer-mvp/apm.yml").read_text()
         tasks = (ROOT / "templates/_base/_mise_agent_tasks.part").read_text()
+        mapping_comment = (
+            "# Add each coding agent's APM mapping here. Claude Code and Codex are the\n"
+            "# currently implemented and acceptance-tested integrations."
+        )
 
-        self.assertIn("Add each coding agent's APM mapping here", apm)
+        self.assertIn(mapping_comment, apm)
+        self.assertIn(mapping_comment, example_apm)
         self.assertIn("native-output validation", tasks)
         self.assertIn("stable CLI", tasks)
         self.assertNotIn("--target claude,codex", tasks)
+
+    def test_generated_state_comment_uses_coding_agent_term(self) -> None:
+        gitignore = (ROOT / "templates/_base/_gitignore.part").read_text()
+
+        self.assertIn("# Coding-agent generated/cache state", gitignore)
+        self.assertNotIn("# Agent layer generated/cache state", gitignore)
 
     def test_ci_covers_every_leaf_and_agent_layer_contract(self) -> None:
         workflow = (ROOT / ".github/workflows/ci.yml").read_text()
