@@ -11,16 +11,35 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class BootstrapLocalSourceTest(unittest.TestCase):
+    def test_skill_and_wrapper_advertise_every_copier_project_type(self) -> None:
+        copier = (ROOT / "copier.yml").read_text()
+        skill = (ROOT / "skills/bootstrap-project/SKILL.md").read_text()
+        wrapper = (ROOT / "skills/bootstrap-project/scripts/bootstrap.sh").read_text()
+        project_types = (
+            "software/python",
+            "software/node",
+            "software/java",
+            "data/dbt",
+            "authoring/content",
+            "ai/skills",
+            "ai/mcp",
+            "infra/terraform",
+        )
+
+        for project_type in project_types:
+            self.assertIn(project_type, copier)
+            self.assertIn(project_type, skill)
+            self.assertIn(project_type, wrapper)
+        self.assertIn("terraform_version", skill)
+        self.assertIn("terraform_version", wrapper)
+
     def test_local_source_uses_current_head(self) -> None:
         scratch = Path(tempfile.mkdtemp(prefix="bootstrap-source-test-"))
         fake_bin = scratch / "bin"
         fake_bin.mkdir()
         argument_log = scratch / "arguments.txt"
         copier = fake_bin / "copier"
-        copier.write_text(
-            "#!/bin/sh\n"
-            'printf "%s\\n" "$@" > "$COPIER_ARGUMENT_LOG"\n'
-        )
+        copier.write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$COPIER_ARGUMENT_LOG"\n')
         copier.chmod(0o755)
         env = os.environ.copy()
         env.update(

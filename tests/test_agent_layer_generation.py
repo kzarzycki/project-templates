@@ -108,6 +108,21 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertIn("coding agent instructions", instruction)
         self.assertNotIn("shared by Claude Code and Codex", instruction)
 
+    def test_update_docs_state_legacy_agent_answers_are_breaking(self) -> None:
+        readme = (ROOT / "README.md").read_text()
+        readme_flat = " ".join(readme.split())
+
+        self.assertNotIn("copier update --trust", readme)
+        for answer in (
+            "shared_apm",
+            "toolkit_stack",
+            "include_agent_layer",
+            "include_fnox",
+        ):
+            self.assertIn(answer, readme)
+        self.assertIn("not automatically compatible", readme_flat)
+        self.assertIn("resolve or replace old coding agent files", readme_flat)
+
     def test_agent_task_extension_seams_are_local_and_apm_selects_targets(self) -> None:
         apm = (ROOT / "templates/_base/_apm_yml.part").read_text()
         example_apm = (ROOT / "examples/agent-layer-mvp/apm.yml").read_text()
@@ -156,6 +171,18 @@ class AgentLayerGenerationTest(unittest.TestCase):
             "mise exec terraform@1.15.8 tflint@0.63.1 --",
             workflow,
         )
+        self.assertIn("verify:", workflow)
+        for command in (
+            "python3 -m unittest",
+            "tests.test_agent_layer_generation",
+            "tests.test_agent_mise_tasks",
+            "tests.test_bootstrap_local_source",
+            "tests.test_version_contract",
+            "working-directory: examples/agent-layer-mvp",
+            "mise run agent-check",
+            "mise run test",
+        ):
+            self.assertIn(command, workflow)
 
     def test_enabled_layer_generates_framework_without_project_policy(self) -> None:
         project = render(
@@ -242,6 +269,25 @@ class AgentLayerGenerationTest(unittest.TestCase):
 
         mise = tomllib.loads((project / "mise.toml").read_text())
         self.assertEqual("3.14", mise["tools"].get("python"))
+
+    def test_task_descriptions_do_not_claim_fnox_when_it_is_disabled(self) -> None:
+        project = render(
+            include_mise=True,
+            include_agent_layer=True,
+            include_fnox=False,
+        )
+
+        tasks = tomllib.loads((project / "mise.toml").read_text())["tasks"]
+        self.assertEqual(
+            "Validate APM sources and generated coding agent files.",
+            tasks["agent-check"]["description"],
+        )
+        self.assertEqual("Launch Claude Code.", tasks["agent-claude"]["description"])
+        self.assertEqual("Launch Codex.", tasks["agent-codex"]["description"])
+        for task in ("agent-check", "agent-claude", "agent-codex"):
+            description = tasks[task]["description"].lower()
+            self.assertNotIn("fnox", description)
+            self.assertNotIn("machine bindings", description)
 
     def test_agent_layer_is_disabled_without_mise(self) -> None:
         project = render(

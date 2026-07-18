@@ -24,7 +24,11 @@ apm compile
 """
 
 [tasks.agent-check]
+{% if include_fnox -%}
 description = "Validate APM sources, generated coding agent files, and fnox declarations."
+{% else -%}
+description = "Validate APM sources and generated coding agent files."
+{% endif -%}
 run = """
 command -v apm >/dev/null || { echo "error: apm {{ apm_version }} is required; run 'mise install'" >&2; exit 127; }
 command -v python3 >/dev/null || { echo "error: python3 is required; run 'mise install'" >&2; exit 127; }
@@ -44,7 +48,11 @@ fnox check --all --non-interactive --if-missing error
 # Launcher tasks are coding-agent-specific. Add one only when the coding agent
 # has a stable CLI.
 [tasks.agent-claude]
+{% if include_fnox -%}
 description = "Launch Claude Code with this repository's machine bindings."
+{% else -%}
+description = "Launch Claude Code."
+{% endif -%}
 run = """
 {% if include_fnox -%}
 command -v fnox >/dev/null || { echo "error: fnox 1.30.0 is required; run 'mise install'" >&2; exit 127; }
@@ -58,7 +66,11 @@ claude
 """
 
 [tasks.agent-codex]
+{% if include_fnox -%}
 description = "Launch Codex with this repository's machine bindings."
+{% else -%}
+description = "Launch Codex."
+{% endif -%}
 run = """
 {% if include_fnox -%}
 command -v fnox >/dev/null || { echo "error: fnox 1.30.0 is required; run 'mise install'" >&2; exit 127; }

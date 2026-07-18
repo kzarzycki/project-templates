@@ -59,7 +59,7 @@ uv sync
 uv run pytest
 fnox exec --profile mcp-local --no-defaults --non-interactive \
   --if-missing error -- python3 scripts/mcp_canary.py --probe
-env -u GITHUB_TOKEN scripts/check_native_auth.sh
+env -u GITHUB_TOKEN -u GH_TOKEN scripts/check_native_auth.sh
 ```
 
 MIT © 2026 CI

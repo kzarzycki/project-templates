@@ -92,6 +92,7 @@ class AgentLayerExampleTest(unittest.TestCase):
         gh.chmod(0o755)
         env = os.environ.copy()
         env.pop("GITHUB_TOKEN", None)
+        env.pop("GH_TOKEN", None)
         env.update(
             {
                 "GH_COMMAND_LOG": str(log),
@@ -111,6 +112,10 @@ class AgentLayerExampleTest(unittest.TestCase):
         self.assertEqual(["auth status"], log.read_text().splitlines())
         self.assertEqual("", result.stdout)
         self.assertEqual("", result.stderr)
+        self.assertIn(
+            "env -u GITHUB_TOKEN -u GH_TOKEN scripts/check_native_auth.sh",
+            (ROOT / "README.md").read_text(),
+        )
 
     def test_native_auth_rejects_environment_tokens(self) -> None:
         for variable in ("GITHUB_TOKEN", "GH_TOKEN"):

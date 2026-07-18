@@ -84,11 +84,14 @@ non-interactively.
 
 ## Update an existing project
 
-When the template improves, pull it into a project generated from it:
+This template is alpha, and coding-agent updates can be breaking. Projects with
+legacy `shared_apm` or `toolkit_stack` answers are not automatically compatible.
+Before running Copier update, choose explicit `include_agent_layer` and
+`include_fnox` values, then resolve or replace old coding agent files that
+conflict with the new scaffold.
 
-```bash
-cd my-tool && copier update --trust
-```
+Review the resulting diff before accepting it. The template does not include a
+migration layer for legacy coding-agent configuration.
 
 ## Adopt an existing (pre-template) repo
 
@@ -100,7 +103,6 @@ prompting on any file that already exists:
 cd existing-repo
 copier copy --trust --data project_type=software/python gh:your-org/project-templates .
 git add -p && git commit          # keep what you want from the prompted merge
-copier update --trust             # from here on, pull template improvements
 ```
 
 Governance files (hooks, CI, `.editorconfig`, ADR, CODEOWNERS) land clean;
