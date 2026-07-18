@@ -3,7 +3,7 @@
 _commit: HEAD
 _src_path: ../..
 author: CI
-description: Example of one project-owned agent configuration compiled for Claude Code and Codex.
+description: Example of one project-owned coding agent configuration compiled for Claude Code and Codex.
 email: ci@example.com
 include_agent_layer: true
 include_fnox: true

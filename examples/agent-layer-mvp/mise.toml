@@ -5,35 +5,38 @@ pre-commit = "4.6.0"
 "github:microsoft/apm" = "0.25.0"
 fnox = "1.30.0"
 
-# Example-owned profile selection below exercises separate agent and MCP process
-# scopes. The profile names and `--no-defaults` choice are not template policy.
+# Example-owned profile selection below exercises separate coding agent and MCP
+# process scopes. The profile names and `--no-defaults` choice are not template policy.
 
 [tasks.agent-sync]
-description = "Install locked APM dependencies and compile Claude Code and Codex configuration."
+description = "Install locked APM dependencies and compile coding agent configuration."
 run = """
 command -v apm >/dev/null || { echo "error: apm 0.25.0 is required; run 'mise install'" >&2; exit 127; }
 if [ -f apm.lock.yaml ]; then
-  apm install --frozen --target claude,codex
+  apm install --frozen
 else
-  apm install --target claude,codex
+  apm install
 fi
-apm compile --target claude,codex
+apm compile
 """
 
 [tasks.agent-check]
-description = "Validate APM sources, generated files, and fnox declarations."
+description = "Validate APM sources, generated coding agent files, and fnox declarations."
 run = """
 command -v apm >/dev/null || { echo "error: apm 0.25.0 is required; run 'mise install'" >&2; exit 127; }
 command -v python3 >/dev/null || { echo "error: python3 is required; run 'mise install'" >&2; exit 127; }
 command -v fnox >/dev/null || { echo "error: fnox 1.30.0 is required; run 'mise install'" >&2; exit 127; }
-apm compile --validate --target claude,codex
+apm compile --validate
 apm audit --ci --no-policy
+# Add native-output validation for every implemented coding agent here.
 if [ -f .mcp.json ]; then python3 -m json.tool .mcp.json >/dev/null; fi
 if [ -f .codex/config.toml ]; then python3 -c 'import tomllib; tomllib.load(open(".codex/config.toml", "rb"))'; fi
 fnox check --profile local --no-defaults --all --non-interactive --if-missing error
 fnox check --profile mcp-local --no-defaults --all --non-interactive --if-missing error
 """
 
+# Launcher tasks are coding-agent-specific. Add one only when the coding agent
+# has a stable CLI.
 [tasks.agent-claude]
 description = "Launch Claude Code with this repository's machine bindings."
 run = """

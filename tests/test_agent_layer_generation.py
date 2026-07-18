@@ -72,6 +72,51 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertNotIn("apm install", wrapper)
         self.assertNotIn("fnox check", wrapper)
 
+    def test_coding_agent_copy_describes_current_and_planned_integrations(self) -> None:
+        readme = (ROOT / "README.md").read_text()
+        copier = (ROOT / "copier.yml").read_text()
+        skill = (ROOT / "skills/bootstrap-project/SKILL.md").read_text()
+        instruction = (
+            ROOT / "templates/_base/_project_instructions.md.jinja"
+        ).read_text()
+        readme_flat = " ".join(readme.split())
+
+        self.assertIn(
+            "Claude Code and Codex are the only coding agents currently implemented "
+            "and acceptance-tested.",
+            readme_flat,
+        )
+        self.assertIn(
+            "GitHub Copilot and Cursor are planned integrations, not supported coding agents.",
+            readme_flat,
+        )
+        for extension_step in (
+            "APM mapping",
+            "native-output validation",
+            "stable CLI",
+            "acceptance fixture",
+            "product-specific setup docs",
+        ):
+            self.assertIn(extension_step, readme)
+
+        self.assertIn("coding agent configuration", copier)
+        self.assertNotIn(
+            "Add the APM source and mise tasks for Claude Code and Codex?",
+            copier,
+        )
+        self.assertIn("coding-agent integration", skill)
+        self.assertIn("coding agent instructions", instruction)
+        self.assertNotIn("shared by Claude Code and Codex", instruction)
+
+    def test_agent_task_extension_seams_are_local_and_apm_selects_targets(self) -> None:
+        apm = (ROOT / "templates/_base/_apm_yml.part").read_text()
+        tasks = (ROOT / "templates/_base/_mise_agent_tasks.part").read_text()
+
+        self.assertIn("Add each coding agent's APM mapping here", apm)
+        self.assertIn("native-output validation", tasks)
+        self.assertIn("stable CLI", tasks)
+        self.assertNotIn("--target claude,codex", tasks)
+
     def test_ci_covers_every_leaf_and_agent_layer_contract(self) -> None:
         workflow = (ROOT / ".github/workflows/ci.yml").read_text()
         for project_type in (

@@ -1,15 +1,15 @@
 ---
-description: Agent-layer MVP example behavior
+description: Coding-agent integration example behavior
 applyTo: "**"
 ---
 
 Demonstration-only instruction: the acceptance tests use this behavior. Project
-instructions should describe the project's actual agent behavior.
+instructions should describe the project's actual coding agent behavior.
 
 # agent-layer-mvp
 
-This repository demonstrates project-owned instructions, MCP configuration,
-machine bindings, and native CLI authentication for Claude Code and Codex.
+This repository demonstrates project-owned coding agent instructions, MCP
+configuration, machine bindings, and native CLI authentication.
 
-When asked to verify the agent layer, call the `agent-layer-canary` MCP server's
-`probe` tool and report its fixed marker.
+When asked to verify the coding-agent integration, call the `agent-layer-canary`
+MCP server's `probe` tool and report its fixed marker.

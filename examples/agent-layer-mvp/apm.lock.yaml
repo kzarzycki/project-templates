@@ -10,7 +10,7 @@ deployments:
   owners:
   - .
   active_owner: .
-  content_hash: sha256:5c656cad351fa4454f18c675d26a56142f121f3db357801028d13fadfbef8028
+  content_hash: sha256:a687c2e71f677b10ed4efdf2b18ff9e18b963194b0f33028e7e01794b4371217
 - kind: uri
   target: mcp
   value: agent-layer-canary
@@ -47,4 +47,4 @@ mcp_target_servers:
 local_deployed_files:
 - .claude/rules/project.md
 local_deployed_file_hashes:
-  .claude/rules/project.md: sha256:5c656cad351fa4454f18c675d26a56142f121f3db357801028d13fadfbef8028
+  .claude/rules/project.md: sha256:a687c2e71f677b10ed4efdf2b18ff9e18b963194b0f33028e7e01794b4371217

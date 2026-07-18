@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Demonstration-only MCP server used to test compiled agent configuration."""
+"""Demonstration-only MCP server used to test compiled coding agent configuration."""
 
 from __future__ import annotations
 

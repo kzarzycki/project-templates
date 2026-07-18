@@ -1,7 +1,7 @@
 # agent-layer-mvp
 
 This generated project shows the boundary between Copier scaffolding and
-project-owned agent configuration for Claude Code and Codex.
+project-owned coding agent configuration for Claude Code and Codex.
 
 Copier created `apm.yml`, `fnox.toml`, the `.apm/` instruction seed, and the
 `agent-*` tasks in `mise.toml`. This project then added its canary instruction,
@@ -39,7 +39,7 @@ mise run agent-codex
 `agent-sync` compiles the committed Claude and Codex files from `apm.yml` and
 `.apm/`. Both launch tasks resolve the `local` fnox profile in a fresh child
 process. The MCP command resolves the separate `mcp-local` profile, so
-`AGENT_LAYER_CANARY` is added to the MCP child and not the agent process.
+`AGENT_LAYER_CANARY` is added to the MCP child and not the coding agent process.
 Codex reads `.codex/config.toml` after this repository is trusted. The first
 interactive Codex session records that machine-local trust decision; an
 untrusted or unattended session ignores the project config.

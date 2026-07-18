@@ -36,10 +36,10 @@ copier copy --trust gh:your-org/project-templates my-tool \
 See `copier.yml` for every question. Post-generation (`_post_gen.sh`) runs git
 init, installs deps, installs hooks, and makes the first commit.
 
-## Repository agent layer
+## Coding-agent integration
 
 With `include_mise=true` and `include_agent_layer=true` (both defaults), every
-project gets APM sources targeting Claude Code and Codex plus four mise tasks:
+project gets project-owned coding agent configuration and four mise tasks:
 
 ```bash
 mise install
@@ -49,18 +49,32 @@ mise run agent-claude
 mise run agent-codex
 ```
 
-The template supplies the compiler contract and task names. Instructions,
-skills, concrete MCP servers, CLI dependencies, endpoints, and agent-specific
-additions are project-owned. `include_fnox=true` adds an empty `fnox.toml` for
-machine bindings; the project chooses its profiles and providers. Native CLI
-credentials such as `gh auth login` remain in the CLI credential store.
+`apm.yml` is the single source of configured APM targets. Claude Code and Codex
+are the only coding agents currently implemented and acceptance-tested. GitHub
+Copilot and Cursor are planned integrations, not supported coding agents.
 
-Copier does not install APM or fnox, contact a secret provider, compile agent
-files, or launch an agent. `mise install` installs the pinned tools after
-generation. Use `include_agent_layer=false` to omit the layer or
-`include_fnox=false` to keep APM and the launch tasks without fnox wrapping.
-Codex loads the generated `.codex/config.toml` only after the repository is
-trusted; the trust decision is machine state and is not committed to the repo.
+To add another coding-agent integration:
+
+1. Add its APM mapping to `apm.yml`.
+2. Add native-output validation for its generated files.
+3. Add an optional launcher only when the product has a stable CLI.
+4. Add an acceptance fixture for the compiled configuration.
+5. Add product-specific setup docs.
+
+The template supplies the compiler contract and task names. Instructions,
+skills, concrete MCP servers, CLI dependencies, endpoints, and coding-agent-specific
+additions are project-owned. `include_fnox=true` adds an empty
+`fnox.toml` for machine bindings; the project chooses its profiles and providers.
+Native CLI credentials such as `gh auth login` remain in the CLI credential
+store.
+
+Copier does not install APM or fnox, contact a secret provider, compile coding
+agent configuration, or launch a coding agent. `mise install` installs the
+pinned tools after generation. Use `include_agent_layer=false` to omit the
+coding-agent integration or `include_fnox=false` to keep APM and the launch tasks
+without fnox wrapping. Codex loads the generated `.codex/config.toml` only after
+the repository is trusted; the trust decision is machine state and is not
+committed to the repo.
 
 ## Use it via Claude
 

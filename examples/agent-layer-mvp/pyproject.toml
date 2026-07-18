@@ -1,7 +1,7 @@
 [project]
 name = "agent-layer-mvp"
 version = "0.1.0"
-description = "Example of one project-owned agent configuration compiled for Claude Code and Codex."
+description = "Example of one project-owned coding agent configuration compiled for Claude Code and Codex."
 readme = "README.md"
 requires-python = ">=3.14"
 license = "MIT"

@@ -59,7 +59,7 @@ include_agent_layer:
   type: bool
   default: true
   when: "{{ include_mise }}"
-  help: Add the APM source and mise tasks for Claude Code and Codex?
+  help: Add project-owned coding agent configuration and mise tasks?
 
 include_fnox:
   type: bool

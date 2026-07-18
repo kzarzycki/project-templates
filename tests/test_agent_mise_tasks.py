@@ -67,8 +67,8 @@ class AgentMiseTasksTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(
             [
-                f"{self.bin}/apm install --target claude,codex",
-                f"{self.bin}/apm compile --target claude,codex",
+                f"{self.bin}/apm install",
+                f"{self.bin}/apm compile",
             ],
             self.commands(),
         )
@@ -91,7 +91,7 @@ class AgentMiseTasksTest(unittest.TestCase):
 
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(
-            f"{self.bin}/apm install --frozen --target claude,codex",
+            f"{self.bin}/apm install --frozen",
             self.commands()[0],
         )
 
@@ -111,7 +111,7 @@ class AgentMiseTasksTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(
             [
-                f"{self.bin}/apm compile --validate --target claude,codex",
+                f"{self.bin}/apm compile --validate",
                 f"{self.bin}/apm audit --ci --no-policy",
                 f"{self.bin}/fnox check --all --non-interactive --if-missing error",
             ],

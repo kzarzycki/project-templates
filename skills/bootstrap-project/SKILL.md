@@ -50,7 +50,7 @@ script.
 3. **Infer optionals from context — don't interrogate.** `description`,
    `license` (default MIT), `include_mise` (default true),
    `include_agent_layer` (default true with mise), `include_fnox` (default true
-   with the agent layer), and the runtime version
+   with the coding-agent integration), and the runtime version
    (`python_version`/`node_version`/`java_version`) default sensibly — see the
    root `copier.yml` for the full question set. Pass an optional only when the
    user clearly wants it (e.g. "Apache licensed" → `license=Apache-2.0`).
@@ -69,10 +69,12 @@ script.
 5. **Relay the result** — the generated path and what was created. Don't dump
    file contents.
 
-## Generated agent layer
+## Generated coding-agent integration
 
-The default scaffold includes project-owned APM sources for Claude Code and
-Codex, an empty fnox machine-binding contract, and these commands:
+The default scaffold includes project-owned coding agent configuration for
+Claude Code and Codex, the only currently implemented and acceptance-tested
+coding agents. It also includes an empty fnox machine-binding contract and these
+commands:
 
 ```bash
 mise install
@@ -83,16 +85,17 @@ mise run agent-codex
 ```
 
 The bootstrap wrapper only renders the files. It does not install APM or fnox,
-resolve a provider, compile target files, or launch an agent. The generated
-project owns its instructions, skills, MCP definitions, endpoints, fnox
-profiles/providers, CLI dependencies, and target-specific additions. Native CLI
-authentication stays native; a working `gh auth login` does not need a copied
-token.
+resolve a provider, compile coding agent files, or launch a coding agent. The
+generated project owns its instructions, skills, MCP definitions, endpoints,
+fnox profiles/providers, CLI dependencies, and coding-agent-specific additions.
+Native CLI authentication stays native; a working `gh auth login` does not need a
+copied token.
 
-Set `include_agent_layer=false` to omit APM and all four commands. Set
-`include_fnox=false` to retain APM and the commands without fnox configuration
-or wrapping. Codex loads `.codex/config.toml` only for a trusted repository;
-that trust decision belongs to the developer's machine, not the scaffold.
+Set `include_agent_layer=false` to omit the coding-agent integration and all four
+commands. Set `include_fnox=false` to retain APM and the commands without fnox
+configuration or wrapping. Codex loads `.codex/config.toml` only for a trusted
+repository; that trust decision belongs to the developer's machine, not the
+scaffold.
 
 ## Notes
 
