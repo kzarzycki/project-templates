@@ -8,17 +8,17 @@ targets:
 - claude
 - codex
 dependencies:
-{% if include_engineering_workflow -%}
+{% if include_engineering_workflow %}
   apm:
-{% if engineering_capability_ref -%}
+{% if engineering_capability_ref %}
     - git: {{ engineering_capability_source }}
       ref: {{ engineering_capability_ref }}
-{% else -%}
+{% else %}
     - {{ engineering_capability_source }}
-{% endif -%}
-{% else -%}
+{% endif %}
+{% else %}
   apm: []
-{% endif -%}
+{% endif %}
   mcp: []
 includes: auto
 scripts: {}

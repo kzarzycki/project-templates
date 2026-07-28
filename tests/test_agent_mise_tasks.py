@@ -16,12 +16,20 @@ assert MISE is not None
 
 def fake_executable(directory: Path, name: str) -> None:
     path = directory / name
-    path.write_text(
+    script = (
         "#!/bin/sh\n"
         'printf "%s" "$0" >> "$COMMAND_LOG"\n'
         'printf " %s" "$@" >> "$COMMAND_LOG"\n'
         'printf "\\n" >> "$COMMAND_LOG"\n'
     )
+    if name == "apm":
+        script += (
+            'if [ "${1:-}" = "compile" ] && '
+            '[ -n "${FAKE_APM_COMPILED_PATH:-}" ]; then\n'
+            '  printf "changed by compile\\n" > "$FAKE_APM_COMPILED_PATH"\n'
+            "fi\n"
+        )
+    path.write_text(script)
     path.chmod(0o755)
 
 
@@ -59,9 +67,30 @@ class AgentMiseTasksTest(unittest.TestCase):
         )
 
     def commands(self) -> list[str]:
+        if not self.log.exists():
+            return []
         return self.log.read_text().splitlines()
 
-    def test_sync_uses_unfrozen_install_before_first_lock(self) -> None:
+    def initialize_git(self) -> None:
+        subprocess.run(["git", "init", "-q"], cwd=self.project, check=True)
+        subprocess.run(["git", "add", "."], cwd=self.project, check=True)
+        subprocess.run(
+            [
+                "git",
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.com",
+                "commit",
+                "--no-verify",
+                "-qm",
+                "fixture",
+            ],
+            cwd=self.project,
+            check=True,
+        )
+
+    def test_sync_default_converges_and_validates(self) -> None:
         result = self.run_task("agent-sync")
 
         self.assertEqual(0, result.returncode, result.stderr)
@@ -69,6 +98,9 @@ class AgentMiseTasksTest(unittest.TestCase):
             [
                 f"{self.bin}/apm install",
                 f"{self.bin}/apm compile",
+                f"{self.bin}/apm compile --validate",
+                f"{self.bin}/apm audit --ci --no-policy",
+                f"{self.bin}/fnox check --all --non-interactive --if-missing error",
             ],
             self.commands(),
         )
@@ -80,20 +112,66 @@ class AgentMiseTasksTest(unittest.TestCase):
 
         self.assertEqual(127, result.returncode)
         self.assertIn(
-            "error: apm 0.25.0 is required; run 'mise install'",
+            "error: apm 0.26.0 is required; run 'mise install'",
             result.stderr,
         )
 
-    def test_sync_uses_frozen_install_when_lock_exists(self) -> None:
-        (self.project / "apm.lock.yaml").touch()
+    def test_sync_refresh_re_resolves_before_convergence(self) -> None:
+        result = self.run_task("agent-sync", "--refresh")
 
-        result = self.run_task("agent-sync")
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(f"{self.bin}/apm install --refresh", self.commands()[0])
+
+    def test_sync_frozen_checks_integrity_before_and_after_compile(self) -> None:
+        (self.project / "apm.lock.yaml").touch()
+        self.initialize_git()
+
+        result = self.run_task("agent-sync", "--frozen")
 
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(
-            f"{self.bin}/apm install --frozen",
-            self.commands()[0],
+            [
+                f"{self.bin}/apm install --frozen",
+                f"{self.bin}/apm audit --ci --no-policy",
+                f"{self.bin}/apm compile",
+                f"{self.bin}/apm compile --validate",
+                f"{self.bin}/apm audit --ci --no-policy",
+                f"{self.bin}/fnox check --all --non-interactive --if-missing error",
+            ],
+            self.commands(),
         )
+
+    def test_sync_frozen_rejects_compilation_changes(self) -> None:
+        (self.project / "apm.lock.yaml").touch()
+        compiled = self.project / ".claude/rules/project.md"
+        compiled.parent.mkdir(parents=True)
+        compiled.write_text('model = "before"\n')
+        self.initialize_git()
+        self.env["FAKE_APM_COMPILED_PATH"] = str(compiled)
+
+        result = self.run_task("agent-sync", "--frozen")
+
+        self.assertEqual(1, result.returncode)
+        self.assertIn("frozen agent configuration changed", result.stderr)
+        self.assertIn(".claude/rules/project.md", result.stderr)
+
+    def test_sync_rejects_unknown_or_combined_modes_without_running_apm(self) -> None:
+        for arguments in (("--unknown",), ("--refresh", "--frozen")):
+            with self.subTest(arguments=arguments):
+                if self.log.exists():
+                    self.log.unlink()
+
+                result = self.run_task("agent-sync", *arguments)
+
+                self.assertNotEqual(0, result.returncode)
+                if arguments == ("--unknown",):
+                    self.assertIn("unexpected word: --unknown", result.stderr)
+                else:
+                    self.assertIn(
+                        "error: --refresh and --frozen cannot be combined",
+                        result.stderr,
+                    )
+                self.assertEqual([], self.commands())
 
     def test_launch_forwards_arguments_through_fnox(self) -> None:
         result = self.run_task("agent-claude", "--model", "test-model")
@@ -103,19 +181,6 @@ class AgentMiseTasksTest(unittest.TestCase):
             f"{self.bin}/fnox exec --non-interactive --if-missing error -- "
             "claude --model test-model",
             self.commands()[0],
-        )
-
-    def test_check_calls_qualified_apm_and_fnox_commands(self) -> None:
-        result = self.run_task("agent-check")
-
-        self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual(
-            [
-                f"{self.bin}/apm compile --validate",
-                f"{self.bin}/apm audit --ci --no-policy",
-                f"{self.bin}/fnox check --all --non-interactive --if-missing error",
-            ],
-            self.commands(),
         )
 
     def test_launch_without_fnox_calls_agent_directly(self) -> None:

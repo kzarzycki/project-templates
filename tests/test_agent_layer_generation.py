@@ -7,6 +7,8 @@ import tomllib
 import unittest
 from pathlib import Path
 
+import yaml
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -207,18 +209,25 @@ class AgentLayerGenerationTest(unittest.TestCase):
         apm = (project / "apm.yml").read_text()
         self.assertIn("- claude", apm)
         self.assertIn("- codex", apm)
-        self.assertIn("apm: []", apm)
+        self.assertEqual(
+            [
+                {
+                    "git": "kzarzycki/agent-skills/engineering",
+                    "ref": "engineering-v0.2.0",
+                }
+            ],
+            yaml.safe_load(apm)["dependencies"]["apm"],
+        )
         self.assertIn("mcp: []", apm)
 
         mise = tomllib.loads((project / "mise.toml").read_text())
-        self.assertEqual("0.25.0", mise["tools"].get("github:microsoft/apm"))
+        self.assertEqual("0.26.0", mise["tools"].get("github:microsoft/apm"))
         self.assertEqual("1.30.0", mise["tools"]["fnox"])
         self.assertEqual(
-            {"agent-sync", "agent-check", "agent-claude", "agent-codex"},
+            {"agent-sync", "agent-claude", "agent-codex"},
             set(mise["tasks"])
             & {
                 "agent-sync",
-                "agent-check",
                 "agent-claude",
                 "agent-codex",
             },
@@ -236,7 +245,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, rendered)
         for remediation in (
-            "error: apm 0.25.0 is required; run 'mise install'",
+            "error: apm 0.26.0 is required; run 'mise install'",
             "error: fnox 1.30.0 is required; run 'mise install'",
             "error: python3 is required; run 'mise install'",
             "error: claude is required; install Claude Code and add 'claude' to PATH",
@@ -276,8 +285,8 @@ class AgentLayerGenerationTest(unittest.TestCase):
     def test_apm_version_has_one_template_source(self) -> None:
         partial = (ROOT / "templates/_base/_mise_agent_tasks.part").read_text()
 
-        self.assertIn('{% set apm_version = "0.25.0" %}', partial)
-        self.assertEqual(1, partial.count("0.25.0"))
+        self.assertIn('{% set apm_version = "0.26.0" %}', partial)
+        self.assertEqual(1, partial.count("0.26.0"))
 
     def test_disabled_layer_leaves_no_agent_framework(self) -> None:
         project = render(include_mise=True, include_agent_layer=False)
@@ -308,12 +317,12 @@ class AgentLayerGenerationTest(unittest.TestCase):
 
         tasks = tomllib.loads((project / "mise.toml").read_text())["tasks"]
         self.assertEqual(
-            "Validate APM sources and generated coding agent files.",
-            tasks["agent-check"]["description"],
+            "Converge project-owned coding agent configuration.",
+            tasks["agent-sync"]["description"],
         )
         self.assertEqual("Launch Claude Code.", tasks["agent-claude"]["description"])
         self.assertEqual("Launch Codex.", tasks["agent-codex"]["description"])
-        for task in ("agent-check", "agent-claude", "agent-codex"):
+        for task in ("agent-claude", "agent-codex"):
             description = tasks[task]["description"].lower()
             self.assertNotIn("fnox", description)
             self.assertNotIn("machine bindings", description)

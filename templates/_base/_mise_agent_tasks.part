@@ -3,7 +3,7 @@
 python = "3.14"
 {% endif -%}
 {% if include_agent_layer -%}
-{% set apm_version = "0.25.0" %}
+{% set apm_version = "0.26.0" %}
 "github:microsoft/apm" = "{{ apm_version }}"
 {% endif -%}
 {% if include_agent_layer and include_fnox -%}
@@ -12,29 +12,33 @@ fnox = "1.30.0"
 {% if include_agent_layer %}
 
 [tasks.agent-sync]
-description = "Install locked APM dependencies and compile coding agent configuration."
+description = "Converge project-owned coding agent configuration."
+usage = '''
+flag "--refresh" help="Resolve available dependency releases before convergence"
+flag "--frozen" help="Verify the committed lock and generated coding agent state"
+'''
 run = """
-command -v apm >/dev/null || { echo "error: apm {{ apm_version }} is required; run 'mise install'" >&2; exit 127; }
-if [ -f apm.lock.yaml ]; then
-  apm install --frozen
-else
-  apm install
+if [ "${usage_refresh:-false}" = true ] && [ "${usage_frozen:-false}" = true ]; then
+  echo "error: --refresh and --frozen cannot be combined" >&2
+  exit 2
 fi
-apm compile
-"""
-
-[tasks.agent-check]
-{% if include_fnox -%}
-description = "Validate APM sources, generated coding agent files, and fnox declarations."
-{% else -%}
-description = "Validate APM sources and generated coding agent files."
-{% endif -%}
-run = """
+mode=default
+if [ "${usage_refresh:-false}" = true ]; then mode=refresh; fi
+if [ "${usage_frozen:-false}" = true ]; then mode=frozen; fi
 command -v apm >/dev/null || { echo "error: apm {{ apm_version }} is required; run 'mise install'" >&2; exit 127; }
 command -v python3 >/dev/null || { echo "error: python3 is required; run 'mise install'" >&2; exit 127; }
 {% if include_fnox -%}
 command -v fnox >/dev/null || { echo "error: fnox 1.30.0 is required; run 'mise install'" >&2; exit 127; }
 {% endif -%}
+case "$mode" in
+  default) apm install ;;
+  refresh) apm install --refresh ;;
+  frozen)
+    apm install --frozen
+    apm audit --ci --no-policy
+    ;;
+esac
+apm compile
 apm compile --validate
 apm audit --ci --no-policy
 # Add native-output validation for every implemented coding agent here.
@@ -43,6 +47,16 @@ if [ -f .codex/config.toml ]; then python3 -c 'import tomllib; tomllib.load(open
 {% if include_fnox -%}
 fnox check --all --non-interactive --if-missing error
 {% endif -%}
+if [ "$mode" = frozen ]; then
+  frozen_changes="$(git status --porcelain=v1 --untracked-files=all -- \
+    apm.lock.yaml AGENTS.md CLAUDE.md .agents .claude .codex .github/instructions)"
+  if [ -n "$frozen_changes" ]; then
+    echo "error: frozen agent configuration changed:" >&2
+    echo "$frozen_changes" >&2
+    echo "run 'mise run agent-sync' and commit the resulting agent configuration" >&2
+    exit 1
+  fi
+fi
 """
 
 # Launcher tasks are coding-agent-specific. Add one only when the coding agent
