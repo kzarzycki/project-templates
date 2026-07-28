@@ -244,6 +244,35 @@ class AgentLayerGenerationTest(unittest.TestCase):
         ):
             self.assertIn(remediation, (project / "mise.toml").read_text())
 
+    def test_engineering_workflow_is_enabled_by_default(self) -> None:
+        project = render(
+            include_mise=True,
+            include_agent_layer=True,
+            include_fnox=False,
+        )
+
+        manifest = (project / "apm.yml").read_text()
+        answers = (project / ".copier-answers.yml").read_text()
+        self.assertEqual(1, manifest.count("git: kzarzycki/agent-skills/engineering"))
+        self.assertIn("ref: engineering-v0.2.0", manifest)
+        self.assertIn("include_engineering_workflow: true", answers)
+        self.assertNotIn("engineering_capability_source", answers)
+        self.assertNotIn("engineering_capability_ref", answers)
+
+    def test_engineering_workflow_can_be_disabled(self) -> None:
+        project = render(
+            include_mise=True,
+            include_agent_layer=True,
+            include_engineering_workflow=False,
+            include_fnox=False,
+        )
+
+        manifest = (project / "apm.yml").read_text()
+        answers = (project / ".copier-answers.yml").read_text()
+        self.assertIn("apm: []", manifest)
+        self.assertNotIn("agent-skills/engineering", manifest)
+        self.assertIn("include_engineering_workflow: false", answers)
+
     def test_apm_version_has_one_template_source(self) -> None:
         partial = (ROOT / "templates/_base/_mise_agent_tasks.part").read_text()
 
