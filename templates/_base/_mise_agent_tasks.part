@@ -33,6 +33,7 @@ command -v fnox >/dev/null || { echo "error: fnox 1.30.0 is required; run 'mise 
 if [ "$mode" = frozen ]; then
   frozen_changes="$(git status --porcelain=v1 --untracked-files=all -- \
     apm.yml apm.lock.yaml .apm AGENTS.md CLAUDE.md \
+    ':(glob)**/AGENTS.md' ':(glob)**/CLAUDE.md' \
     .agents .claude .codex .github/instructions)"
   if [ -n "$frozen_changes" ]; then
     echo "error: frozen agent configuration changed:" >&2
@@ -43,13 +44,13 @@ if [ "$mode" = frozen ]; then
 fi
 case "$mode" in
   default) apm install ;;
-  refresh) apm install --refresh ;;
+  refresh) apm update --yes ;;
   frozen)
     apm install --frozen
     apm audit --ci --no-policy
     ;;
 esac
-apm compile
+apm compile --clean
 apm compile --validate
 apm audit --ci --no-policy
 # Add native-output validation for every implemented coding agent here.
@@ -61,6 +62,7 @@ fnox check --all --non-interactive --if-missing error
 if [ "$mode" = frozen ]; then
   frozen_changes="$(git status --porcelain=v1 --untracked-files=all -- \
     apm.yml apm.lock.yaml .apm AGENTS.md CLAUDE.md \
+    ':(glob)**/AGENTS.md' ':(glob)**/CLAUDE.md' \
     .agents .claude .codex .github/instructions)"
   if [ -n "$frozen_changes" ]; then
     echo "error: frozen agent configuration changed:" >&2

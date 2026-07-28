@@ -28,6 +28,10 @@ def fake_executable(directory: Path, name: str) -> None:
             '[ -n "${FAKE_APM_COMPILED_PATH:-}" ]; then\n'
             '  printf "changed by compile\\n" > "$FAKE_APM_COMPILED_PATH"\n'
             "fi\n"
+            'if [ "${1:-}" = "compile" ] && '
+            '[ -n "${FAKE_APM_ORPHAN_PATH:-}" ]; then\n'
+            '  rm -f "$FAKE_APM_ORPHAN_PATH"\n'
+            "fi\n"
         )
     path.write_text(script)
     path.chmod(0o755)
@@ -97,7 +101,7 @@ class AgentMiseTasksTest(unittest.TestCase):
         self.assertEqual(
             [
                 f"{self.bin}/apm install",
-                f"{self.bin}/apm compile",
+                f"{self.bin}/apm compile --clean",
                 f"{self.bin}/apm compile --validate",
                 f"{self.bin}/apm audit --ci --no-policy",
                 f"{self.bin}/fnox check --all --non-interactive --if-missing error",
@@ -120,7 +124,7 @@ class AgentMiseTasksTest(unittest.TestCase):
         result = self.run_task("agent-sync", "--refresh")
 
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual(f"{self.bin}/apm install --refresh", self.commands()[0])
+        self.assertEqual(f"{self.bin}/apm update --yes", self.commands()[0])
 
     def test_sync_frozen_checks_integrity_before_and_after_compile(self) -> None:
         (self.project / "apm.lock.yaml").touch()
@@ -133,7 +137,7 @@ class AgentMiseTasksTest(unittest.TestCase):
             [
                 f"{self.bin}/apm install --frozen",
                 f"{self.bin}/apm audit --ci --no-policy",
-                f"{self.bin}/apm compile",
+                f"{self.bin}/apm compile --clean",
                 f"{self.bin}/apm compile --validate",
                 f"{self.bin}/apm audit --ci --no-policy",
                 f"{self.bin}/fnox check --all --non-interactive --if-missing error",
@@ -143,8 +147,8 @@ class AgentMiseTasksTest(unittest.TestCase):
 
     def test_sync_frozen_rejects_compilation_changes(self) -> None:
         (self.project / "apm.lock.yaml").touch()
-        compiled = self.project / ".claude/rules/project.md"
-        compiled.parent.mkdir(parents=True)
+        compiled = self.project / "src/AGENTS.md"
+        compiled.parent.mkdir(parents=True, exist_ok=True)
         compiled.write_text('model = "before"\n')
         self.initialize_git()
         self.env["FAKE_APM_COMPILED_PATH"] = str(compiled)
@@ -153,7 +157,21 @@ class AgentMiseTasksTest(unittest.TestCase):
 
         self.assertEqual(1, result.returncode)
         self.assertIn("frozen agent configuration changed", result.stderr)
-        self.assertIn(".claude/rules/project.md", result.stderr)
+        self.assertIn("src/AGENTS.md", result.stderr)
+
+    def test_sync_frozen_rejects_removed_nested_orphan(self) -> None:
+        (self.project / "apm.lock.yaml").touch()
+        orphan = self.project / "src/AGENTS.md"
+        orphan.parent.mkdir(parents=True, exist_ok=True)
+        orphan.write_text("generated before source removal\n")
+        self.initialize_git()
+        self.env["FAKE_APM_ORPHAN_PATH"] = str(orphan)
+
+        result = self.run_task("agent-sync", "--frozen")
+
+        self.assertEqual(1, result.returncode)
+        self.assertIn("frozen agent configuration changed", result.stderr)
+        self.assertIn("src/AGENTS.md", result.stderr)
 
     def test_sync_rejects_unknown_or_combined_modes_without_running_apm(self) -> None:
         for arguments in (("--unknown",), ("--refresh", "--frozen")):

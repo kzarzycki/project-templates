@@ -12,7 +12,7 @@
 
 - `mise run agent-sync` is the sole public convergence operation.
 - Default mode reconciles the manifest and lock; `--refresh` refreshes dependency resolution; `--frozen` verifies committed state.
-- The production dependency is `kzarzycki/agent-skills/engineering` at `engineering-v0.2.0`.
+- The production dependency is `kzarzycki/agent-skills/engineering` at the compatible range `^0.2.0`.
 - Claude Code and Codex are the current conformance targets.
 - GitHub Copilot and Cursor remain explicit adapter and conformance-test extension seams.
 - The generated repository must work without dotagents or user-global skill/plugin state.
@@ -40,7 +40,7 @@ Add tests that render the enabled default and explicit disabled variants. Assert
 dependencies:
   apm:
     - git: kzarzycki/agent-skills/engineering
-      ref: engineering-v0.2.0
+      ref: ^0.2.0
 ```
 
 Assert the disabled variant keeps `dependencies.apm` empty, and that `.copier-answers.yml` records the public boolean without exposing hidden fixture controls.
@@ -100,7 +100,7 @@ Use real rendered `mise.toml` with fake `apm`/`fnox` executables. Add independen
 
 ```text
 default: apm install; apm compile; apm compile --validate; apm audit --ci --no-policy
-refresh: apm install --refresh; apm compile; apm compile --validate; apm audit --ci --no-policy
+refresh: apm update --yes; apm compile --clean; apm compile --validate; apm audit --ci --no-policy
 frozen: apm install --frozen; apm audit --ci --no-policy; apm compile;
         apm compile --validate; apm audit --ci --no-policy
 ```
@@ -124,10 +124,10 @@ In `[tasks.agent-sync]`, accept zero or one argument, map `--refresh` and `--fro
 ```sh
 case "$mode" in
   default) apm install ;;
-  refresh) apm install --refresh ;;
+  refresh) apm update --yes ;;
   frozen) apm install --frozen; apm audit --ci --no-policy ;;
 esac
-apm compile
+apm compile --clean
 apm compile --validate
 apm audit --ci --no-policy
 ```
