@@ -39,15 +39,25 @@ init, installs deps, installs hooks, and makes the first commit.
 ## Coding-agent integration
 
 With `include_mise=true` and `include_agent_layer=true` (both defaults), every
-project gets project-owned coding agent configuration and four mise tasks:
+project gets project-owned coding agent configuration. The
+`include_engineering_workflow=true` default adds one dependency on the
+`agent-skills/engineering` capability pack; set it to false for the base
+agent-layer scaffold only.
 
 ```bash
 mise install
 mise run agent-sync
-mise run agent-check
+mise run agent-sync -- --refresh
+mise run agent-sync -- --frozen
 mise run agent-claude
 mise run agent-codex
 ```
+
+The first default sync creates `apm.lock.yaml`, installs the selected skills,
+compiles both supported coding-agent targets, and audits the result. Commit the
+manifest, lock, `.apm` sources, and generated Claude/Codex files. Later default
+syncs converge against that lock. Use `--refresh` to seek compatible dependency
+updates and `--frozen` in CI to reject stale committed state.
 
 `apm.yml` is the single source of configured APM targets. Claude Code and Codex
 are the only coding agents currently implemented and acceptance-tested. GitHub
@@ -86,9 +96,9 @@ non-interactively.
 
 This template is alpha, and coding-agent updates can be breaking. Projects with
 legacy `shared_apm` or `toolkit_stack` answers are not automatically compatible.
-Before running Copier update, choose explicit `include_agent_layer` and
-`include_fnox` values, then resolve or replace old coding agent files that
-conflict with the new scaffold.
+Before running Copier update, choose explicit `include_agent_layer`,
+`include_engineering_workflow`, and `include_fnox` values, then resolve or
+replace old coding agent files that conflict with the new scaffold.
 
 Review the resulting diff before accepting it. The template does not include a
 migration layer for legacy coding-agent configuration.

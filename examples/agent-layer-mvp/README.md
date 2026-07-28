@@ -31,14 +31,17 @@ These fixtures are project-specific example code, not Copier template defaults.
 ```bash
 mise install
 mise run agent-sync
-mise run agent-check
+mise run agent-sync -- --refresh
+mise run agent-sync -- --frozen
 mise run agent-claude
 mise run agent-codex
 ```
 
 `agent-sync` compiles the committed Claude and Codex files from `apm.yml` and
-`.apm/`. Both launch tasks resolve the `local` fnox profile in a fresh child
-process. The MCP command resolves the separate `mcp-local` profile, so
+`.apm/`, then validates APM, native output, and fnox state. `--refresh` resolves
+dependency updates; CI uses `--frozen` to reject uncommitted agent
+configuration. Both launch tasks resolve the `local` fnox profile in a fresh
+child process. The MCP command resolves the separate `mcp-local` profile, so
 `AGENT_LAYER_CANARY` is added to the MCP child and not the coding agent process.
 Codex reads `.codex/config.toml` after this repository is trusted. The first
 interactive Codex session records that machine-local trust decision; an

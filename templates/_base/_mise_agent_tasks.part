@@ -30,6 +30,17 @@ command -v python3 >/dev/null || { echo "error: python3 is required; run 'mise i
 {% if include_fnox -%}
 command -v fnox >/dev/null || { echo "error: fnox 1.30.0 is required; run 'mise install'" >&2; exit 127; }
 {% endif -%}
+if [ "$mode" = frozen ]; then
+  frozen_changes="$(git status --porcelain=v1 --untracked-files=all -- \
+    apm.yml apm.lock.yaml .apm AGENTS.md CLAUDE.md \
+    .agents .claude .codex .github/instructions)"
+  if [ -n "$frozen_changes" ]; then
+    echo "error: frozen agent configuration changed:" >&2
+    echo "$frozen_changes" >&2
+    echo "run 'mise run agent-sync' and commit the resulting agent configuration" >&2
+    exit 1
+  fi
+fi
 case "$mode" in
   default) apm install ;;
   refresh) apm install --refresh ;;
@@ -49,7 +60,8 @@ fnox check --all --non-interactive --if-missing error
 {% endif -%}
 if [ "$mode" = frozen ]; then
   frozen_changes="$(git status --porcelain=v1 --untracked-files=all -- \
-    apm.lock.yaml AGENTS.md CLAUDE.md .agents .claude .codex .github/instructions)"
+    apm.yml apm.lock.yaml .apm AGENTS.md CLAUDE.md \
+    .agents .claude .codex .github/instructions)"
   if [ -n "$frozen_changes" ]; then
     echo "error: frozen agent configuration changed:" >&2
     echo "$frozen_changes" >&2

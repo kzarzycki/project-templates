@@ -39,7 +39,7 @@ jobs:
         run: mise install
       - name: Check example coding-agent contract
         working-directory: examples/agent-layer-mvp
-        run: mise run agent-check
+        run: mise run agent-sync -- --frozen
       - name: Run example behavioral tests
         working-directory: examples/agent-layer-mvp
         run: mise run test
@@ -92,7 +92,7 @@ jobs:
           git config --global user.email "ci@example.com"
           args=(--name ci-proj --type "$PROJECT_TYPE" --dest _out/ci-proj)
           [ -n "$LANGUAGE" ] && args+=(--language "$LANGUAGE")
-          args+=(include_agent_layer=true include_fnox=true)
+          args+=(include_agent_layer=true include_engineering_workflow=true include_fnox=true)
           if [ "$PROJECT_TYPE" = "infra/terraform" ]; then
             mise exec terraform@1.15.8 tflint@0.63.1 -- \
               skills/bootstrap-project/scripts/bootstrap.sh "${args[@]}"
@@ -110,7 +110,7 @@ jobs:
           test -f .apm/instructions/project.instructions.md
           test ! -e .agents-toolkit
           test ! -e scripts/agent-layer
+          grep -q 'git: kzarzycki/agent-skills/engineering' apm.yml
           grep -q '^\[tasks.agent-sync\]$' mise.toml
-          grep -q '^\[tasks.agent-check\]$' mise.toml
           grep -q '^\[tasks.agent-claude\]$' mise.toml
           grep -q '^\[tasks.agent-codex\]$' mise.toml

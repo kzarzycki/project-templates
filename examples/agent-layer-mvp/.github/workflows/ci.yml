@@ -31,7 +31,7 @@ jobs:
       - name: pre-commit
         run: mise exec -- pre-commit run --all-files --show-diff-on-failure
       - run: mise exec -- uv sync --locked
-      - run: mise run agent-check
+      - run: mise run agent-sync -- --frozen
       - run: mise exec -- uv run pytest --cov --cov-report=xml
       # Diff coverage gates PRs only. On a push to main, github.base_ref is empty
       # and origin/main == HEAD, so the diff would be empty and the gate a no-op —
