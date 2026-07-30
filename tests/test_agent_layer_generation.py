@@ -399,13 +399,42 @@ class AgentLayerGenerationTest(unittest.TestCase):
         )
 
     def test_additional_agent_adapter_preserves_payload_and_dependency(self) -> None:
-        fixture = ROOT / "tests/fixtures/engineering"
+        fixture = Path(tempfile.mkdtemp(prefix="engineering-adapter-fixture-"))
+        shutil.copytree(
+            ROOT / "tests/fixtures/engineering",
+            fixture,
+            dirs_exist_ok=True,
+        )
+        subprocess.run(["git", "init", "-q"], cwd=fixture, check=True)
+        subprocess.run(["git", "add", "."], cwd=fixture, check=True)
+        subprocess.run(
+            [
+                "git",
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.com",
+                "commit",
+                "--no-verify",
+                "-qm",
+                "engineering 0.2.0",
+            ],
+            cwd=fixture,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "tag", "engineering-v0.2.0"],
+            cwd=fixture,
+            check=True,
+        )
         project = render(
             include_mise=True,
             include_agent_layer=True,
             include_engineering_workflow=True,
-            engineering_capability_source=str(fixture),
-            engineering_capability_ref="",
+            engineering_capability_source=(
+                "https://fixture.invalid/test/engineering.git"
+            ),
+            engineering_capability_ref="^0.2.0",
             include_fnox=False,
         )
         manifest_path = project / "apm.yml"
@@ -414,11 +443,17 @@ class AgentLayerGenerationTest(unittest.TestCase):
         fixture_before = {
             path.relative_to(fixture).as_posix(): path.read_bytes()
             for path in fixture.rglob("*")
-            if path.is_file()
+            if path.is_file() and ".git" not in path.relative_to(fixture).parts
         }
         manifest["targets"].append("copilot")
         manifest_path.write_text(yaml.safe_dump(manifest, sort_keys=False))
         env = isolated_agent_env(project)
+        git_config = Path(env["HOME"]) / "gitconfig"
+        git_config.write_text(
+            f'[url "file://{fixture}"]\n'
+            "  insteadOf = https://fixture.invalid/test/engineering.git\n"
+        )
+        env["GIT_CONFIG_GLOBAL"] = str(git_config)
         subprocess.run(["git", "init", "-q"], cwd=project, check=True)
         commit_project(project, "add synthetic adapter")
 
@@ -433,7 +468,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
             {
                 path.relative_to(fixture).as_posix(): path.read_bytes()
                 for path in fixture.rglob("*")
-                if path.is_file()
+                if path.is_file() and ".git" not in path.relative_to(fixture).parts
             },
         )
         expected_skill = (fixture / "skills/wayfinder/SKILL.md").read_bytes()
