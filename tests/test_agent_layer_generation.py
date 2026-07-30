@@ -173,7 +173,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertIn("test -f fnox.toml", workflow)
         self.assertIn("test ! -e .agents-toolkit", workflow)
         self.assertIn(
-            "jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea", workflow
+            "jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14", workflow
         )
         self.assertIn(
             "mise exec terraform@1.15.8 tflint@0.63.1 --",

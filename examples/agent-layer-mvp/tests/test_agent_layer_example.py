@@ -225,7 +225,7 @@ class AgentLayerExampleTest(unittest.TestCase):
         )
         self.assertIn("<!-- APM Version: 0.26.0 -->", instructions)
         self.assertIn(
-            "jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea",
+            "jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14",
             workflow,
         )
         for revision in ("v6.0.0", "v8.30.1", "v4.4.0", "v1.27.0", "v0.15.22"):
