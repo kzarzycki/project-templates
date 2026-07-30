@@ -100,7 +100,7 @@ class AgentMiseTasksTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(
             [
-                f"{self.bin}/apm install",
+                f"{self.bin}/apm install --target claude,codex",
                 f"{self.bin}/apm compile --clean",
                 f"{self.bin}/apm compile --validate",
                 f"{self.bin}/apm audit --ci --no-policy",
@@ -120,11 +120,37 @@ class AgentMiseTasksTest(unittest.TestCase):
             result.stderr,
         )
 
+    def test_sync_targets_manifest_without_agent_clis(self) -> None:
+        (self.bin / "claude").unlink()
+        (self.bin / "codex").unlink()
+        manifest = self.project / "apm.yml"
+        manifest.write_text(
+            manifest.read_text().replace(
+                "targets:\n- claude\n- codex\n",
+                "targets:\n  # Keep this list independent of installed CLIs.\n"
+                "  - claude\n"
+                "\n"
+                "  - codex  # Existing adapter.\n"
+                "  - copilot\n",
+            )
+        )
+
+        result = self.run_task("agent-sync")
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(
+            f"{self.bin}/apm install --target claude,codex,copilot",
+            self.commands()[0],
+        )
+
     def test_sync_refresh_re_resolves_before_convergence(self) -> None:
         result = self.run_task("agent-sync", "--refresh")
 
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual(f"{self.bin}/apm update --yes", self.commands()[0])
+        self.assertEqual(
+            f"{self.bin}/apm update --yes --target claude,codex",
+            self.commands()[0],
+        )
 
     def test_sync_frozen_checks_integrity_before_and_after_compile(self) -> None:
         (self.project / "apm.lock.yaml").touch()
@@ -135,7 +161,7 @@ class AgentMiseTasksTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(
             [
-                f"{self.bin}/apm install --frozen",
+                f"{self.bin}/apm install --frozen --target claude,codex",
                 f"{self.bin}/apm audit --ci --no-policy",
                 f"{self.bin}/apm compile --clean",
                 f"{self.bin}/apm compile --validate",

@@ -25,6 +25,29 @@ if [ "${usage_frozen:-false}" = true ]; then mode=frozen; fi
 command -v apm >/dev/null || { echo "error: apm 0.26.0 is required; run 'mise install'" >&2; exit 127; }
 command -v python3 >/dev/null || { echo "error: python3 is required; run 'mise install'" >&2; exit 127; }
 command -v fnox >/dev/null || { echo "error: fnox 1.30.0 is required; run 'mise install'" >&2; exit 127; }
+agent_targets="$(python3 -c '
+import re
+from pathlib import Path
+
+targets = []
+in_targets = False
+for line in Path("apm.yml").read_text().splitlines():
+    if not in_targets:
+        in_targets = re.fullmatch(r"targets:\\s*(?:#.*)?", line) is not None
+        continue
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#"):
+        continue
+    match = re.fullmatch(r"-\\s*([a-z0-9-]+)(?:\\s+#.*)?", stripped)
+    if match is None:
+        break
+    targets.append(match.group(1))
+print(",".join(targets))
+')"
+if [ -z "$agent_targets" ]; then
+  echo "error: apm.yml must activate at least one coding agent target" >&2
+  exit 2
+fi
 if [ "$mode" = frozen ]; then
   frozen_changes="$(git status --porcelain=v1 --untracked-files=all -- \
     apm.yml apm.lock.yaml .apm AGENTS.md CLAUDE.md \
@@ -38,10 +61,10 @@ if [ "$mode" = frozen ]; then
   fi
 fi
 case "$mode" in
-  default) apm install ;;
-  refresh) apm update --yes ;;
+  default) apm install --target "$agent_targets" ;;
+  refresh) apm update --yes --target "$agent_targets" ;;
   frozen)
-    apm install --frozen
+    apm install --frozen --target "$agent_targets"
     apm audit --ci --no-policy
     ;;
 esac
