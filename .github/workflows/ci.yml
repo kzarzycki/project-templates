@@ -29,6 +29,8 @@ jobs:
         run: uv tool install copier==9.17.0
       - name: Run root unittest suite
         run: >-
+          mise exec github:microsoft/apm@0.26.0 --
+          uv run --with PyYAML==6.0.3 --
           python3 -m unittest
           tests.test_agent_layer_generation
           tests.test_agent_mise_tasks

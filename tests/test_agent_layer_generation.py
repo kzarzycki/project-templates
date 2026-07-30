@@ -54,6 +54,84 @@ def render(project_type: str = "software/python", **answers: object) -> Path:
     return destination
 
 
+def isolated_agent_env(project: Path) -> dict[str, str]:
+    home = Path(tempfile.mkdtemp(prefix="agent-sync-home-"))
+    directories = {
+        name: home / name
+        for name in (
+            "xdg-cache",
+            "xdg-config",
+            "xdg-data",
+            "xdg-state",
+            "mise-cache",
+            "mise-config",
+            "mise-data",
+            "mise-state",
+            "claude",
+            "codex",
+        )
+    }
+    for directory in directories.values():
+        directory.mkdir()
+    env = {
+        key: os.environ[key]
+        for key in ("LANG", "LC_ALL", "PATH", "SHELL", "TERM", "TMPDIR")
+        if key in os.environ
+    }
+    env.update(
+        {
+            "HOME": str(home),
+            "XDG_CACHE_HOME": str(directories["xdg-cache"]),
+            "XDG_CONFIG_HOME": str(directories["xdg-config"]),
+            "XDG_DATA_HOME": str(directories["xdg-data"]),
+            "XDG_STATE_HOME": str(directories["xdg-state"]),
+            "MISE_CACHE_DIR": str(directories["mise-cache"]),
+            "MISE_CONFIG_DIR": str(directories["mise-config"]),
+            "MISE_DATA_DIR": str(directories["mise-data"]),
+            "MISE_OFFLINE": "true",
+            "MISE_STATE_DIR": str(directories["mise-state"]),
+            "MISE_TRUSTED_CONFIG_PATHS": str(project),
+            "APM_NO_CACHE": "1",
+            "CLAUDE_CONFIG_DIR": str(directories["claude"]),
+            "CODEX_HOME": str(directories["codex"]),
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "NO_COLOR": "1",
+        }
+    )
+    return env
+
+
+def commit_project(project: Path, message: str) -> None:
+    subprocess.run(["git", "add", "-A"], cwd=project, check=True)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.com",
+            "commit",
+            "--no-verify",
+            "-qm",
+            message,
+        ],
+        cwd=project,
+        check=True,
+    )
+
+
+def run_agent_sync(
+    project: Path, env: dict[str, str], *arguments: str
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [MISE, "run", "--skip-tools", "agent-sync", "--", *arguments],
+        cwd=project,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+
 class AgentLayerGenerationTest(unittest.TestCase):
     def test_public_docs_explain_agent_layer_scaffold_and_activation(self) -> None:
         readme = (ROOT / "README.md").read_text()
@@ -181,6 +259,8 @@ class AgentLayerGenerationTest(unittest.TestCase):
         )
         self.assertIn("verify:", workflow)
         for command in (
+            "PyYAML==6.0.3",
+            "github:microsoft/apm@0.26.0",
             "python3 -m unittest",
             "tests.test_agent_layer_generation",
             "tests.test_agent_mise_tasks",
@@ -288,6 +368,78 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertNotIn("agent-skills/engineering", manifest)
         self.assertIn("include_engineering_workflow: false", answers)
 
+    def test_disabled_engineering_workflow_converges_and_freezes(self) -> None:
+        project = render(
+            include_mise=True,
+            include_agent_layer=True,
+            include_engineering_workflow=False,
+            include_fnox=False,
+        )
+        env = isolated_agent_env(project)
+        subprocess.run(["git", "init", "-q"], cwd=project, check=True)
+        commit_project(project, "render disabled workflow")
+
+        first = run_agent_sync(project, env)
+        self.assertEqual(0, first.returncode, first.stdout + first.stderr)
+        commit_project(project, "converge disabled workflow")
+
+        second = run_agent_sync(project, env)
+        frozen = run_agent_sync(project, env, "--frozen")
+        self.assertEqual(0, second.returncode, second.stdout + second.stderr)
+        self.assertEqual(0, frozen.returncode, frozen.stdout + frozen.stderr)
+        self.assertEqual(
+            "",
+            subprocess.run(
+                ["git", "status", "--porcelain=v1", "--untracked-files=all"],
+                cwd=project,
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout,
+        )
+
+    def test_additional_agent_adapter_preserves_payload_and_dependency(self) -> None:
+        fixture = ROOT / "tests/fixtures/engineering"
+        project = render(
+            include_mise=True,
+            include_agent_layer=True,
+            include_engineering_workflow=True,
+            engineering_capability_source=str(fixture),
+            engineering_capability_ref="",
+            include_fnox=False,
+        )
+        manifest_path = project / "apm.yml"
+        manifest = yaml.safe_load(manifest_path.read_text())
+        dependency = manifest["dependencies"]["apm"]
+        fixture_before = {
+            path.relative_to(fixture).as_posix(): path.read_bytes()
+            for path in fixture.rglob("*")
+            if path.is_file()
+        }
+        manifest["targets"].append("copilot")
+        manifest_path.write_text(yaml.safe_dump(manifest, sort_keys=False))
+        env = isolated_agent_env(project)
+        subprocess.run(["git", "init", "-q"], cwd=project, check=True)
+        commit_project(project, "add synthetic adapter")
+
+        result = run_agent_sync(project, env)
+
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual(
+            dependency, yaml.safe_load(manifest_path.read_text())["dependencies"]["apm"]
+        )
+        self.assertEqual(
+            fixture_before,
+            {
+                path.relative_to(fixture).as_posix(): path.read_bytes()
+                for path in fixture.rglob("*")
+                if path.is_file()
+            },
+        )
+        self.assertTrue(
+            any((project / ".github/instructions").glob("*.instructions.md"))
+        )
+
     def test_engineering_workflow_converges_offline_for_claude_and_codex(self) -> None:
         fixture = Path(tempfile.mkdtemp(prefix="engineering-fixture-"))
         shutil.copytree(
@@ -325,51 +477,13 @@ class AgentLayerGenerationTest(unittest.TestCase):
             engineering_capability_ref="^0.2.0",
             include_fnox=False,
         )
-        isolated_home = Path(tempfile.mkdtemp(prefix="agent-sync-home-"))
-        for directory in (
-            "xdg-cache",
-            "xdg-config",
-            "xdg-data",
-            "xdg-state",
-            "mise-cache",
-            "mise-config",
-            "mise-data",
-            "mise-state",
-            "claude",
-            "codex",
-        ):
-            (isolated_home / directory).mkdir()
-        git_config = isolated_home / "gitconfig"
+        env = isolated_agent_env(project)
+        git_config = Path(env["HOME"]) / "gitconfig"
         git_config.write_text(
             f'[url "file://{fixture}"]\n'
             "  insteadOf = https://fixture.invalid/test/engineering.git\n"
         )
-        env = {
-            key: os.environ[key]
-            for key in ("LANG", "LC_ALL", "PATH", "SHELL", "TERM", "TMPDIR")
-            if key in os.environ
-        }
-        env.update(
-            {
-                "HOME": str(isolated_home),
-                "XDG_CACHE_HOME": str(isolated_home / "xdg-cache"),
-                "XDG_CONFIG_HOME": str(isolated_home / "xdg-config"),
-                "XDG_DATA_HOME": str(isolated_home / "xdg-data"),
-                "XDG_STATE_HOME": str(isolated_home / "xdg-state"),
-                "MISE_CACHE_DIR": str(isolated_home / "mise-cache"),
-                "MISE_CONFIG_DIR": str(isolated_home / "mise-config"),
-                "MISE_DATA_DIR": str(isolated_home / "mise-data"),
-                "MISE_OFFLINE": "true",
-                "MISE_STATE_DIR": str(isolated_home / "mise-state"),
-                "MISE_TRUSTED_CONFIG_PATHS": str(project),
-                "APM_NO_CACHE": "1",
-                "CLAUDE_CONFIG_DIR": str(isolated_home / "claude"),
-                "CODEX_HOME": str(isolated_home / "codex"),
-                "GIT_CONFIG_GLOBAL": str(git_config),
-                "GIT_CONFIG_NOSYSTEM": "1",
-                "NO_COLOR": "1",
-            }
-        )
+        env["GIT_CONFIG_GLOBAL"] = str(git_config)
 
         scoped_instruction = project / ".apm/instructions/source.instructions.md"
         scoped_instruction.write_text(
@@ -381,22 +495,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         )
 
         subprocess.run(["git", "init", "-q"], cwd=project, check=True)
-        subprocess.run(["git", "add", "."], cwd=project, check=True)
-        subprocess.run(
-            [
-                "git",
-                "-c",
-                "user.name=Test",
-                "-c",
-                "user.email=test@example.com",
-                "commit",
-                "--no-verify",
-                "-qm",
-                "render",
-            ],
-            cwd=project,
-            check=True,
-        )
+        commit_project(project, "render")
 
         first = subprocess.run(
             [MISE, "run", "--skip-tools", "agent-sync"],
@@ -550,6 +649,38 @@ class AgentLayerGenerationTest(unittest.TestCase):
             text=True,
         )
         self.assertEqual(0, frozen.returncode, frozen.stdout + frozen.stderr)
+
+        manifest_path = project / "apm.yml"
+        manifest_current = manifest_path.read_text()
+        manifest_path.write_text(manifest_current.replace("^0.2.0", "^0.3.0"))
+        commit_project(project, "stale manifest")
+        stale_manifest = subprocess.run(
+            [MISE, "run", "--skip-tools", "agent-sync", "--", "--frozen"],
+            cwd=project,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(0, stale_manifest.returncode)
+        self.assertNotIn("frozen agent configuration changed", stale_manifest.stderr)
+        manifest_path.write_text(manifest_current)
+        commit_project(project, "restore manifest")
+
+        lock_path = project / "apm.lock.yaml"
+        lock_current = lock_path.read_text()
+        lock_path.write_text("not: [valid\n")
+        commit_project(project, "stale lock")
+        stale_lock = subprocess.run(
+            [MISE, "run", "--skip-tools", "agent-sync", "--", "--frozen"],
+            cwd=project,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(0, stale_lock.returncode)
+        self.assertNotIn("frozen agent configuration changed", stale_lock.stderr)
+        lock_path.write_text(lock_current)
+        commit_project(project, "restore lock")
 
         installed_skill = project / ".agents/skills/wayfinder/SKILL.md"
         installed_skill.write_text(installed_skill.read_text() + "\nstale\n")
