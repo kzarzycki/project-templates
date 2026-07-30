@@ -436,6 +436,12 @@ class AgentLayerGenerationTest(unittest.TestCase):
                 if path.is_file()
             },
         )
+        expected_skill = (fixture / "skills/wayfinder/SKILL.md").read_bytes()
+        for installed in (
+            ".claude/skills/wayfinder/SKILL.md",
+            ".agents/skills/wayfinder/SKILL.md",
+        ):
+            self.assertEqual(expected_skill, (project / installed).read_bytes())
         self.assertTrue(
             any((project / ".github/instructions").glob("*.instructions.md"))
         )
