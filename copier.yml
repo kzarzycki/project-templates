@@ -61,6 +61,12 @@ include_agent_layer:
   when: "{{ include_mise }}"
   help: Add project-owned coding agent configuration and mise tasks?
 
+include_engineering_workflow:
+  type: bool
+  default: true
+  when: "{{ include_mise and include_agent_layer }}"
+  help: Add the standard engineering capability pack?
+
 include_fnox:
   type: bool
   default: true
@@ -103,6 +109,16 @@ year:
   type: str
   when: false
   default: "2026"
+
+engineering_capability_source:
+  type: str
+  when: false
+  default: "kzarzycki/agent-skills/engineering"
+
+engineering_capability_ref:
+  type: str
+  when: false
+  default: "^0.2.0"
 
 _exclude:
   - "*.pyc"

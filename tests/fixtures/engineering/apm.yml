@@ -1,0 +1,13 @@
+name: engineering
+version: 0.2.0
+description: Offline capability-pack acceptance fixture
+author: Test
+targets:
+  - claude
+  - codex
+dependencies:
+  apm: []
+  mcp: []
+includes:
+  - skills/**/*.md
+scripts: {}

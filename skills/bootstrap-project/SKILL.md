@@ -52,7 +52,8 @@ script.
 3. **Infer optionals from context — don't interrogate.** `description`,
    `license` (default MIT), `include_mise` (default true),
    `include_agent_layer` (default true with mise), `include_fnox` (default true
-   with the coding-agent integration), and the runtime version
+   with the coding-agent integration), `include_engineering_workflow` (default
+   true with the coding-agent integration), and the runtime version
    (`python_version`/`node_version`/`java_version`/`terraform_version`) default
    sensibly — see the root `copier.yml` for the full question set. Pass an
    optional only when the user clearly wants it (e.g. "Apache licensed" →
@@ -77,21 +78,26 @@ script.
 
 The default scaffold includes project-owned coding agent configuration for
 Claude Code and Codex, the only currently implemented and acceptance-tested
-coding agents. It also includes an empty fnox machine-binding contract and these
-commands:
+coding agents. It selects the `agent-skills/engineering` capability pack through
+one APM dependency and includes an empty fnox machine-binding contract. Set
+`include_engineering_workflow=false` to retain the base agent layer without the
+pack.
 
 ```bash
 mise install
 mise run agent-sync
-mise run agent-check
+mise run agent-sync -- --refresh
+mise run agent-sync -- --frozen
 mise run agent-claude
 mise run agent-codex
 ```
 
 The bootstrap wrapper only renders the files. It does not install APM or fnox,
 resolve a provider, compile coding agent files, or launch a coding agent. The
-generated project owns its instructions, skills, MCP definitions, endpoints,
-fnox profiles/providers, CLI dependencies, and coding-agent-specific additions.
+first default sync creates the APM lock; commit that lock with the manifest,
+`.apm` sources, and generated Claude/Codex files. The generated project owns its
+instructions, skills, MCP definitions, endpoints, fnox profiles/providers, CLI
+dependencies, and coding-agent-specific additions.
 Native CLI authentication stays native; a working `gh auth login` does not need a
 copied token.
 

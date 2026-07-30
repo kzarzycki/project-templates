@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import shutil
 import tempfile
@@ -7,8 +8,12 @@ import tomllib
 import unittest
 from pathlib import Path
 
+import yaml
+
 
 ROOT = Path(__file__).resolve().parents[1]
+MISE = shutil.which("mise")
+assert MISE is not None
 
 
 def render(project_type: str = "software/python", **answers: object) -> Path:
@@ -49,6 +54,84 @@ def render(project_type: str = "software/python", **answers: object) -> Path:
     return destination
 
 
+def isolated_agent_env(project: Path) -> dict[str, str]:
+    home = Path(tempfile.mkdtemp(prefix="agent-sync-home-"))
+    directories = {
+        name: home / name
+        for name in (
+            "xdg-cache",
+            "xdg-config",
+            "xdg-data",
+            "xdg-state",
+            "mise-cache",
+            "mise-config",
+            "mise-data",
+            "mise-state",
+            "claude",
+            "codex",
+        )
+    }
+    for directory in directories.values():
+        directory.mkdir()
+    env = {
+        key: os.environ[key]
+        for key in ("LANG", "LC_ALL", "PATH", "SHELL", "TERM", "TMPDIR")
+        if key in os.environ
+    }
+    env.update(
+        {
+            "HOME": str(home),
+            "XDG_CACHE_HOME": str(directories["xdg-cache"]),
+            "XDG_CONFIG_HOME": str(directories["xdg-config"]),
+            "XDG_DATA_HOME": str(directories["xdg-data"]),
+            "XDG_STATE_HOME": str(directories["xdg-state"]),
+            "MISE_CACHE_DIR": str(directories["mise-cache"]),
+            "MISE_CONFIG_DIR": str(directories["mise-config"]),
+            "MISE_DATA_DIR": str(directories["mise-data"]),
+            "MISE_OFFLINE": "true",
+            "MISE_STATE_DIR": str(directories["mise-state"]),
+            "MISE_TRUSTED_CONFIG_PATHS": str(project),
+            "APM_NO_CACHE": "1",
+            "CLAUDE_CONFIG_DIR": str(directories["claude"]),
+            "CODEX_HOME": str(directories["codex"]),
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "NO_COLOR": "1",
+        }
+    )
+    return env
+
+
+def commit_project(project: Path, message: str) -> None:
+    subprocess.run(["git", "add", "-A"], cwd=project, check=True)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.com",
+            "commit",
+            "--no-verify",
+            "-qm",
+            message,
+        ],
+        cwd=project,
+        check=True,
+    )
+
+
+def run_agent_sync(
+    project: Path, env: dict[str, str], *arguments: str
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [MISE, "run", "--skip-tools", "agent-sync", "--", *arguments],
+        cwd=project,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+
 class AgentLayerGenerationTest(unittest.TestCase):
     def test_public_docs_explain_agent_layer_scaffold_and_activation(self) -> None:
         readme = (ROOT / "README.md").read_text()
@@ -58,9 +141,11 @@ class AgentLayerGenerationTest(unittest.TestCase):
         for document in (readme, skill):
             for expected in (
                 "include_agent_layer",
+                "include_engineering_workflow",
                 "include_fnox",
                 "mise run agent-sync",
-                "mise run agent-check",
+                "mise run agent-sync -- --refresh",
+                "mise run agent-sync -- --frozen",
                 "mise run agent-claude",
                 "mise run agent-codex",
             ):
@@ -117,6 +202,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
             "shared_apm",
             "toolkit_stack",
             "include_agent_layer",
+            "include_engineering_workflow",
             "include_fnox",
         ):
             self.assertIn(answer, readme)
@@ -165,7 +251,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertIn("test -f fnox.toml", workflow)
         self.assertIn("test ! -e .agents-toolkit", workflow)
         self.assertIn(
-            "jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea", workflow
+            "jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14", workflow
         )
         self.assertIn(
             "mise exec terraform@1.15.8 tflint@0.63.1 --",
@@ -173,13 +259,15 @@ class AgentLayerGenerationTest(unittest.TestCase):
         )
         self.assertIn("verify:", workflow)
         for command in (
+            "PyYAML==6.0.3",
+            "github:microsoft/apm@0.26.0",
             "python3 -m unittest",
             "tests.test_agent_layer_generation",
             "tests.test_agent_mise_tasks",
             "tests.test_bootstrap_local_source",
             "tests.test_version_contract",
             "working-directory: examples/agent-layer-mvp",
-            "mise run agent-check",
+            "mise run agent-sync -- --frozen",
             "mise run test",
         ):
             self.assertIn(command, workflow)
@@ -207,18 +295,25 @@ class AgentLayerGenerationTest(unittest.TestCase):
         apm = (project / "apm.yml").read_text()
         self.assertIn("- claude", apm)
         self.assertIn("- codex", apm)
-        self.assertIn("apm: []", apm)
+        self.assertEqual(
+            [
+                {
+                    "git": "kzarzycki/agent-skills/engineering",
+                    "ref": "^0.2.0",
+                }
+            ],
+            yaml.safe_load(apm)["dependencies"]["apm"],
+        )
         self.assertIn("mcp: []", apm)
 
         mise = tomllib.loads((project / "mise.toml").read_text())
-        self.assertEqual("0.25.0", mise["tools"].get("github:microsoft/apm"))
+        self.assertEqual("0.26.0", mise["tools"].get("github:microsoft/apm"))
         self.assertEqual("1.30.0", mise["tools"]["fnox"])
         self.assertEqual(
-            {"agent-sync", "agent-check", "agent-claude", "agent-codex"},
+            {"agent-sync", "agent-claude", "agent-codex"},
             set(mise["tasks"])
             & {
                 "agent-sync",
-                "agent-check",
                 "agent-claude",
                 "agent-codex",
             },
@@ -236,7 +331,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, rendered)
         for remediation in (
-            "error: apm 0.25.0 is required; run 'mise install'",
+            "error: apm 0.26.0 is required; run 'mise install'",
             "error: fnox 1.30.0 is required; run 'mise install'",
             "error: python3 is required; run 'mise install'",
             "error: claude is required; install Claude Code and add 'claude' to PATH",
@@ -244,11 +339,407 @@ class AgentLayerGenerationTest(unittest.TestCase):
         ):
             self.assertIn(remediation, (project / "mise.toml").read_text())
 
+    def test_engineering_workflow_is_enabled_by_default(self) -> None:
+        project = render(
+            include_mise=True,
+            include_agent_layer=True,
+            include_fnox=False,
+        )
+
+        manifest = (project / "apm.yml").read_text()
+        answers = (project / ".copier-answers.yml").read_text()
+        self.assertEqual(1, manifest.count("git: kzarzycki/agent-skills/engineering"))
+        self.assertIn("ref: ^0.2.0", manifest)
+        self.assertIn("include_engineering_workflow: true", answers)
+        self.assertNotIn("engineering_capability_source", answers)
+        self.assertNotIn("engineering_capability_ref", answers)
+
+    def test_engineering_workflow_can_be_disabled(self) -> None:
+        project = render(
+            include_mise=True,
+            include_agent_layer=True,
+            include_engineering_workflow=False,
+            include_fnox=False,
+        )
+
+        manifest = (project / "apm.yml").read_text()
+        answers = (project / ".copier-answers.yml").read_text()
+        self.assertIn("apm: []", manifest)
+        self.assertNotIn("agent-skills/engineering", manifest)
+        self.assertIn("include_engineering_workflow: false", answers)
+
+    def test_disabled_engineering_workflow_converges_and_freezes(self) -> None:
+        project = render(
+            include_mise=True,
+            include_agent_layer=True,
+            include_engineering_workflow=False,
+            include_fnox=False,
+        )
+        env = isolated_agent_env(project)
+        subprocess.run(["git", "init", "-q"], cwd=project, check=True)
+        commit_project(project, "render disabled workflow")
+
+        first = run_agent_sync(project, env)
+        self.assertEqual(0, first.returncode, first.stdout + first.stderr)
+        commit_project(project, "converge disabled workflow")
+
+        second = run_agent_sync(project, env)
+        frozen = run_agent_sync(project, env, "--frozen")
+        self.assertEqual(0, second.returncode, second.stdout + second.stderr)
+        self.assertEqual(0, frozen.returncode, frozen.stdout + frozen.stderr)
+        self.assertEqual(
+            "",
+            subprocess.run(
+                ["git", "status", "--porcelain=v1", "--untracked-files=all"],
+                cwd=project,
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout,
+        )
+
+    def test_additional_agent_adapter_preserves_payload_and_dependency(self) -> None:
+        fixture = Path(tempfile.mkdtemp(prefix="engineering-adapter-fixture-"))
+        shutil.copytree(
+            ROOT / "tests/fixtures/engineering",
+            fixture,
+            dirs_exist_ok=True,
+        )
+        subprocess.run(["git", "init", "-q"], cwd=fixture, check=True)
+        subprocess.run(["git", "add", "."], cwd=fixture, check=True)
+        subprocess.run(
+            [
+                "git",
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.com",
+                "commit",
+                "--no-verify",
+                "-qm",
+                "engineering 0.2.0",
+            ],
+            cwd=fixture,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "tag", "engineering-v0.2.0"],
+            cwd=fixture,
+            check=True,
+        )
+        project = render(
+            include_mise=True,
+            include_agent_layer=True,
+            include_engineering_workflow=True,
+            engineering_capability_source=(
+                "https://fixture.invalid/test/engineering.git"
+            ),
+            engineering_capability_ref="^0.2.0",
+            include_fnox=False,
+        )
+        manifest_path = project / "apm.yml"
+        manifest = yaml.safe_load(manifest_path.read_text())
+        dependency = manifest["dependencies"]["apm"]
+        fixture_before = {
+            path.relative_to(fixture).as_posix(): path.read_bytes()
+            for path in fixture.rglob("*")
+            if path.is_file() and ".git" not in path.relative_to(fixture).parts
+        }
+        manifest["targets"].append("copilot")
+        manifest_path.write_text(yaml.safe_dump(manifest, sort_keys=False))
+        env = isolated_agent_env(project)
+        git_config = Path(env["HOME"]) / "gitconfig"
+        git_config.write_text(
+            f'[url "file://{fixture}"]\n'
+            "  insteadOf = https://fixture.invalid/test/engineering.git\n"
+        )
+        env["GIT_CONFIG_GLOBAL"] = str(git_config)
+        subprocess.run(["git", "init", "-q"], cwd=project, check=True)
+        commit_project(project, "add synthetic adapter")
+
+        result = run_agent_sync(project, env)
+
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual(
+            dependency, yaml.safe_load(manifest_path.read_text())["dependencies"]["apm"]
+        )
+        self.assertEqual(
+            fixture_before,
+            {
+                path.relative_to(fixture).as_posix(): path.read_bytes()
+                for path in fixture.rglob("*")
+                if path.is_file() and ".git" not in path.relative_to(fixture).parts
+            },
+        )
+        expected_skill = (fixture / "skills/wayfinder/SKILL.md").read_bytes()
+        for installed in (
+            ".claude/skills/wayfinder/SKILL.md",
+            ".agents/skills/wayfinder/SKILL.md",
+        ):
+            self.assertEqual(expected_skill, (project / installed).read_bytes())
+        self.assertTrue(
+            any((project / ".github/instructions").glob("*.instructions.md"))
+        )
+
+    def test_engineering_workflow_converges_offline_for_claude_and_codex(self) -> None:
+        fixture = Path(tempfile.mkdtemp(prefix="engineering-fixture-"))
+        shutil.copytree(
+            ROOT / "tests/fixtures/engineering",
+            fixture,
+            dirs_exist_ok=True,
+        )
+        subprocess.run(["git", "init", "-q"], cwd=fixture, check=True)
+        subprocess.run(["git", "add", "."], cwd=fixture, check=True)
+        subprocess.run(
+            [
+                "git",
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.com",
+                "commit",
+                "--no-verify",
+                "-qm",
+                "engineering 0.2.0",
+            ],
+            cwd=fixture,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "tag", "engineering-v0.2.0"],
+            cwd=fixture,
+            check=True,
+        )
+        project = render(
+            include_mise=True,
+            include_agent_layer=True,
+            include_engineering_workflow=True,
+            engineering_capability_source="https://fixture.invalid/test/engineering.git",
+            engineering_capability_ref="^0.2.0",
+            include_fnox=False,
+        )
+        env = isolated_agent_env(project)
+        git_config = Path(env["HOME"]) / "gitconfig"
+        git_config.write_text(
+            f'[url "file://{fixture}"]\n'
+            "  insteadOf = https://fixture.invalid/test/engineering.git\n"
+        )
+        env["GIT_CONFIG_GLOBAL"] = str(git_config)
+
+        scoped_instruction = project / ".apm/instructions/source.instructions.md"
+        scoped_instruction.write_text(
+            "---\n"
+            "description: Source-tree instructions\n"
+            'applyTo: "src/**"\n'
+            "---\n\n"
+            "Read the source tree before editing it.\n"
+        )
+
+        subprocess.run(["git", "init", "-q"], cwd=project, check=True)
+        commit_project(project, "render")
+
+        first = subprocess.run(
+            [MISE, "run", "--skip-tools", "agent-sync"],
+            cwd=project,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertEqual(0, first.returncode, first.stdout + first.stderr)
+        expected_v020 = (fixture / "skills/wayfinder/SKILL.md").read_text()
+        for installed in (
+            ".claude/skills/wayfinder/SKILL.md",
+            ".agents/skills/wayfinder/SKILL.md",
+        ):
+            self.assertEqual(expected_v020, (project / installed).read_text())
+        self.assertTrue((project / "apm.lock.yaml").is_file())
+        nested_agents = next((project / "src").rglob("AGENTS.md"))
+        self.assertTrue(nested_agents.is_file())
+        self.assertIn(
+            "engineering-v0.2.0",
+            (project / "apm.lock.yaml").read_text(),
+        )
+
+        subprocess.run(["git", "add", "."], cwd=project, check=True)
+        subprocess.run(
+            [
+                "git",
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.com",
+                "commit",
+                "--no-verify",
+                "-qm",
+                "converge",
+            ],
+            cwd=project,
+            check=True,
+        )
+
+        scoped_instruction.unlink()
+        cleanup = subprocess.run(
+            [MISE, "run", "--skip-tools", "agent-sync"],
+            cwd=project,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(0, cleanup.returncode, cleanup.stdout + cleanup.stderr)
+        self.assertFalse(nested_agents.exists())
+        subprocess.run(["git", "add", "-A"], cwd=project, check=True)
+        subprocess.run(
+            [
+                "git",
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.com",
+                "commit",
+                "--no-verify",
+                "-qm",
+                "remove scoped instructions",
+            ],
+            cwd=project,
+            check=True,
+        )
+
+        second = subprocess.run(
+            [MISE, "run", "--skip-tools", "agent-sync"],
+            cwd=project,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(0, second.returncode, second.stdout + second.stderr)
+        self.assertEqual(
+            "",
+            subprocess.run(
+                ["git", "status", "--porcelain=v1", "--untracked-files=all"],
+                cwd=project,
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout,
+        )
+
+        source_skill = fixture / "skills/wayfinder/SKILL.md"
+        source_skill.write_text(source_skill.read_text() + "\nUpdated fixture.\n")
+        subprocess.run(["git", "add", "."], cwd=fixture, check=True)
+        subprocess.run(
+            [
+                "git",
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.com",
+                "commit",
+                "--no-verify",
+                "-qm",
+                "engineering 0.2.1",
+            ],
+            cwd=fixture,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "tag", "engineering-v0.2.1"],
+            cwd=fixture,
+            check=True,
+        )
+        refresh = subprocess.run(
+            [MISE, "run", "--skip-tools", "agent-sync", "--", "--refresh"],
+            cwd=project,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(0, refresh.returncode, refresh.stdout + refresh.stderr)
+        expected_v021 = source_skill.read_text()
+        for installed in (
+            ".claude/skills/wayfinder/SKILL.md",
+            ".agents/skills/wayfinder/SKILL.md",
+        ):
+            self.assertEqual(expected_v021, (project / installed).read_text())
+        self.assertIn(
+            "engineering-v0.2.1",
+            (project / "apm.lock.yaml").read_text(),
+        )
+        subprocess.run(["git", "add", "."], cwd=project, check=True)
+        subprocess.run(
+            [
+                "git",
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.com",
+                "commit",
+                "--no-verify",
+                "-qm",
+                "refresh",
+            ],
+            cwd=project,
+            check=True,
+        )
+
+        frozen = subprocess.run(
+            [MISE, "run", "--skip-tools", "agent-sync", "--", "--frozen"],
+            cwd=project,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(0, frozen.returncode, frozen.stdout + frozen.stderr)
+
+        manifest_path = project / "apm.yml"
+        manifest_current = manifest_path.read_text()
+        manifest_path.write_text(manifest_current.replace("^0.2.0", "^0.3.0"))
+        commit_project(project, "stale manifest")
+        stale_manifest = subprocess.run(
+            [MISE, "run", "--skip-tools", "agent-sync", "--", "--frozen"],
+            cwd=project,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(0, stale_manifest.returncode)
+        self.assertNotIn("frozen agent configuration changed", stale_manifest.stderr)
+        manifest_path.write_text(manifest_current)
+        commit_project(project, "restore manifest")
+
+        lock_path = project / "apm.lock.yaml"
+        lock_current = lock_path.read_text()
+        lock_path.write_text("not: [valid\n")
+        commit_project(project, "stale lock")
+        stale_lock = subprocess.run(
+            [MISE, "run", "--skip-tools", "agent-sync", "--", "--frozen"],
+            cwd=project,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(0, stale_lock.returncode)
+        self.assertNotIn("frozen agent configuration changed", stale_lock.stderr)
+        lock_path.write_text(lock_current)
+        commit_project(project, "restore lock")
+
+        installed_skill = project / ".agents/skills/wayfinder/SKILL.md"
+        installed_skill.write_text(installed_skill.read_text() + "\nstale\n")
+        stale = subprocess.run(
+            [MISE, "run", "--skip-tools", "agent-sync", "--", "--frozen"],
+            cwd=project,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(0, stale.returncode)
+        self.assertIn("frozen agent configuration changed", stale.stderr)
+
     def test_apm_version_has_one_template_source(self) -> None:
         partial = (ROOT / "templates/_base/_mise_agent_tasks.part").read_text()
 
-        self.assertIn('{% set apm_version = "0.25.0" %}', partial)
-        self.assertEqual(1, partial.count("0.25.0"))
+        self.assertIn('{% set apm_version = "0.26.0" %}', partial)
+        self.assertEqual(1, partial.count("0.26.0"))
 
     def test_disabled_layer_leaves_no_agent_framework(self) -> None:
         project = render(include_mise=True, include_agent_layer=False)
@@ -279,12 +770,12 @@ class AgentLayerGenerationTest(unittest.TestCase):
 
         tasks = tomllib.loads((project / "mise.toml").read_text())["tasks"]
         self.assertEqual(
-            "Validate APM sources and generated coding agent files.",
-            tasks["agent-check"]["description"],
+            "Converge project-owned coding agent configuration.",
+            tasks["agent-sync"]["description"],
         )
         self.assertEqual("Launch Claude Code.", tasks["agent-claude"]["description"])
         self.assertEqual("Launch Codex.", tasks["agent-codex"]["description"])
-        for task in ("agent-check", "agent-claude", "agent-codex"):
+        for task in ("agent-claude", "agent-codex"):
             description = tasks[task]["description"].lower()
             self.assertNotIn("fnox", description)
             self.assertNotIn("machine bindings", description)

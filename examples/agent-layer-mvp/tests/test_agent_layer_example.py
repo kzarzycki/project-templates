@@ -198,7 +198,7 @@ class AgentLayerExampleTest(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/ci.yml").read_text()
 
         self.assertIn("jdx/mise-action", workflow)
-        self.assertIn("mise run agent-check", workflow)
+        self.assertIn("mise run agent-sync -- --frozen", workflow)
         self.assertIn("mise exec -- uv run pytest", workflow)
 
     def test_readme_explains_codex_project_trust(self) -> None:
@@ -218,14 +218,14 @@ class AgentLayerExampleTest(unittest.TestCase):
                 "python": "3.14",
                 "uv": "0.11.29",
                 "pre-commit": "4.6.0",
-                "github:microsoft/apm": "0.25.0",
+                "github:microsoft/apm": "0.26.0",
                 "fnox": "1.30.0",
             },
             mise["tools"],
         )
-        self.assertIn("<!-- APM Version: 0.25.0 -->", instructions)
+        self.assertIn("<!-- APM Version: 0.26.0 -->", instructions)
         self.assertIn(
-            "jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea",
+            "jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14",
             workflow,
         )
         for revision in ("v6.0.0", "v8.30.1", "v4.4.0", "v1.27.0", "v0.15.22"):
