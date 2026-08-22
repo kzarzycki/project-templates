@@ -118,7 +118,7 @@ engineering_capability_source:
 engineering_capability_ref:
   type: str
   when: false
-  default: "^0.2.0"
+  default: "^0.3.0"
 
 _exclude:
   - "*.pyc"
