@@ -886,8 +886,12 @@ class AgentLayerGenerationTest(unittest.TestCase):
             }
             self.assertEqual(managed.pattern, excludes["end-of-file-fixer"])
             self.assertEqual(managed.pattern, excludes["trailing-whitespace"])
-            self.assertIsNone(excludes["detect-secrets"])
             self.assertIsNone(excludes["gitleaks"])
+            # The lockfile is generated hashes, so it cannot carry an inline
+            # pragma; everything else — vendored skills included — is scanned.
+            secrets = re.compile(excludes["detect-secrets"])
+            self.assertRegex("apm.lock.yaml", secrets)
+            self.assertNotRegex(".agents/skills/wayfinder/SKILL.md", secrets)
 
 
 if __name__ == "__main__":

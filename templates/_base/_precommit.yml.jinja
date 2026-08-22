@@ -20,7 +20,11 @@
   - repo: https://github.com/Yelp/detect-secrets
     rev: v1.5.0
     hooks:
+      # apm.lock.yaml is resolved git SHAs and content hashes, which read as
+      # high-entropy strings. It is generated, so it cannot carry an inline
+      # allowlist pragma. gitleaks below still scans it.
       - id: detect-secrets
+        exclude: '^apm\.lock\.yaml$'
 
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.1
