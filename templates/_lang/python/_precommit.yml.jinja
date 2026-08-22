@@ -3,7 +3,9 @@
     hooks:
       - id: ruff-check
         args: ["--fix"]
+        exclude: *apm_managed
       - id: ruff-format
+        exclude: *apm_managed
   - repo: local
     hooks:
       - id: pytest

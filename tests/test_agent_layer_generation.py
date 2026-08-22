@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import shutil
 import tempfile
@@ -816,6 +817,77 @@ class AgentLayerGenerationTest(unittest.TestCase):
                 self.assertFalse((project / ".apm").exists())
                 self.assertFalse((project / ".agents-toolkit").exists())
                 self.assertNotIn("agent-sync", (project / "mise.toml").read_text())
+
+    def test_autofixing_hooks_skip_apm_managed_trees(self) -> None:
+        # APM hash-tracks every file it deploys, so a hook that rewrites one
+        # produces drift that only surfaces later as a --frozen failure.
+        base = (ROOT / "templates/_base/_precommit.yml.jinja").read_text()
+        anchor = re.search(r"exclude: &apm_managed '([^']+)'", base)
+        self.assertIsNotNone(anchor)
+        managed = re.compile(anchor.group(1))
+
+        for path in (
+            ".agents/skills/wayfinder/SKILL.md",
+            ".claude/skills/wayfinder/SKILL.md",
+            ".claude/rules/project.md",
+            ".agents/skills/audit-third-party-software/scripts/extract_strings_urls.py",
+            ".codex/config.toml",
+            ".github/instructions/project.instructions.md",
+            "AGENTS.md",
+            "src/AGENTS.md",
+            "src/CLAUDE.md",
+        ):
+            self.assertRegex(path, managed, f"{path} must be left to APM")
+
+        # Project-owned files stay linted — including the root CLAUDE.md, which
+        # the template authors rather than APM compiling it.
+        for path in (
+            "CLAUDE.md",
+            "README.md",
+            "docs/index.md",
+            "src/lego_sorter/__init__.py",
+            "apm.yml",
+        ):
+            self.assertNotRegex(path, managed, f"{path} must stay linted")
+
+        # Every hook that rewrites the files it is handed must carry the alias.
+        autofixing = {
+            "templates/_base/_precommit.yml.jinja": (
+                "end-of-file-fixer",
+                "trailing-whitespace",
+            ),
+            "templates/authoring/content/.pre-commit-config.yaml.jinja": (
+                "markdownlint",
+            ),
+            "templates/_lang/python/_precommit.yml.jinja": (
+                "ruff-check",
+                "ruff-format",
+            ),
+            "templates/_lang/node/_precommit.yml.jinja": ("biome-check",),
+        }
+        for source, hook_ids in autofixing.items():
+            text = (ROOT / source).read_text()
+            for hook_id in hook_ids:
+                block = re.search(
+                    rf"- id: {re.escape(hook_id)}\n(?:        .*\n)*", text
+                )
+                self.assertIsNotNone(block, f"{hook_id} missing from {source}")
+                self.assertIn("exclude:", block.group(0), f"{hook_id} in {source}")
+
+        # The anchor is declared before any leaf aliases it, so each rendered
+        # config is loadable YAML with the exclude resolved.
+        for project_type in ("authoring/content", "software/python", "software/node"):
+            project = render(project_type=project_type)
+            config = yaml.safe_load((project / ".pre-commit-config.yaml").read_text())
+            excludes = {
+                hook["id"]: hook.get("exclude")
+                for repo in config["repos"]
+                for hook in repo["hooks"]
+            }
+            self.assertEqual(managed.pattern, excludes["end-of-file-fixer"])
+            self.assertEqual(managed.pattern, excludes["trailing-whitespace"])
+            self.assertIsNone(excludes["detect-secrets"])
+            self.assertIsNone(excludes["gitleaks"])
 
 
 if __name__ == "__main__":

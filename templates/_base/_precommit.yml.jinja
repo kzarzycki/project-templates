@@ -1,8 +1,14 @@
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
+      # APM owns these trees and hash-tracks every deployed file. An autofix
+      # here is invisible drift that fails `mise run agent-sync -- --frozen`,
+      # so the rewriting hooks skip them. The secret scanners below still read
+      # them — vendored third-party content is exactly what needs scanning.
       - id: end-of-file-fixer
+        exclude: &apm_managed '^(\.agents|\.claude|\.codex|\.github/instructions)/|(^|/)AGENTS\.md$|/CLAUDE\.md$'
       - id: trailing-whitespace
+        exclude: *apm_managed
       - id: check-yaml
       - id: check-toml
       - id: check-json

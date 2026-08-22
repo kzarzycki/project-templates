@@ -6,6 +6,7 @@
         language: system
         types_or: [javascript, ts, json]
         pass_filenames: true
+        exclude: *apm_managed
       - id: vitest
         name: vitest (pre-push)
         entry: npm test
