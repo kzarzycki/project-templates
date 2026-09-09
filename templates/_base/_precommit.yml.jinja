@@ -1,8 +1,14 @@
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
+      # APM owns these trees and hash-tracks every deployed file. An autofix
+      # here is invisible drift that fails `mise run agent-sync -- --frozen`,
+      # so the rewriting hooks skip them. The secret scanners below still read
+      # them — vendored third-party content is exactly what needs scanning.
       - id: end-of-file-fixer
+        exclude: &apm_managed '^(\.agents|\.claude|\.codex|\.github/instructions)/|(^|/)AGENTS\.md$|/CLAUDE\.md$'
       - id: trailing-whitespace
+        exclude: *apm_managed
       - id: check-yaml
       - id: check-toml
       - id: check-json
@@ -14,7 +20,11 @@
   - repo: https://github.com/Yelp/detect-secrets
     rev: v1.5.0
     hooks:
+      # apm.lock.yaml is resolved git SHAs and content hashes, which read as
+      # high-entropy strings. It is generated, so it cannot carry an inline
+      # allowlist pragma. gitleaks below still scans it.
       - id: detect-secrets
+        exclude: '^apm\.lock\.yaml$'
 
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.1
