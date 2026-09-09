@@ -261,7 +261,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertIn("verify:", workflow)
         for command in (
             "PyYAML==6.0.3",
-            "github:microsoft/apm@0.26.0",
+            "github:microsoft/apm@0.30.0",
             "python3 -m unittest",
             "tests.test_agent_layer_generation",
             "tests.test_agent_mise_tasks",
@@ -300,7 +300,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
             [
                 {
                     "git": "kzarzycki/agent-skills/engineering",
-                    "ref": "^0.3.0",
+                    "ref": "^0.4.0",
                 }
             ],
             yaml.safe_load(apm)["dependencies"]["apm"],
@@ -308,7 +308,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertIn("mcp: []", apm)
 
         mise = tomllib.loads((project / "mise.toml").read_text())
-        self.assertEqual("0.26.0", mise["tools"].get("github:microsoft/apm"))
+        self.assertEqual("0.30.0", mise["tools"].get("github:microsoft/apm"))
         self.assertEqual("1.30.0", mise["tools"]["fnox"])
         self.assertEqual(
             {"agent-sync", "agent-claude", "agent-codex"},
@@ -332,7 +332,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, rendered)
         for remediation in (
-            "error: apm 0.26.0 is required; run 'mise install'",
+            "error: apm 0.30.0 is required; run 'mise install'",
             "error: fnox 1.30.0 is required; run 'mise install'",
             "error: python3 is required; run 'mise install'",
             "error: claude is required; install Claude Code and add 'claude' to PATH",
@@ -350,7 +350,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         manifest = (project / "apm.yml").read_text()
         answers = (project / ".copier-answers.yml").read_text()
         self.assertEqual(1, manifest.count("git: kzarzycki/agent-skills/engineering"))
-        self.assertIn("ref: ^0.3.0", manifest)
+        self.assertIn("ref: ^0.4.0", manifest)
         self.assertIn("include_engineering_workflow: true", answers)
         self.assertNotIn("engineering_capability_source", answers)
         self.assertNotIn("engineering_capability_ref", answers)
@@ -694,7 +694,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
 
         manifest_path = project / "apm.yml"
         manifest_current = manifest_path.read_text()
-        manifest_path.write_text(manifest_current.replace("^0.2.0", "^0.3.0"))
+        manifest_path.write_text(manifest_current.replace("^0.2.0", "^0.4.0"))
         commit_project(project, "stale manifest")
         stale_manifest = subprocess.run(
             [MISE, "run", "--skip-tools", "agent-sync", "--", "--frozen"],
@@ -739,8 +739,8 @@ class AgentLayerGenerationTest(unittest.TestCase):
     def test_apm_version_has_one_template_source(self) -> None:
         partial = (ROOT / "templates/_base/_mise_agent_tasks.part").read_text()
 
-        self.assertIn('{% set apm_version = "0.26.0" %}', partial)
-        self.assertEqual(1, partial.count("0.26.0"))
+        self.assertIn('{% set apm_version = "0.30.0" %}', partial)
+        self.assertEqual(1, partial.count("0.30.0"))
 
     def test_disabled_layer_leaves_no_agent_framework(self) -> None:
         project = render(include_mise=True, include_agent_layer=False)

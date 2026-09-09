@@ -116,7 +116,7 @@ class AgentMiseTasksTest(unittest.TestCase):
 
         self.assertEqual(127, result.returncode)
         self.assertIn(
-            "error: apm 0.26.0 is required; run 'mise install'",
+            "error: apm 0.30.0 is required; run 'mise install'",
             result.stderr,
         )
 

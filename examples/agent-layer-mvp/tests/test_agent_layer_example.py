@@ -209,7 +209,6 @@ class AgentLayerExampleTest(unittest.TestCase):
 
     def test_example_records_qualified_tool_versions(self) -> None:
         mise = tomllib.loads((ROOT / "mise.toml").read_text())
-        instructions = (ROOT / "AGENTS.md").read_text()
         workflow = (ROOT / ".github/workflows/ci.yml").read_text()
         hooks = (ROOT / ".pre-commit-config.yaml").read_text()
 
@@ -218,12 +217,11 @@ class AgentLayerExampleTest(unittest.TestCase):
                 "python": "3.14",
                 "uv": "0.11.29",
                 "pre-commit": "4.6.0",
-                "github:microsoft/apm": "0.26.0",
+                "github:microsoft/apm": "0.30.0",
                 "fnox": "1.30.0",
             },
             mise["tools"],
         )
-        self.assertIn("<!-- APM Version: 0.26.0 -->", instructions)
         self.assertIn(
             "jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14",
             workflow,

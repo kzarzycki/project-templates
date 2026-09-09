@@ -3,7 +3,7 @@
 python = "3.14"
 {% endif -%}
 {% if include_agent_layer -%}
-{% set apm_version = "0.26.0" %}
+{% set apm_version = "0.30.0" %}
 "github:microsoft/apm" = "{{ apm_version }}"
 {% endif -%}
 {% if include_agent_layer and include_fnox -%}
