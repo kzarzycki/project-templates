@@ -1,7 +1,7 @@
 {% include "templates/_base/_ci_header.yml.jinja" %}
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: {{ ci_runner }}
     steps:
 {% include "templates/_base/_ci_steps.yml.jinja" %}
       - name: Validate SKILL.md frontmatter and plugin.json
