@@ -56,4 +56,4 @@ vcs_ref=()
 if [ -d "$template/.git" ] || [ -f "$template/.git" ]; then
   vcs_ref+=(--vcs-ref=HEAD)
 fi
-copier copy --trust --defaults "${vcs_ref[@]}" "${data[@]}" "$template" "$dest"
+copier copy --trust --defaults ${vcs_ref[@]+"${vcs_ref[@]}"} "${data[@]}" "$template" "$dest"
