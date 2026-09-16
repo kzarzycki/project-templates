@@ -50,6 +50,11 @@ license:
   default: MIT
   choices: [MIT, Apache-2.0, none]
 
+ci_runner:
+  type: str
+  default: ubuntu-latest
+  help: GitHub Actions runner label for CI (macos-latest for projects that need Xcode or Swift)
+
 include_mise:
   type: bool
   default: true

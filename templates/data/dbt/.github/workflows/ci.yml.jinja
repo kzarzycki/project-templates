@@ -1,7 +1,7 @@
 {% include "templates/_base/_ci_header.yml.jinja" %}
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: {{ ci_runner }}
     steps:
 {% include "templates/_base/_ci_steps.yml.jinja" %}
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0

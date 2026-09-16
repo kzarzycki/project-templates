@@ -1,7 +1,9 @@
 {% include "templates/_base/_ci_header.yml.jinja" %}
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: {{ ci_runner }}
     steps:
-{% include "templates/_base/_ci_steps.yml.jinja" -%}
+{% include "templates/_base/_ci_checkout.yml.jinja" -%}
+{% include "templates/_lang/node/_ci_setup.yml.jinja" -%}
+{% include "templates/_base/_ci_precommit.yml.jinja" -%}
 {% include "templates/_lang/node/_ci_steps.yml.jinja" -%}
