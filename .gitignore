@@ -4,7 +4,6 @@
 .DS_Store
 
 # Agent / tooling state (not repo artifacts)
-/.memsearch/
 /.superpowers/
 /.workflow/
 __pycache__/

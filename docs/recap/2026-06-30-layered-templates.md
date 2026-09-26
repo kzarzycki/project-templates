@@ -17,7 +17,7 @@ Spec + Tech Design; this records only what implementation and live CI added.
 - **Adoption never forces hooks or auto-commits.** `pre-commit install -f` and
   the scaffold commit run only on a repo `_post_gen` created. Adoption uses plain
   install (existing hook migrates to `.legacy`) and skips the commit.
-- **`.workflow/`, `.memsearch/`, `.superpowers/` are gitignored**, not committed —
+- **`.workflow/` and `.superpowers/` are gitignored**, not committed —
   treated as agent/tooling state. The Decision Spec + Tech Design were therefore
   not versioned in-repo. (Open question if they should live under `docs/design/`.)
 
