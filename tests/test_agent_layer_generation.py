@@ -767,7 +767,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
                     "Verifier checklist",
                 ),
             ),
-            ("issue-tracker.md", ("Repo", "Components", "Never on GitHub", "Extra labels")),
+            ("issue-tracker.md", ("Repo", "Components", "Never on GitHub", "Extra labels", "Extra categories")),
             ("coding-standards.md", ("Domain facts",)),
         ):
             text = (project / "docs/agents" / name).read_text()
