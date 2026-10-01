@@ -110,8 +110,8 @@ facts from three files, seeded with a heading and a short prompt per fact:
 - `docs/agents/loop.md`: owner, proof on a branch, acceptance references,
   landing exceptions, how a finding is judged in use, the worktree command,
   the ledger path and any extra verifier checklist;
-- `docs/agents/issue-tracker.md`: repo, components, what never reaches GitHub,
-  extra labels;
+- `docs/agents/issue-tracker.md`: the tracker, components, what never reaches GitHub,
+  extra labels and categories;
 - `docs/agents/coding-standards.md`: domain facts only.
 
 Its gate is `mise run check`.

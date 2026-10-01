@@ -767,10 +767,17 @@ class AgentLayerGenerationTest(unittest.TestCase):
                     "Verifier checklist",
                 ),
             ),
-            ("issue-tracker.md", ("Repo", "Components", "Never on GitHub", "Extra labels", "Extra categories")),
+            (
+                "issue-tracker.md",
+                ("Components", "Never on GitHub", "Extra labels", "Extra categories"),
+            ),
             ("coding-standards.md", ("Domain facts",)),
         ):
             text = (project / "docs/agents" / name).read_text()
+            if name == "issue-tracker.md":
+                self.assertTrue(
+                    text.startswith("Tracker: GitHub (engineering-loop's github.md)\n")
+                )
             self.assertEqual(
                 [f"## {heading}" for heading in headings],
                 re.findall(r"^## .*", text, re.MULTILINE),
