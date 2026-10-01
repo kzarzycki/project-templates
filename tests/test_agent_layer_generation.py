@@ -791,6 +791,25 @@ class AgentLayerGenerationTest(unittest.TestCase):
                     (project / ".apm/instructions/project.instructions.md").read_text(),
                 )
 
+    def test_content_leaf_gate_is_only_mise_run_check(self) -> None:
+        project = render("authoring/content")
+
+        mise = tomllib.loads((project / "mise.toml").read_text())
+        self.assertIn("aqua:lycheeverse/lychee", mise["tools"])
+        self.assertIn(
+            "lychee --no-progress './**/*.md'", mise["tasks"]["check"]["run"]
+        )
+        steps = yaml.safe_load((project / ".github/workflows/ci.yml").read_text())[
+            "jobs"
+        ]["build"]["steps"]
+        self.assertEqual(
+            ["mise run check"], [step["run"] for step in steps if "run" in step and step.get("name") == "Gate"]
+        )
+        self.assertNotIn("lychee", " ".join(str(step) for step in steps))
+
+        off = render("authoring/content", include_mise=False)
+        self.assertIn("lychee-action", (off / ".github/workflows/ci.yml").read_text())
+
     def test_ci_without_mise_keeps_the_per_step_gate(self) -> None:
         workflow = (render(include_mise=False) / ".github/workflows/ci.yml").read_text()
 

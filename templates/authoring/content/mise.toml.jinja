@@ -1,7 +1,9 @@
 [tools]
 pre-commit = "4.6.0"
+"aqua:lycheeverse/lychee" = "0.24.2"
 {% include "templates/_base/_mise_agent_tasks.part" %}
-{% set check_commands %}{% endset -%}
+{% set check_commands %}lychee --no-progress './**/*.md'
+{% endset -%}
 {% include "templates/_base/_mise_check_task.part" %}
 
 [tasks.lint]
