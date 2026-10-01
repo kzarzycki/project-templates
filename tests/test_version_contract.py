@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import unittest
 from pathlib import Path
@@ -11,6 +12,13 @@ ROOT = Path(__file__).resolve().parents[1]
 class VersionContractTest(unittest.TestCase):
     def text(self, path: str) -> str:
         return (ROOT / path).read_text()
+
+    def test_plugin_version_is_the_release_being_tagged(self) -> None:
+        # Copier resolves a git source to its latest tag, so the release tag
+        # (vX.Y.Z) must match this version.
+        plugin = json.loads(self.text(".claude-plugin/plugin.json"))
+
+        self.assertEqual("0.4.0", plugin["version"])
 
     def test_default_runtimes_use_current_stable_or_lts_lines(self) -> None:
         copier = self.text("copier.yml")

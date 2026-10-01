@@ -53,7 +53,8 @@ script.
    `license` (default MIT), `include_mise` (default true),
    `include_agent_layer` (default true with mise), `include_fnox` (default true
    with the coding-agent integration), `include_engineering_workflow` (default
-   true with the coding-agent integration), and the runtime version
+   true with the coding-agent integration), `engineering_loop` (default true
+   with the pack), and the runtime version
    (`python_version`/`node_version`/`java_version`/`terraform_version`) default
    sensibly — see the root `copier.yml` for the full question set. Pass an
    optional only when the user clearly wants it (e.g. "Apache licensed" →
@@ -100,6 +101,11 @@ instructions, skills, MCP definitions, endpoints, fnox profiles/providers, CLI
 dependencies, and coding-agent-specific additions.
 Native CLI authentication stays native; a working `gh auth login` does not need a
 copied token.
+
+Every project with mise gets `mise run check`, the one gate agents and CI run.
+With `engineering_loop=true` the scaffold also turns the engineering loop on
+and seeds `docs/agents/loop.md`, `issue-tracker.md` and `coding-standards.md`
+for the owner to fill in.
 
 Set `include_agent_layer=false` to omit the coding-agent integration and all four
 commands. Set `include_fnox=false` to retain APM and the commands without fnox

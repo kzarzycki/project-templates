@@ -2,6 +2,10 @@
 {% include "templates/_lang/" ~ language ~ "/_mise_tools.part" -%}
 pre-commit = "4.6.0"
 {% include "templates/_base/_mise_agent_tasks.part" %}
+{% set check_commands %}{% include "templates/_lang/" ~ language ~ "/_check.part" %}{% if language == 'python' %}uv run python scripts/smoke_server.py
+{% else %}node scripts/smoke-server.mjs
+{% endif %}{% endset -%}
+{% include "templates/_base/_mise_check_task.part" %}
 {% if language == 'python' %}
 [tasks.test]
 run = "uv run pytest"

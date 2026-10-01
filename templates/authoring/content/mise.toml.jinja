@@ -1,6 +1,8 @@
 [tools]
 pre-commit = "4.6.0"
 {% include "templates/_base/_mise_agent_tasks.part" %}
+{% set check_commands %}{% endset -%}
+{% include "templates/_base/_mise_check_task.part" %}
 
 [tasks.lint]
 run = "pre-commit run --all-files"

@@ -8,5 +8,13 @@
             echo "::error::.env is tracked in git — remove it and add it to .gitignore" >&2
             exit 1
           fi
-      - name: pre-commit
+{% if include_mise %}      # mise installs the pinned toolchain; the gate is the same task agents run.
+      - uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
+{% if project_type == 'software/node' or (language | default('')) == 'node' %}      - run: mise exec -- npm ci
+{% endif %}      - name: Gate
+        env:
+          BASE_REF: {% raw %}${{ github.base_ref }}{% endraw %}
+        run: mise run check
+{% else %}      - name: pre-commit
         run: pipx run pre-commit run --all-files --show-diff-on-failure
+{% endif -%}

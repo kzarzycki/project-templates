@@ -251,6 +251,9 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertIn("test -f apm.yml", workflow)
         self.assertIn("test -f fnox.toml", workflow)
         self.assertIn("test ! -e .agents-toolkit", workflow)
+        self.assertIn("engineering_loop=true", workflow)
+        self.assertIn("grep -q '^\\[tasks.check\\]$' mise.toml", workflow)
+        self.assertIn("test -f docs/agents/loop.md", workflow)
         self.assertIn(
             "jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14", workflow
         )
@@ -735,6 +738,65 @@ class AgentLayerGenerationTest(unittest.TestCase):
         )
         self.assertNotEqual(0, stale.returncode)
         self.assertIn("frozen agent configuration changed", stale.stderr)
+
+    def test_loop_render_seeds_gate_ci_skeletons_and_loop_line(self) -> None:
+        project = render()
+
+        mise = tomllib.loads((project / "mise.toml").read_text())
+        self.assertIn("pre-commit run --all-files", mise["tasks"]["check"]["run"])
+        self.assertIn(
+            "mise run --skip-tools agent-sync -- --frozen", mise["tasks"]["check"]["run"]
+        )
+        workflow = (project / ".github/workflows/ci.yml").read_text()
+        steps = yaml.safe_load(workflow)["jobs"]["build"]["steps"]
+        self.assertEqual(
+            ["mise run check"], [step["run"] for step in steps if step.get("name") == "Gate"]
+        )
+        self.assertNotIn("pytest", workflow)
+        for name, headings in (
+            (
+                "loop.md",
+                (
+                    "Owner",
+                    "Proof on a branch",
+                    "Acceptance references",
+                    "Landing exceptions",
+                    "In use",
+                    "Worktree",
+                    "Ledger",
+                    "Verifier checklist",
+                ),
+            ),
+            ("issue-tracker.md", ("Repo", "Components", "Never on GitHub", "Extra labels")),
+            ("coding-standards.md", ("Domain facts",)),
+        ):
+            text = (project / "docs/agents" / name).read_text()
+            self.assertEqual(
+                [f"## {heading}" for heading in headings],
+                re.findall(r"^## .*", text, re.MULTILINE),
+            )
+        self.assertIn(
+            "Every change that lands as a PR runs the `engineering-loop` skill.",
+            (project / ".apm/instructions/project.instructions.md").read_text(),
+        )
+
+    def test_loop_off_renders_no_loop_files(self) -> None:
+        for answers in ({"engineering_loop": False}, {"include_engineering_workflow": False}):
+            with self.subTest(**answers):
+                project = render(**answers)
+
+                self.assertFalse((project / "docs/agents").exists())
+                self.assertNotIn(
+                    "engineering-loop",
+                    (project / ".apm/instructions/project.instructions.md").read_text(),
+                )
+
+    def test_ci_without_mise_keeps_the_per_step_gate(self) -> None:
+        workflow = (render(include_mise=False) / ".github/workflows/ci.yml").read_text()
+
+        self.assertNotIn("mise run check", workflow)
+        self.assertIn("pipx run pre-commit run --all-files", workflow)
+        self.assertIn("uv run pytest --cov", workflow)
 
     def test_apm_version_has_one_template_source(self) -> None:
         partial = (ROOT / "templates/_base/_mise_agent_tasks.part").read_text()

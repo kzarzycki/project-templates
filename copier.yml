@@ -67,6 +67,12 @@ include_engineering_workflow:
   when: "{{ include_mise and include_agent_layer }}"
   help: Add the standard engineering capability pack?
 
+engineering_loop:
+  type: bool
+  default: true
+  when: "{{ include_mise and include_agent_layer and include_engineering_workflow }}"
+  help: Turn the engineering loop on (a line in AGENTS.md and the docs/agents/ files it reads)?
+
 include_fnox:
   type: bool
   default: true
@@ -120,6 +126,13 @@ engineering_capability_ref:
   when: false
   default: "^0.4.0"
 
+# An unasked question keeps its default, so the loop is on only when every
+# question it depends on was answered yes.
+loop_enabled:
+  type: bool
+  when: false
+  default: "{{ include_mise and include_agent_layer and include_engineering_workflow and engineering_loop }}"
+
 _exclude:
   - "*.pyc"
   - "__pycache__"
@@ -130,6 +143,7 @@ _exclude:
   - "{% if not (include_mise and include_agent_layer) %}apm.yml{% endif %}"
   - "{% if not (include_mise and include_agent_layer) %}.apm{% endif %}"
   - "{% if not (include_mise and include_agent_layer and include_fnox) %}fnox.toml{% endif %}"
+  - "{% if not loop_enabled %}docs/agents{% endif %}"
   - "{% if not include_example %}main.tf{% endif %}"
   - "{% if not include_example %}versions.tf{% endif %}"
 

@@ -245,6 +245,57 @@ class AgentMiseTasksTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(f"{self.bin}/codex --help", self.commands()[0])
 
+    def test_check_runs_tests_then_hooks_then_frozen_sync_once_locked(self) -> None:
+        for name in ("uv", "pre-commit"):
+            fake_executable(self.bin, name)
+        (self.bin / "mise").symlink_to(MISE)
+        (self.project / "apm.lock.yaml").touch()
+        self.initialize_git()
+
+        result = self.run_task("check")
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(
+            [
+                f"{self.bin}/uv run pytest --cov --cov-report=xml",
+                f"{self.bin}/pre-commit run --all-files --show-diff-on-failure",
+                f"{self.bin}/apm install --frozen --target claude,codex",
+            ],
+            self.commands()[:3],
+        )
+
+    def test_check_passes_in_a_generated_python_project(self) -> None:
+        # Real toolchain: uv, pre-commit and network for the hook repos.
+        project = render()
+        subprocess.run(["git", "init", "-q", "-b", "main"], cwd=project, check=True)
+        subprocess.run(["git", "add", "-A"], cwd=project, check=True)
+        subprocess.run(
+            [
+                "git",
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.com",
+                "commit",
+                "--no-verify",
+                "-qm",
+                "scaffold",
+            ],
+            cwd=project,
+            check=True,
+        )
+
+        result = subprocess.run(
+            [MISE, "run", "--skip-tools", "check"],
+            cwd=project,
+            env={**os.environ, "MISE_TRUSTED_CONFIG_PATHS": str(project)},
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertIn("no apm.lock.yaml yet", result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
