@@ -798,6 +798,22 @@ class AgentLayerGenerationTest(unittest.TestCase):
                     (project / ".apm/instructions/project.instructions.md").read_text(),
                 )
 
+    def test_regeneration_keeps_filled_docs_agents_files(self) -> None:
+        project = render()
+        filled = "Tracker: GitHub\n\n## Components\n\n- `api`: the service.\n"
+        for name in ("loop.md", "issue-tracker.md", "coding-standards.md"):
+            (project / "docs/agents" / name).write_text(filled)
+
+        subprocess.run(
+            ["copier", "copy", "--trust", "--defaults", "--skip-tasks", "--overwrite",
+             "--data", "project_name=agent-layer-test", "--data", "project_type=software/python",
+             str(project.parent / "template"), str(project)],
+            check=True, capture_output=True, text=True,
+        )
+
+        for name in ("loop.md", "issue-tracker.md", "coding-standards.md"):
+            self.assertEqual(filled, (project / "docs/agents" / name).read_text())
+
     def test_content_leaf_gate_is_only_mise_run_check(self) -> None:
         project = render("authoring/content")
 

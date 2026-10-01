@@ -147,5 +147,10 @@ _exclude:
   - "{% if not include_example %}main.tf{% endif %}"
   - "{% if not include_example %}versions.tf{% endif %}"
 
+# Seeds the project owns once written: an update creates a missing one but never merges
+# template changes into one the project filled in.
+_skip_if_exists:
+  - "docs/agents/*.md"
+
 _tasks:
   - "bash '{{ _copier_conf.src_path }}/_post_gen.sh' '{{ project_type }}' '{{ language | default('', true) }}'"
