@@ -1,7 +1,7 @@
 # Loop facts
 
-The `engineering-loop` skill reads this file at Proof, Verify, Land, Accept and
-Clean up. Replace each prompt with this project's fact; keep the headings.
+The `engineering-loop` skill reads this file at every step but the gate.
+Replace each prompt with this project's fact; keep the headings.
 
 ## Owner
 
@@ -18,10 +18,17 @@ What a new result is checked against, in order of preference: references the
 code did not produce, such as the owner's evidence, an external source, a
 recomputation or an invariant.
 
-## Landing exceptions
+## Practice
 
-Changes that wait for the owner's go-ahead on the PR instead of landing on a
-green gate and a clear verifier. "None" is an answer.
+The skill that fills each stage this project changes, one line each, such as
+`Spec: <skill>`, or "Default".
+
+## Approvals
+
+Rules that make the loop wait for a person, one per line as
+`<point>: <condition>`, where the point is spec, plan or merge. Required
+reviews and code owners go in branch protection and `CODEOWNERS`, which the
+loop obeys. "None" is an answer.
 
 ## In use
 

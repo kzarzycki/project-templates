@@ -760,7 +760,8 @@ class AgentLayerGenerationTest(unittest.TestCase):
                     "Owner",
                     "Proof on a branch",
                     "Acceptance references",
-                    "Landing exceptions",
+                    "Practice",
+                    "Approvals",
                     "In use",
                     "Worktree",
                     "Ledger",
@@ -774,6 +775,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
             ("coding-standards.md", ("Domain facts",)),
         ):
             text = (project / "docs/agents" / name).read_text()
+            self.assertNotIn("Landing exceptions", text)
             if name == "issue-tracker.md":
                 self.assertTrue(
                     text.startswith("Tracker: GitHub (engineering-loop's github.md)\n")
