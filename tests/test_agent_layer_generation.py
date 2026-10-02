@@ -762,9 +762,11 @@ class AgentLayerGenerationTest(unittest.TestCase):
             ["mise run check"], [step["run"] for step in steps if step.get("name") == "Gate"]
         )
         self.assertNotIn("pytest", workflow)
+        gate_run = mise["tasks"]["gate"]["run"]
+        self.assertIn("mise run agent-sync", gate_run[0])
         self.assertEqual(
-            ['python3 .agents/skills/engineering-loop/scripts/gate.py check "${usage_point}" ${usage_pr:-}'],
-            mise["tasks"]["gate"]["run"],
+            'python3 .agents/skills/engineering-loop/scripts/gate.py check "${usage_point}" ${usage_pr:-}',
+            gate_run[-1],
         )
         gate = yaml.safe_load((project / ".github/workflows/gate.yml").read_text())
         self.assertEqual('mise run gate merge "$PR"', gate["jobs"]["gate"]["steps"][-1]["run"])
