@@ -123,6 +123,15 @@ from the project's CI. GitHub's free plan has no protection for private
 repos, so that job is a red check, not a block: it catches a forgotten step, not
 a deliberate one.
 
+A project without CI, for example a private repo with GitHub Actions off, puts the
+line `CI: none` in `docs/agents/loop.md`. The merge gate then stops looking for
+green CI checks. Its proof instead is
+`python3 .agents/skills/engineering-loop/scripts/gate.py record-check <pr>`, run
+on a clean checkout at the PR's head commit. It runs `mise run check` there and,
+when the check passes without changing the tree, posts `Local check passed` with
+that head on the PR. So anything the project's CI enforced has to be in
+`mise run check` too, or it stops being enforced.
+
 ## Use it via Claude
 
 Ask Claude to "start a new python project called my-tool" — the
