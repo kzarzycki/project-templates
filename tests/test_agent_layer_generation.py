@@ -346,6 +346,12 @@ class AgentLayerGenerationTest(unittest.TestCase):
         ):
             self.assertIn(remediation, (project / "mise.toml").read_text())
 
+    def test_description_with_colon_renders_valid_apm_yml(self) -> None:
+        description = "Infra: server, network and DNS"
+        project = render("infra/terraform", description=description)
+        manifest = yaml.safe_load((project / "apm.yml").read_text())
+        self.assertEqual(manifest["description"], description)
+
     def test_engineering_workflow_is_enabled_by_default(self) -> None:
         project = render(
             include_mise=True,
