@@ -223,7 +223,7 @@ class AgentLayerExampleTest(unittest.TestCase):
             mise["tools"],
         )
         self.assertIn(
-            "jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14",
+            "jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c",
             workflow,
         )
         for revision in ("v6.0.0", "v8.30.1", "v4.4.0", "v1.27.0", "v0.15.22"):
