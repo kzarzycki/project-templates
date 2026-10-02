@@ -20,10 +20,25 @@ run = "terraform init -backend=false -input=false && terraform validate"
 description = "Lint with tflint."
 run = "tflint --init && tflint --recursive"
 
+{% if include_fnox -%}
+# Provider credentials come from the fnox profile "infra" (see fnox.toml), so a coding
+# agent launched with the default profile never holds cloud tokens.
+[tasks.plan]
+description = "Show the plan without applying."
+run = 'fnox exec -P infra --if-missing error -- sh -c "terraform init -input=false && terraform plan"'
+
+[tasks.apply]
+description = "Apply the plan."
+run = 'fnox exec -P infra --if-missing error -- sh -c "terraform init -input=false && terraform apply"'
+{% else -%}
 [tasks.plan]
 description = "Show the plan without applying."
 run = "terraform init -input=false && terraform plan"
 
+[tasks.apply]
+description = "Apply the plan."
+run = "terraform init -input=false && terraform apply"
+{% endif %}
 [tasks.bootstrap]
 description = "Install git hooks."
 run = "pre-commit install --install-hooks"

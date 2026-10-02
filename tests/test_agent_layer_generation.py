@@ -346,6 +346,12 @@ class AgentLayerGenerationTest(unittest.TestCase):
         ):
             self.assertIn(remediation, (project / "mise.toml").read_text())
 
+    def test_description_with_colon_renders_valid_apm_yml(self) -> None:
+        description = "Infra: server, network and DNS"
+        project = render("infra/terraform", description=description)
+        manifest = yaml.safe_load((project / "apm.yml").read_text())
+        self.assertEqual(manifest["description"], description)
+
     def test_engineering_workflow_is_enabled_by_default(self) -> None:
         project = render(
             include_mise=True,
@@ -756,9 +762,11 @@ class AgentLayerGenerationTest(unittest.TestCase):
             ["mise run check"], [step["run"] for step in steps if step.get("name") == "Gate"]
         )
         self.assertNotIn("pytest", workflow)
+        gate_run = mise["tasks"]["gate"]["run"]
+        self.assertIn("mise run agent-sync", gate_run[0])
         self.assertEqual(
-            ['python3 .agents/skills/engineering-loop/scripts/gate.py check "${usage_point}" ${usage_pr:-}'],
-            mise["tasks"]["gate"]["run"],
+            'python3 .agents/skills/engineering-loop/scripts/gate.py check "${usage_point}" ${usage_pr:-}',
+            gate_run[-1],
         )
         gate = yaml.safe_load((project / ".github/workflows/gate.yml").read_text())
         self.assertEqual('mise run gate merge "$PR"', gate["jobs"]["gate"]["steps"][-1]["run"])
@@ -859,7 +867,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         mise = tomllib.loads((project / "mise.toml").read_text())
         self.assertIn("aqua:lycheeverse/lychee", mise["tools"])
         self.assertIn(
-            "lychee --no-progress './**/*.md'", mise["tasks"]["check"]["run"]
+            "lychee --no-progress --extensions md .", mise["tasks"]["check"]["run"]
         )
         steps = yaml.safe_load((project / ".github/workflows/ci.yml").read_text())[
             "jobs"
