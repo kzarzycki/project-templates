@@ -258,7 +258,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertIn("grep -q '^\\[tasks.check\\]$' mise.toml", workflow)
         self.assertIn("test -f docs/agents/loop.md", workflow)
         self.assertIn(
-            "jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14", workflow
+            "jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c", workflow
         )
         self.assertIn(
             "mise exec terraform@1.15.8 tflint@0.63.1 --",

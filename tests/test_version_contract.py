@@ -52,7 +52,7 @@ class VersionContractTest(unittest.TestCase):
             "actions/setup-node": "820762786026740c76f36085b0efc47a31fe5020",  # pragma: allowlist secret
             "actions/setup-java": "03ad4de0992f5dab5e18fcb136590ce7c4a0ac95",  # pragma: allowlist secret
             "astral-sh/setup-uv": "20cfd1bf945f4377ade1205e4dbc17946fc9a30d",  # pragma: allowlist secret
-            "jdx/mise-action": "9e7f7633ff6f6d6048a9418a68d48f288f50eb14",  # pragma: allowlist secret
+            "jdx/mise-action": "c2a87611a18de5b3828c5652fe268e992400cb5c",  # pragma: allowlist secret
             "lycheeverse/lychee-action": "e7477775783ea5526144ba13e8db5eec57747ce8",  # pragma: allowlist secret
             "hashicorp/setup-terraform": "dfe3c3f87815947d99a8997f908cb6525fc44e9e",  # pragma: allowlist secret
             "terraform-linters/setup-tflint": "6e1e0642c0289bd619021bf6b34e3c08ed1e005a",  # pragma: allowlist secret
