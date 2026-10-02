@@ -13,6 +13,8 @@ case "$project_type" in
   software/python) language=python ;;
   software/node)   language=node ;;
   software/java)   language=java ;;
+  ai/mcp)          ;;
+  *)               language="" ;;  # copier's default answer is python even where it does not apply
 esac
 
 # 1. git init (skip if already a repo). fresh_repo distinguishes scaffolding into
