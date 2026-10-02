@@ -1,8 +1,7 @@
 name: CI
 on:
   pull_request:
-{% if loop_enabled %}    types: [opened, synchronize, reopened, ready_for_review]
-{% endif %}  push:
+  push:
     branches: [main, master]
 
 permissions:

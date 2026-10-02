@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import atexit
 import os
 import re
 import subprocess
@@ -19,6 +20,7 @@ assert MISE is not None
 
 def render(project_type: str = "software/python", **answers: object) -> Path:
     scratch = Path(tempfile.mkdtemp(prefix="project-template-test-"))
+    atexit.register(shutil.rmtree, scratch, True)
     template = scratch / "template"
     shutil.copytree(
         ROOT,
@@ -31,6 +33,7 @@ def render(project_type: str = "software/python", **answers: object) -> Path:
             ".venv",
             "__pycache__",
             "_out",
+            "tmp",
             "apm_modules",
             "node_modules",
         ),
@@ -303,7 +306,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
             [
                 {
                     "git": "kzarzycki/agent-skills/engineering",
-                    "ref": "^0.4.0",
+                    "ref": "^0.8.0",
                 }
             ],
             yaml.safe_load(apm)["dependencies"]["apm"],
@@ -353,7 +356,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         manifest = (project / "apm.yml").read_text()
         answers = (project / ".copier-answers.yml").read_text()
         self.assertEqual(1, manifest.count("git: kzarzycki/agent-skills/engineering"))
-        self.assertIn("ref: ^0.4.0", manifest)
+        self.assertIn("ref: ^0.8.0", manifest)
         self.assertIn("include_engineering_workflow: true", answers)
         self.assertNotIn("engineering_capability_source", answers)
         self.assertNotIn("engineering_capability_ref", answers)
@@ -757,8 +760,9 @@ class AgentLayerGenerationTest(unittest.TestCase):
             ['python3 .agents/skills/engineering-loop/scripts/gate.py check "${usage_point}" ${usage_pr:-}'],
             mise["tasks"]["gate"]["run"],
         )
-        gate = yaml.safe_load(workflow)["jobs"]["gate"]
-        self.assertEqual(("build", 'mise run gate merge "$PR"'), (gate["needs"], gate["steps"][-1]["run"]))
+        gate = yaml.safe_load((project / ".github/workflows/gate.yml").read_text())
+        self.assertEqual('mise run gate merge "$PR"', gate["jobs"]["gate"]["steps"][-1]["run"])
+        self.assertIn("labeled", gate[True]["pull_request"]["types"])  # PyYAML reads `on` as True
         repos = yaml.safe_load((project / ".pre-commit-config.yaml").read_text())["repos"]
         hooks = [hook for repo in repos for hook in repo["hooks"]]
         self.assertIn(
@@ -802,6 +806,12 @@ class AgentLayerGenerationTest(unittest.TestCase):
             (project / ".apm/instructions/project.instructions.md").read_text(),
         )
 
+    def test_without_the_example_an_adopted_repo_gets_no_starter_code(self) -> None:
+        project = render(include_example=False)
+        self.assertFalse((project / "src").exists())
+        self.assertFalse((project / "tests/test_smoke.py").exists())
+        self.assertTrue((project / "mise.toml").exists())
+
     def test_loop_off_renders_no_loop_files(self) -> None:
         for answers in ({"engineering_loop": False}, {"include_engineering_workflow": False}):
             with self.subTest(**answers):
@@ -809,7 +819,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
 
                 self.assertFalse((project / "docs/agents").exists())
                 self.assertNotIn("[tasks.gate]", (project / "mise.toml").read_text())
-                self.assertNotIn("gate:", (project / ".github/workflows/ci.yml").read_text())
+                self.assertFalse((project / ".github/workflows/gate.yml").exists())
                 self.assertNotIn("loop-gate", (project / ".pre-commit-config.yaml").read_text())
                 self.assertNotIn(
                     "engineering-loop",

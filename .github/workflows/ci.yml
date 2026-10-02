@@ -120,7 +120,7 @@ jobs:
           grep -q '^\[tasks.check\]$' mise.toml
           grep -q 'run: mise run check' .github/workflows/ci.yml
           grep -q '^\[tasks.gate\]$' mise.toml
-          grep -q 'run: mise run gate merge "$PR"' .github/workflows/ci.yml
+          grep -q 'run: mise run gate merge "$PR"' .github/workflows/gate.yml
           grep -q 'entry: mise run gate build' .pre-commit-config.yaml
           test -f docs/agents/loop.md
           test -f docs/agents/issue-tracker.md

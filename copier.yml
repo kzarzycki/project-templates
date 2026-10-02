@@ -102,8 +102,7 @@ terraform_version:
 include_example:
   type: bool
   default: true
-  when: "{{ project_type == 'infra/terraform' }}"
-  help: Include a starter main.tf / versions.tf? Turn off when adopting into an existing repo.
+  help: Include the starter code and its smoke test? Turn off when adopting into an existing repo.
 
 # ---- Computed (not asked) ----
 module_name:
@@ -124,7 +123,7 @@ engineering_capability_source:
 engineering_capability_ref:
   type: str
   when: false
-  default: "^0.4.0"
+  default: "^0.8.0"
 
 # An unasked question keeps its default, so the loop is on only when every
 # question it depends on was answered yes.
@@ -146,6 +145,10 @@ _exclude:
   - "{% if not loop_enabled %}docs/agents{% endif %}"
   - "{% if not include_example %}main.tf{% endif %}"
   - "{% if not include_example %}versions.tf{% endif %}"
+  - "{% if not include_example %}src{% endif %}"
+  - "{% if not include_example %}tests/test_smoke.py{% endif %}"
+  - "{% if not include_example %}tests/smoke.test.ts{% endif %}"
+  - "{% if not include_example %}models/example{% endif %}"
 
 # Seeds the project owns once written: an update creates a missing one but never merges
 # template changes into one the project filled in.

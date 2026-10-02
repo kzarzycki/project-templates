@@ -142,6 +142,7 @@ arg "<point>" help="build or merge"
 arg "[pr]" help="the PR number; default: this branch's PR"
 '''
 # Add the project's own checks as more lines; the gate stops at the first that fails.
+# ponytail: the path is the codex target's copy; without codex, point it at .claude/skills.
 run = [
   'python3 .agents/skills/engineering-loop/scripts/gate.py check "${usage_point}" ${usage_pr:-}',
 ]

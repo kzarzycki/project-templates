@@ -26,7 +26,7 @@ The skill that fills each stage this project changes, one line each, such as
 ## Approvals
 
 Where a person must approve too, beyond the loop's own approval: one rule per
-line as `<point>: <condition>`, where the point is spec, plan or merge. The
+line as `- <point>: <condition>`, where the point is spec, plan or merge. The
 gate reads `always`, `size:L or larger`, `component <name>`, `category <name>`
 and `` path `<glob>` ``, joined by `or`; the loop judges any other words. The
 person approves by adding the `approved:<point>` label. Required reviews and

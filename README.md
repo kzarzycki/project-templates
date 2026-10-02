@@ -117,8 +117,9 @@ facts from three files, seeded with a heading and a short prompt per fact:
 
 Its gate is `mise run check`. `mise run gate <build|merge> [pr]` checks the
 proof each loop step leaves on GitHub (the pack's `gate.py`, then any check the
-project adds to the task); a pre-push hook runs it for build, and a `gate` CI job
-for merge on every ready PR. GitHub's free plan has no protection for private
+project adds to the task); a pre-push hook runs it for build, and its own
+workflow, `.github/workflows/gate.yml`, runs it for merge on every ready PR, apart
+from the project's CI. GitHub's free plan has no protection for private
 repos, so that job is a red check, not a block: it catches a forgotten step, not
 a deliberate one.
 
@@ -141,7 +142,7 @@ migration layer for legacy coding-agent configuration.
 
 Updating to v0.4.0 asks `engineering_loop`, adds `mise run check` and the CI
 gate that calls it, and, with the loop on, the loop line and the `docs/agents/`
-skeletons, the `gate` task, its pre-push hook and its CI job.
+skeletons, the `gate` task, its pre-push hook and its workflow.
 
 ## Adopt an existing (pre-template) repo
 
@@ -151,7 +152,7 @@ prompting on any file that already exists:
 
 ```bash
 cd existing-repo
-copier copy --trust --data project_type=software/python gh:your-org/project-templates .
+copier copy --trust --data project_type=software/python --data include_example=false gh:your-org/project-templates .
 git add -p && git commit          # keep what you want from the prompted merge
 ```
 

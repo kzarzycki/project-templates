@@ -10,4 +10,3 @@ jobs:
 {% endif %}{% if language == 'node' %}      - name: MCP server smoke check
         run: node scripts/smoke-server.mjs
 {% endif %}{% endif %}
-{% include "templates/_base/_ci_gate_job.yml.jinja" -%}
