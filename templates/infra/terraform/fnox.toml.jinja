@@ -1,1 +1,11 @@
 {%- include "templates/_base/_fnox_toml.part" -%}
+
+# Provider credentials belong in the "infra" profile: `mise run plan` and `mise run apply`
+# load it, coding agents (default profile) never do. For example, from GCP Secret Manager:
+#
+# [providers.gsm]
+# type = "gcp-sm"
+# project = "<gcp-project>"
+#
+# [profiles.infra.secrets]
+# CLOUDFLARE_API_TOKEN = { provider = "gsm", value = "cloudflare-api-token" }

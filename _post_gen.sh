@@ -49,16 +49,29 @@ case "$language" in
     ;;
 esac
 
+# 2b. pinned tools. Hooks such as terraform_fmt or tflint need the toolchain mise
+#     pins, so install it first and run hooks and the first commit through it.
+#     Without mise, tools are whatever is on PATH.
+with_tools() { "$@"; }
+if [ -f mise.toml ] && command -v mise >/dev/null 2>&1; then
+  if mise trust -q >/dev/null 2>&1 && mise install >/dev/null 2>&1; then
+    with_tools() { mise exec -- "$@"; }
+    log "mise tools installed"
+  else
+    log "mise install failed — run 'mise install' before committing"
+  fi
+fi
+
 # 3. install pre-commit hooks (skip if pre-commit absent). On a fresh repo, force
 #    (-f): a global git template that seeds .git/hooks would otherwise drop a plain
 #    install into "migration mode" and abort every later commit. On adoption, NEVER
 #    force — that would clobber a hook the existing repo already relies on; a plain
 #    install migrates any existing hook to .legacy instead.
-if command -v pre-commit >/dev/null 2>&1; then
+if with_tools pre-commit --version >/dev/null 2>&1; then
   if [ "$fresh_repo" = true ]; then
-    pre-commit install -f --install-hooks >/dev/null 2>&1 && log "pre-commit installed" || true
+    with_tools pre-commit install -f --install-hooks >/dev/null 2>&1 && log "pre-commit installed" || true
   else
-    pre-commit install --install-hooks >/dev/null 2>&1 && log "pre-commit installed (existing hooks preserved)" || true
+    with_tools pre-commit install --install-hooks >/dev/null 2>&1 && log "pre-commit installed (existing hooks preserved)" || true
   fi
 else
   log "pre-commit not found — run 'uv tool install pre-commit && pre-commit install'"
@@ -71,11 +84,11 @@ fi
 #    the commit aborts on a hook that "modified files".
 if [ "$fresh_repo" = true ] && [ "$(git rev-list --all --count 2>/dev/null || echo 0)" -eq 0 ]; then
   git add -A
-  if command -v pre-commit >/dev/null 2>&1; then
-    pre-commit run --all-files >/dev/null 2>&1 || true
+  if with_tools pre-commit --version >/dev/null 2>&1; then
+    with_tools pre-commit run --all-files >/dev/null 2>&1 || true
     git add -A
   fi
-  if git commit -q -m "chore: scaffold project
+  if with_tools git commit -q -m "chore: scaffold project
 
 Co-Authored-By: Claude <noreply@anthropic.com>"; then
     log "initial commit created"

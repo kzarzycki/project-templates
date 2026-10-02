@@ -144,6 +144,7 @@ arg "[pr]" help="the PR number; default: this branch's PR"
 # Add the project's own checks as more lines; the gate stops at the first that fails.
 # ponytail: the path is the codex target's copy; without codex, point it at .claude/skills.
 run = [
+  'test -f .agents/skills/engineering-loop/scripts/gate.py || { echo "gate: the engineering-loop skill is not installed; run mise run agent-sync and commit its output" >&2; exit 1; }',
   'python3 .agents/skills/engineering-loop/scripts/gate.py check "${usage_point}" ${usage_pr:-}',
 ]
 {% endif -%}
