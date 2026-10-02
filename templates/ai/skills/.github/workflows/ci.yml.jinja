@@ -8,3 +8,4 @@ jobs:
       - name: Validate SKILL.md frontmatter and plugin.json
         run: python3 scripts/validate-skill.py
 {% endif %}
+{% include "templates/_base/_ci_gate_job.yml.jinja" -%}

@@ -1,0 +1,23 @@
+{% if loop_enabled %}
+  # The merge gate: every proof the loop leaves, checked once the build job is green.
+  gate:
+    needs: {{ build_job | default('build') }}
+    if: {% raw %}github.event_name == 'pull_request' && !github.event.pull_request.draft && github.event.pull_request.user.login != 'dependabot[bot]'{% endraw %}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+      checks: read
+      statuses: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
+      - name: Gate
+        env:
+          GH_TOKEN: {% raw %}${{ github.token }}{% endraw %}
+          PR: {% raw %}${{ github.event.pull_request.number }}{% endraw %}
+        run: mise run gate merge "$PR"
+{% endif -%}

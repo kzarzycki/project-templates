@@ -25,10 +25,13 @@ The skill that fills each stage this project changes, one line each, such as
 
 ## Approvals
 
-Rules that make the loop wait for a person, one per line as
-`<point>: <condition>`, where the point is spec, plan or merge. Required
-reviews and code owners go in branch protection and `CODEOWNERS`, which the
-loop obeys. "None" is an answer.
+Where a person must approve too, beyond the loop's own approval: one rule per
+line as `<point>: <condition>`, where the point is spec, plan or merge. The
+gate reads `always`, `size:L or larger`, `component <name>`, `category <name>`
+and `` path `<glob>` ``, joined by `or`; the loop judges any other words. The
+person approves by adding the `approved:<point>` label. Required reviews and
+code owners go in branch protection and `CODEOWNERS`, which the loop obeys.
+"None" is an answer.
 
 ## In use
 

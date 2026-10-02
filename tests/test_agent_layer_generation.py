@@ -753,6 +753,19 @@ class AgentLayerGenerationTest(unittest.TestCase):
             ["mise run check"], [step["run"] for step in steps if step.get("name") == "Gate"]
         )
         self.assertNotIn("pytest", workflow)
+        self.assertEqual(
+            ['python3 .agents/skills/engineering-loop/scripts/gate.py check "${usage_point}" ${usage_pr:-}'],
+            mise["tasks"]["gate"]["run"],
+        )
+        gate = yaml.safe_load(workflow)["jobs"]["gate"]
+        self.assertEqual(("build", 'mise run gate merge "$PR"'), (gate["needs"], gate["steps"][-1]["run"]))
+        repos = yaml.safe_load((project / ".pre-commit-config.yaml").read_text())["repos"]
+        hooks = [hook for repo in repos for hook in repo["hooks"]]
+        self.assertIn(
+            {"id": "loop-gate", "name": "loop gate (mise run gate build)", "entry": "mise run gate build",
+             "language": "system", "pass_filenames": False, "always_run": True, "stages": ["pre-push"]},
+            hooks,
+        )
         for name, headings in (
             (
                 "loop.md",
@@ -795,6 +808,9 @@ class AgentLayerGenerationTest(unittest.TestCase):
                 project = render(**answers)
 
                 self.assertFalse((project / "docs/agents").exists())
+                self.assertNotIn("[tasks.gate]", (project / "mise.toml").read_text())
+                self.assertNotIn("gate:", (project / ".github/workflows/ci.yml").read_text())
+                self.assertNotIn("loop-gate", (project / ".pre-commit-config.yaml").read_text())
                 self.assertNotIn(
                     "engineering-loop",
                     (project / ".apm/instructions/project.instructions.md").read_text(),

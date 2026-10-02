@@ -108,14 +108,19 @@ PR runs it. Deleting that line turns the loop off. The loop reads this project's
 facts from three files, seeded with a heading and a short prompt per fact:
 
 - `docs/agents/loop.md`: owner, proof on a branch, acceptance references,
-  the skill for each stage the project changes, the approvals the loop waits
-  for, how a finding is judged in use, the worktree command, the ledger path
+  the skill for each stage the project changes, where a person must approve
+  too, how a finding is judged in use, the worktree command, the ledger path
   and any extra verifier checklist;
 - `docs/agents/issue-tracker.md`: the tracker, components, what never reaches GitHub,
   extra labels and categories;
 - `docs/agents/coding-standards.md`: domain facts only.
 
-Its gate is `mise run check`.
+Its gate is `mise run check`. `mise run gate <build|merge> [pr]` checks the
+proof each loop step leaves on GitHub (the pack's `gate.py`, then any check the
+project adds to the task); a pre-push hook runs it for build, and a `gate` CI job
+for merge on every ready PR. GitHub's free plan has no protection for private
+repos, so that job is a red check, not a block: it catches a forgotten step, not
+a deliberate one.
 
 ## Use it via Claude
 
@@ -136,7 +141,7 @@ migration layer for legacy coding-agent configuration.
 
 Updating to v0.4.0 asks `engineering_loop`, adds `mise run check` and the CI
 gate that calls it, and, with the loop on, the loop line and the `docs/agents/`
-skeletons.
+skeletons, the `gate` task, its pre-push hook and its CI job.
 
 ## Adopt an existing (pre-template) repo
 

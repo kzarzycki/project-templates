@@ -1,4 +1,5 @@
 {% include "templates/_base/_ci_header.yml.jinja" %}
+{% set build_job = "validate" -%}
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -20,3 +21,4 @@ jobs:
           terraform init -backend=false -input=false
           terraform validate
 {% endif %}
+{% include "templates/_base/_ci_gate_job.yml.jinja" -%}

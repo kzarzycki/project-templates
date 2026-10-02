@@ -119,6 +119,9 @@ jobs:
           grep -q '^\[tasks.agent-codex\]$' mise.toml
           grep -q '^\[tasks.check\]$' mise.toml
           grep -q 'run: mise run check' .github/workflows/ci.yml
+          grep -q '^\[tasks.gate\]$' mise.toml
+          grep -q 'run: mise run gate merge "$PR"' .github/workflows/ci.yml
+          grep -q 'entry: mise run gate build' .pre-commit-config.yaml
           test -f docs/agents/loop.md
           test -f docs/agents/issue-tracker.md
           test -f docs/agents/coding-standards.md

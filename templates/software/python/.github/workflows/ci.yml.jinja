@@ -5,3 +5,4 @@ jobs:
     steps:
 {% include "templates/_base/_ci_steps.yml.jinja" -%}
 {% if not include_mise %}{% include "templates/_lang/python/_ci_steps.yml.jinja" %}{% endif -%}
+{% include "templates/_base/_ci_gate_job.yml.jinja" -%}
