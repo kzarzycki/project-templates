@@ -10,8 +10,8 @@
     "test": "vitest run",
     "coverage": "vitest run --coverage",
     "check": "biome check --write .",
-    "typecheck": "tsc --noEmit",
-    "smoke": "node scripts/smoke-server.mjs"
+    "typecheck": "tsc --noEmit"{% if include_example %},
+    "smoke": "node scripts/smoke-server.mjs"{% endif %}
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0"

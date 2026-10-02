@@ -762,6 +762,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         )
         gate = yaml.safe_load((project / ".github/workflows/gate.yml").read_text())
         self.assertEqual('mise run gate merge "$PR"', gate["jobs"]["gate"]["steps"][-1]["run"])
+        self.assertEqual({"install": False}, gate["jobs"]["gate"]["steps"][-2]["with"])  # gate.py needs no toolchain
         self.assertIn("labeled", gate[True]["pull_request"]["types"])  # PyYAML reads `on` as True
         repos = yaml.safe_load((project / ".pre-commit-config.yaml").read_text())["repos"]
         hooks = [hook for repo in repos for hook in repo["hooks"]]
@@ -811,6 +812,16 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertFalse((project / "src").exists())
         self.assertFalse((project / "tests/test_smoke.py").exists())
         self.assertTrue((project / "mise.toml").exists())
+
+    def test_without_the_example_an_mcp_repo_runs_no_starter_smoke_check(self) -> None:
+        for language in ("python", "node"):
+            with self.subTest(language=language):
+                project = render("ai/mcp", language=language, include_example=False)
+
+                self.assertEqual([], list(project.glob("scripts/smoke*")))
+                for name in ("mise.toml", ".github/workflows/ci.yml", "package.json"):
+                    if (project / name).exists():
+                        self.assertNotIn("smoke", (project / name).read_text())
 
     def test_loop_off_renders_no_loop_files(self) -> None:
         for answers in ({"engineering_loop": False}, {"include_engineering_workflow": False}):

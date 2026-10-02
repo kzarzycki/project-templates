@@ -149,6 +149,8 @@ _exclude:
   - "{% if not include_example %}tests/test_smoke.py{% endif %}"
   - "{% if not include_example %}tests/smoke.test.ts{% endif %}"
   - "{% if not include_example %}models/example{% endif %}"
+  - "{% if not include_example %}scripts/smoke_server.py{% endif %}"
+  - "{% if not include_example %}scripts/smoke-server.mjs{% endif %}"
 
 # Seeds the project owns once written: an update creates a missing one but never merges
 # template changes into one the project filled in.
