@@ -867,7 +867,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         mise = tomllib.loads((project / "mise.toml").read_text())
         self.assertIn("aqua:lycheeverse/lychee", mise["tools"])
         self.assertIn(
-            "lychee --no-progress './**/*.md'", mise["tasks"]["check"]["run"]
+            "lychee --no-progress --extensions md .", mise["tasks"]["check"]["run"]
         )
         steps = yaml.safe_load((project / ".github/workflows/ci.yml").read_text())[
             "jobs"
