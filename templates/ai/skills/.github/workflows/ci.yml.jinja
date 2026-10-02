@@ -4,5 +4,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
 {% include "templates/_base/_ci_steps.yml.jinja" %}
+{% if not include_mise %}
       - name: Validate SKILL.md frontmatter and plugin.json
         run: python3 scripts/validate-skill.py
+{% endif %}

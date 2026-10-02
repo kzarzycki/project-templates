@@ -1,0 +1,8 @@
+./gradlew build test
+# Changed lines are fully covered against origin/$BASE_REF (default main), once that branch exists.
+base="origin/${BASE_REF:-main}"
+if git rev-parse -q --verify "$base" >/dev/null; then
+  report=build/reports/jacoco/test/jacocoTestReport.xml
+  [ -f "$report" ] || report=target/site/jacoco/jacoco.xml
+  pipx run diff-cover "$report" --compare-branch="$base" --fail-under=100
+fi

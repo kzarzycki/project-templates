@@ -36,6 +36,18 @@ copier copy --trust gh:your-org/project-templates my-tool \
 See `copier.yml` for every question. Post-generation (`_post_gen.sh`) runs git
 init, installs deps, installs hooks, and makes the first commit.
 
+## The gate: `mise run check`
+
+With `include_mise=true` every project gets `mise run check`: the toolchain's
+tests (and diff coverage against `origin/$BASE_REF`, default `main`, once that
+branch exists), the project's own checks, then `pre-commit run --all-files`,
+which carries lint and format. With the agent layer on it also runs
+`mise run agent-sync -- --frozen` once `apm.lock.yaml` is committed; before the
+first sync it says so and skips that step. Generated CI installs the pinned
+tools with mise and runs `mise run check` as its gate, so agents and CI run the
+same command. A project adds a check by editing the task. Without mise, CI keeps
+its per-step gate.
+
 ## Coding-agent integration
 
 With `include_mise=true` and `include_agent_layer=true` (both defaults), every
@@ -51,6 +63,7 @@ mise run agent-sync -- --refresh
 mise run agent-sync -- --frozen
 mise run agent-claude
 mise run agent-codex
+mise run check
 ```
 
 The first default sync creates `apm.lock.yaml`, installs the selected skills,
@@ -86,6 +99,30 @@ without fnox wrapping. Codex loads the generated `.codex/config.toml` only after
 the repository is trusted; the trust decision is machine state and is not
 committed to the repo.
 
+## Engineering loop
+
+With the pack on, `engineering_loop=true` (the default) turns on the pack's
+`engineering-loop` skill: one line in `.apm/instructions/project.instructions.md`,
+which `agent-sync` compiles into `AGENTS.md`, says every change that lands as a
+PR runs it. Deleting that line turns the loop off. The loop reads this project's
+facts from three files, seeded with a heading and a short prompt per fact:
+
+- `docs/agents/loop.md`: owner, proof on a branch, acceptance references,
+  the skill for each stage the project changes, where a person must approve
+  too, how a finding is judged in use, the worktree command, the ledger path
+  and any extra verifier checklist;
+- `docs/agents/issue-tracker.md`: the tracker, components, what never reaches GitHub,
+  extra labels and categories;
+- `docs/agents/coding-standards.md`: domain facts only.
+
+Its gate is `mise run check`. `mise run gate <build|merge> [pr]` checks the
+proof each loop step leaves on GitHub (the pack's `gate.py`, then any check the
+project adds to the task); a pre-push hook runs it for build, and its own
+workflow, `.github/workflows/gate.yml`, runs it for merge on every ready PR, apart
+from the project's CI. GitHub's free plan has no protection for private
+repos, so that job is a red check, not a block: it catches a forgotten step, not
+a deliberate one.
+
 ## Use it via Claude
 
 Ask Claude to "start a new python project called my-tool" — the
@@ -103,6 +140,10 @@ replace old coding agent files that conflict with the new scaffold.
 Review the resulting diff before accepting it. The template does not include a
 migration layer for legacy coding-agent configuration.
 
+Updating to v0.4.0 asks `engineering_loop`, adds `mise run check` and the CI
+gate that calls it, and, with the loop on, the loop line and the `docs/agents/`
+skeletons, the `gate` task, its pre-push hook and its workflow.
+
 ## Adopt an existing (pre-template) repo
 
 A repo that predates the template can be brought under management — `copier copy`
@@ -111,7 +152,7 @@ prompting on any file that already exists:
 
 ```bash
 cd existing-repo
-copier copy --trust --data project_type=software/python gh:your-org/project-templates .
+copier copy --trust --data project_type=software/python --data include_example=false gh:your-org/project-templates .
 git add -p && git commit          # keep what you want from the prompted merge
 ```
 

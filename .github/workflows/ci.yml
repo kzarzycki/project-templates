@@ -26,7 +26,7 @@ jobs:
         with:
           install: false
       - name: Install root test tools
-        run: uv tool install copier==9.17.0
+        run: uv tool install copier==9.17.0 && uv tool install pre-commit==4.6.0
       - name: Run root unittest suite
         run: >-
           mise exec github:microsoft/apm@0.30.0 --
@@ -95,6 +95,7 @@ jobs:
           args=(--name ci-proj --type "$PROJECT_TYPE" --dest _out/ci-proj)
           [ -n "$LANGUAGE" ] && args+=(--language "$LANGUAGE")
           args+=(include_agent_layer=true include_engineering_workflow=true include_fnox=true)
+          args+=(engineering_loop=true)
           if [ "$PROJECT_TYPE" = "infra/terraform" ]; then
             mise exec terraform@1.15.8 tflint@0.63.1 -- \
               skills/bootstrap-project/scripts/bootstrap.sh "${args[@]}"
@@ -116,3 +117,12 @@ jobs:
           grep -q '^\[tasks.agent-sync\]$' mise.toml
           grep -q '^\[tasks.agent-claude\]$' mise.toml
           grep -q '^\[tasks.agent-codex\]$' mise.toml
+          grep -q '^\[tasks.check\]$' mise.toml
+          grep -q 'run: mise run check' .github/workflows/ci.yml
+          grep -q '^\[tasks.gate\]$' mise.toml
+          grep -q 'run: mise run gate merge "$PR"' .github/workflows/gate.yml
+          grep -q 'entry: mise run gate build' .pre-commit-config.yaml
+          test -f docs/agents/loop.md
+          test -f docs/agents/issue-tracker.md
+          test -f docs/agents/coding-standards.md
+          grep -q 'engineering-loop' .apm/instructions/project.instructions.md

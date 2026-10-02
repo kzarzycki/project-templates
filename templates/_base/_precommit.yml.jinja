@@ -55,3 +55,14 @@
         entry: scripts/check-symlinks.sh
         language: script
         types: [symlink]
+{%- if loop_enabled %}
+
+      # The issues this branch's PR closes are specced and approved before work is pushed.
+      - id: loop-gate
+        name: loop gate (mise run gate build)
+        entry: mise run gate build
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
+{%- endif %}

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import atexit
 import os
 import re
 import subprocess
@@ -19,6 +20,7 @@ assert MISE is not None
 
 def render(project_type: str = "software/python", **answers: object) -> Path:
     scratch = Path(tempfile.mkdtemp(prefix="project-template-test-"))
+    atexit.register(shutil.rmtree, scratch, True)
     template = scratch / "template"
     shutil.copytree(
         ROOT,
@@ -31,6 +33,7 @@ def render(project_type: str = "software/python", **answers: object) -> Path:
             ".venv",
             "__pycache__",
             "_out",
+            "tmp",
             "apm_modules",
             "node_modules",
         ),
@@ -251,6 +254,9 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertIn("test -f apm.yml", workflow)
         self.assertIn("test -f fnox.toml", workflow)
         self.assertIn("test ! -e .agents-toolkit", workflow)
+        self.assertIn("engineering_loop=true", workflow)
+        self.assertIn("grep -q '^\\[tasks.check\\]$' mise.toml", workflow)
+        self.assertIn("test -f docs/agents/loop.md", workflow)
         self.assertIn(
             "jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14", workflow
         )
@@ -300,7 +306,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
             [
                 {
                     "git": "kzarzycki/agent-skills/engineering",
-                    "ref": "^0.4.0",
+                    "ref": "^0.8.0",
                 }
             ],
             yaml.safe_load(apm)["dependencies"]["apm"],
@@ -350,7 +356,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         manifest = (project / "apm.yml").read_text()
         answers = (project / ".copier-answers.yml").read_text()
         self.assertEqual(1, manifest.count("git: kzarzycki/agent-skills/engineering"))
-        self.assertIn("ref: ^0.4.0", manifest)
+        self.assertIn("ref: ^0.8.0", manifest)
         self.assertIn("include_engineering_workflow: true", answers)
         self.assertNotIn("engineering_capability_source", answers)
         self.assertNotIn("engineering_capability_ref", answers)
@@ -735,6 +741,143 @@ class AgentLayerGenerationTest(unittest.TestCase):
         )
         self.assertNotEqual(0, stale.returncode)
         self.assertIn("frozen agent configuration changed", stale.stderr)
+
+    def test_loop_render_seeds_gate_ci_skeletons_and_loop_line(self) -> None:
+        project = render()
+
+        mise = tomllib.loads((project / "mise.toml").read_text())
+        self.assertIn("pre-commit run --all-files", mise["tasks"]["check"]["run"])
+        self.assertIn(
+            "mise run --skip-tools agent-sync -- --frozen", mise["tasks"]["check"]["run"]
+        )
+        workflow = (project / ".github/workflows/ci.yml").read_text()
+        steps = yaml.safe_load(workflow)["jobs"]["build"]["steps"]
+        self.assertEqual(
+            ["mise run check"], [step["run"] for step in steps if step.get("name") == "Gate"]
+        )
+        self.assertNotIn("pytest", workflow)
+        self.assertEqual(
+            ['python3 .agents/skills/engineering-loop/scripts/gate.py check "${usage_point}" ${usage_pr:-}'],
+            mise["tasks"]["gate"]["run"],
+        )
+        gate = yaml.safe_load((project / ".github/workflows/gate.yml").read_text())
+        self.assertEqual('mise run gate merge "$PR"', gate["jobs"]["gate"]["steps"][-1]["run"])
+        self.assertEqual({"install": False}, gate["jobs"]["gate"]["steps"][-2]["with"])  # gate.py needs no toolchain
+        self.assertIn("labeled", gate[True]["pull_request"]["types"])  # PyYAML reads `on` as True
+        repos = yaml.safe_load((project / ".pre-commit-config.yaml").read_text())["repos"]
+        hooks = [hook for repo in repos for hook in repo["hooks"]]
+        self.assertIn(
+            {"id": "loop-gate", "name": "loop gate (mise run gate build)", "entry": "mise run gate build",
+             "language": "system", "pass_filenames": False, "always_run": True, "stages": ["pre-push"]},
+            hooks,
+        )
+        for name, headings in (
+            (
+                "loop.md",
+                (
+                    "Owner",
+                    "Proof on a branch",
+                    "Acceptance references",
+                    "Practice",
+                    "Approvals",
+                    "In use",
+                    "Worktree",
+                    "Ledger",
+                    "Verifier checklist",
+                ),
+            ),
+            (
+                "issue-tracker.md",
+                ("Components", "Never on GitHub", "Extra labels", "Extra categories"),
+            ),
+            ("coding-standards.md", ("Domain facts",)),
+        ):
+            text = (project / "docs/agents" / name).read_text()
+            self.assertNotIn("Landing exceptions", text)
+            if name == "issue-tracker.md":
+                self.assertTrue(
+                    text.startswith("Tracker: GitHub (engineering-loop's github.md)\n")
+                )
+            self.assertEqual(
+                [f"## {heading}" for heading in headings],
+                re.findall(r"^## .*", text, re.MULTILINE),
+            )
+        self.assertIn(
+            "Every change that lands as a PR runs the `engineering-loop` skill.",
+            (project / ".apm/instructions/project.instructions.md").read_text(),
+        )
+
+    def test_without_the_example_an_adopted_repo_gets_no_starter_code(self) -> None:
+        project = render(include_example=False)
+        self.assertFalse((project / "src").exists())
+        self.assertFalse((project / "tests/test_smoke.py").exists())
+        self.assertTrue((project / "mise.toml").exists())
+
+    def test_without_the_example_an_mcp_repo_runs_no_starter_smoke_check(self) -> None:
+        for language in ("python", "node"):
+            with self.subTest(language=language):
+                project = render("ai/mcp", language=language, include_example=False)
+
+                self.assertEqual([], list(project.glob("scripts/smoke*")))
+                for name in ("mise.toml", ".github/workflows/ci.yml", "package.json"):
+                    if (project / name).exists():
+                        self.assertNotIn("smoke", (project / name).read_text())
+
+    def test_loop_off_renders_no_loop_files(self) -> None:
+        for answers in ({"engineering_loop": False}, {"include_engineering_workflow": False}):
+            with self.subTest(**answers):
+                project = render(**answers)
+
+                self.assertFalse((project / "docs/agents").exists())
+                self.assertNotIn("[tasks.gate]", (project / "mise.toml").read_text())
+                self.assertFalse((project / ".github/workflows/gate.yml").exists())
+                self.assertNotIn("loop-gate", (project / ".pre-commit-config.yaml").read_text())
+                self.assertNotIn(
+                    "engineering-loop",
+                    (project / ".apm/instructions/project.instructions.md").read_text(),
+                )
+
+    def test_regeneration_keeps_filled_docs_agents_files(self) -> None:
+        project = render()
+        filled = "Tracker: GitHub\n\n## Components\n\n- `api`: the service.\n"
+        for name in ("loop.md", "issue-tracker.md", "coding-standards.md"):
+            (project / "docs/agents" / name).write_text(filled)
+
+        subprocess.run(
+            ["copier", "copy", "--trust", "--defaults", "--skip-tasks", "--overwrite",
+             "--data", "project_name=agent-layer-test", "--data", "project_type=software/python",
+             str(project.parent / "template"), str(project)],
+            check=True, capture_output=True, text=True,
+        )
+
+        for name in ("loop.md", "issue-tracker.md", "coding-standards.md"):
+            self.assertEqual(filled, (project / "docs/agents" / name).read_text())
+
+    def test_content_leaf_gate_is_only_mise_run_check(self) -> None:
+        project = render("authoring/content")
+
+        mise = tomllib.loads((project / "mise.toml").read_text())
+        self.assertIn("aqua:lycheeverse/lychee", mise["tools"])
+        self.assertIn(
+            "lychee --no-progress './**/*.md'", mise["tasks"]["check"]["run"]
+        )
+        steps = yaml.safe_load((project / ".github/workflows/ci.yml").read_text())[
+            "jobs"
+        ]["build"]["steps"]
+        self.assertEqual(
+            ["mise run check"], [step["run"] for step in steps if "run" in step and step.get("name") == "Gate"]
+        )
+        self.assertNotIn("lychee", " ".join(str(step) for step in steps))
+
+        off = render("authoring/content", include_mise=False)
+        self.assertIn("lychee-action", (off / ".github/workflows/ci.yml").read_text())
+
+    def test_ci_without_mise_keeps_the_per_step_gate(self) -> None:
+        workflow = (render(include_mise=False) / ".github/workflows/ci.yml").read_text()
+
+        self.assertNotIn("mise run check", workflow)
+        self.assertIn("pipx run pre-commit run --all-files", workflow)
+        self.assertIn("uv run pytest --cov", workflow)
 
     def test_apm_version_has_one_template_source(self) -> None:
         partial = (ROOT / "templates/_base/_mise_agent_tasks.part").read_text()

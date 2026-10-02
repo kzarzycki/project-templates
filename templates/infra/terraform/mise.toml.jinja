@@ -3,6 +3,10 @@ terraform = "{{ terraform_version }}"
 tflint = "0.63.1"
 pre-commit = "4.6.0"
 {% include "templates/_base/_mise_agent_tasks.part" %}
+{% set check_commands %}terraform init -backend=false -input=false
+terraform validate
+{% endset -%}
+{% include "templates/_base/_mise_check_task.part" %}
 
 [tasks.fmt]
 description = "Format all Terraform files."

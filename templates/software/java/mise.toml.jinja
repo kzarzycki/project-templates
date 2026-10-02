@@ -2,6 +2,8 @@
 {% include "templates/_lang/java/_mise_tools.part" -%}
 pre-commit = "4.6.0"
 {% include "templates/_base/_mise_agent_tasks.part" %}
+{% set check_commands %}{% include "templates/_lang/java/_check.part" %}{% endset -%}
+{% include "templates/_base/_mise_check_task.part" %}
 
 [tasks.test]
 run = "./gradlew test"

@@ -8,3 +8,6 @@ applyTo: "**"
 {{ description }}
 
 Replace this seed with durable project-wide coding agent instructions.
+{% if loop_enabled %}
+Every change that lands as a PR runs the `engineering-loop` skill. Its project facts are in `docs/agents/`.
+{% endif -%}

@@ -4,8 +4,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
 {% include "templates/_base/_ci_steps.yml.jinja" %}
-      - name: Link check
+{%- if not include_mise %}      - name: Link check
         uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
           args: "--no-progress './**/*.md'"
           fail: true
+{% endif -%}

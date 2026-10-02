@@ -4,4 +4,4 @@ jobs:
     runs-on: ubuntu-latest
     steps:
 {% include "templates/_base/_ci_steps.yml.jinja" -%}
-{% include "templates/_lang/java/_ci_steps.yml.jinja" -%}
+{% if not include_mise %}{% include "templates/_lang/java/_ci_steps.yml.jinja" %}{% endif -%}
