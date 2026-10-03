@@ -18,7 +18,7 @@ class VersionContractTest(unittest.TestCase):
         # (vX.Y.Z) must match this version.
         plugin = json.loads(self.text(".claude-plugin/plugin.json"))
 
-        self.assertEqual("0.4.0", plugin["version"])
+        self.assertEqual("0.4.1", plugin["version"])
 
     def test_default_runtimes_use_current_stable_or_lts_lines(self) -> None:
         copier = self.text("copier.yml")
