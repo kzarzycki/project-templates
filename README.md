@@ -153,6 +153,10 @@ Updating to v0.4.0 asks `engineering_loop`, adds `mise run check` and the CI
 gate that calls it, and, with the loop on, the loop line and the `docs/agents/`
 skeletons, the `gate` task, its pre-push hook and its workflow.
 
+Updating to v0.4.1 replaces the PR template with the `pr` skill's Summary,
+Evidence and Merge Danger when the engineering pack is on, and moves the pack to
+`^0.9.0`. A repo that edited its PR template resolves that file once.
+
 ## Adopt an existing (pre-template) repo
 
 A repo that predates the template can be brought under management — `copier copy`

@@ -306,7 +306,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
             [
                 {
                     "git": "kzarzycki/agent-skills/engineering",
-                    "ref": "^0.8.0",
+                    "ref": "^0.9.0",
                 }
             ],
             yaml.safe_load(apm)["dependencies"]["apm"],
@@ -362,10 +362,16 @@ class AgentLayerGenerationTest(unittest.TestCase):
         manifest = (project / "apm.yml").read_text()
         answers = (project / ".copier-answers.yml").read_text()
         self.assertEqual(1, manifest.count("git: kzarzycki/agent-skills/engineering"))
-        self.assertIn("ref: ^0.8.0", manifest)
+        self.assertIn("ref: ^0.9.0", manifest)
         self.assertIn("include_engineering_workflow: true", answers)
         self.assertNotIn("engineering_capability_source", answers)
         self.assertNotIn("engineering_capability_ref", answers)
+        template = (project / ".github/PULL_REQUEST_TEMPLATE.md").read_text()
+        self.assertEqual(
+            ["## Summary", "## Evidence", "## Merge Danger"],
+            [line for line in template.splitlines() if line.startswith("## ")],
+        )
+        self.assertIn("The merge gate rejects a PR without this section.", template)
 
     def test_engineering_workflow_can_be_disabled(self) -> None:
         project = render(
@@ -380,6 +386,9 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertIn("apm: []", manifest)
         self.assertNotIn("agent-skills/engineering", manifest)
         self.assertIn("include_engineering_workflow: false", answers)
+        template = (project / ".github/PULL_REQUEST_TEMPLATE.md").read_text()
+        self.assertIn("## What & why", template)
+        self.assertNotIn("Merge Danger", template)
 
     def test_disabled_engineering_workflow_converges_and_freezes(self) -> None:
         project = render(
