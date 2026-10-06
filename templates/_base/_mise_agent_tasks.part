@@ -149,48 +149,32 @@ run = [
 ]
 
 [tasks.merge-queue]
-description = "Land main through a merge queue: apply .github/rulesets/main.json to this repo on GitHub and allow auto-merge."
+description = "Land main through a merge queue: apply the loop-merge-queue ruleset (.github/rulesets/main.json) and allow auto-merge. --revert deletes that ruleset."
+usage = '''
+flag "--revert" help="Delete the loop-merge-queue ruleset; auto-merge is restored with the command apply printed"
+'''
+# The task owns only the ruleset named loop-merge-queue and never reads or changes another one:
+# GitHub layers every active ruleset on a branch, so the repo's own rules keep applying.
 # The ruleset requires the CI and gate jobs by name: rename a job, update the ruleset, rerun this.
-# The first run saves what it changes in .git/merge-queue/: the previous allow_auto_merge, and the
-# previous `main` ruleset it overwrites (or a note that it created one). restore.sh there puts it
-# back: PUT the saved ruleset, or DELETE the one it created, then the saved auto-merge value.
 run = '''
 command -v gh >/dev/null || { echo "error: gh is required; install the GitHub CLI and run 'gh auth login'" >&2; exit 127; }
-saved="$(git rev-parse --git-dir)/merge-queue"
-mkdir -p "$saved"
-# A snapshot is published only after its read succeeds, so a failed read never passes for one.
-if [ ! -f "$saved/allow_auto_merge" ]; then
-  gh api 'repos/{owner}/{repo}' --jq .allow_auto_merge > "$saved/allow_auto_merge.tmp"
-  mv "$saved/allow_auto_merge.tmp" "$saved/allow_auto_merge"
+id="$(gh api --paginate 'repos/{owner}/{repo}/rulesets' --jq '.[] | select(.source_type == "Repository" and .name == "loop-merge-queue") | .id')"
+if [ "${usage_revert:-false}" = true ]; then
+  if [ -z "$id" ]; then echo "no loop-merge-queue ruleset: nothing to revert"; exit 0; fi
+  # A 404 means another run deleted it first: the revert is done either way.
+  out="$(gh api -X DELETE "repos/{owner}/{repo}/rulesets/$id" 2>&1)" || case "$out" in *"HTTP 404"*) ;; *) echo "$out" >&2; exit 1 ;; esac
+  echo "deleted ruleset loop-merge-queue ($id)"
+  exit 0
 fi
-id="$(gh api --paginate 'repos/{owner}/{repo}/rulesets' --jq '.[] | select(.source_type == "Repository" and .name == "main") | .id')"
 if [ -n "$id" ]; then
-  # A rerun keeps the first save: the ruleset is this task's own by then.
-  # A ruleset counts as this task's own only while its id is the one the task created.
-  if [ "$(cat "$saved/created" 2>/dev/null)" != "$id" ]; then rm -f "$saved/created"; fi
-  if [ ! -f "$saved/ruleset.json" ] && [ ! -f "$saved/created" ]; then
-    gh api "repos/{owner}/{repo}/rulesets/$id" \
-      --jq '{name, target, enforcement, conditions, rules, bypass_actors}' > "$saved/ruleset.json.tmp"
-    mv "$saved/ruleset.json.tmp" "$saved/ruleset.json"
-  fi
-  gh api -X PUT "repos/{owner}/{repo}/rulesets/$id" --input .github/rulesets/main.json --jq .id
+  gh api -X PUT "repos/{owner}/{repo}/rulesets/$id" --input .github/rulesets/main.json --jq '"updated ruleset loop-merge-queue (\(.id))"'
 else
-  id="$(gh api -X POST 'repos/{owner}/{repo}/rulesets' --input .github/rulesets/main.json --jq .id)"
-  echo "$id" > "$saved/created"
-  rm -f "$saved/ruleset.json"
+  gh api -X POST 'repos/{owner}/{repo}/rulesets' --input .github/rulesets/main.json --jq '"created ruleset loop-merge-queue (\(.id))"'
 fi
-# restore.sh stops at the first failed call, so a failed ruleset restore never reports success.
-echo "set -e" > "$saved/restore.sh"
-if [ -f "$saved/ruleset.json" ]; then
-  echo "gh api -X PUT 'repos/{owner}/{repo}/rulesets/$id' --input '$saved/ruleset.json'" >> "$saved/restore.sh"
-else
-  echo "gh api -X DELETE 'repos/{owner}/{repo}/rulesets/$id'" >> "$saved/restore.sh"
-fi
-echo "gh api -X PATCH 'repos/{owner}/{repo}' -F allow_auto_merge=$(cat "$saved/allow_auto_merge")" >> "$saved/restore.sh"
-# After a full restore the snapshots are spent: the next apply records its own starting state.
-echo "rm -rf '$saved'" >> "$saved/restore.sh"
-gh api -X PATCH 'repos/{owner}/{repo}' -F allow_auto_merge=true --jq '"allow_auto_merge: \(.allow_auto_merge)"'
-echo "ruleset $id applied; to undo: sh '$saved/restore.sh'"
+previous="$(gh api 'repos/{owner}/{repo}' --jq .allow_auto_merge)"
+gh api -X PATCH 'repos/{owner}/{repo}' -F allow_auto_merge=true >/dev/null
+echo "allow_auto_merge was $previous, now true; restore: gh api -X PATCH 'repos/{owner}/{repo}' -F allow_auto_merge=$previous"
+echo "revert the ruleset: mise run merge-queue --revert"
 '''
 {% endif -%}
 {% endif -%}

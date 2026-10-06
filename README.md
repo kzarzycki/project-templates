@@ -128,19 +128,19 @@ Generated CI skips draft PRs (marking one ready starts it) and runs on every pus
 to main and every `merge_group` entry, each in its own run, so a red main points
 at one merge. A push compares changed lines against the commit before it, a
 queue entry against the queue's base. With the loop on,
-`.github/rulesets/main.json` is main's ruleset: changes only through a squashed
-PR, no bypass, and a merge queue (squash, all-green grouping) that requires the
-CI job and `gate`. In the queue the gate job is skipped, which counts as passed:
-the PR's proofs were checked before it could be queued. `mise run merge-queue`
-applies the ruleset to the repo on GitHub, updating the one named `main` if it
-exists, and turns on auto-merge, so `gh pr merge <n>` queues a green PR and
-auto-merges a pending one. Before it changes anything, the first run saves
-the previous `main` ruleset (or notes that it created one) and the previous
-auto-merge setting in `.git/merge-queue/`; `sh .git/merge-queue/restore.sh`
-puts the saved ruleset back, or deletes the one it created, and restores
-auto-merge. It stops at the first failed call, and a full restore clears the
-saved state, so the next run records its own starting point. If GitHub rejects the ruleset, the task stops before it turns
-on auto-merge. A job renamed in CI is renamed in the ruleset too, or each queue
+`.github/rulesets/main.json` is the `loop-merge-queue` ruleset on main: changes
+only through a squashed PR, no bypass, and a merge queue (squash, all-green
+grouping) that requires the CI job and `gate`. In the queue the gate job is
+skipped, which counts as passed: the PR's proofs were checked before it could
+be queued. `mise run merge-queue` creates that ruleset on GitHub, or updates it
+if one with that name exists, and turns on auto-merge, so `gh pr merge <n>`
+queues a green PR and auto-merges a pending one. It never reads or changes
+another ruleset: GitHub applies every active ruleset on a branch, so the repo's
+own rules on main keep applying alongside it. The task prints the previous
+`allow_auto_merge` value and the `gh api -X PATCH` command that restores it.
+`mise run merge-queue --revert` deletes the `loop-merge-queue` ruleset, found
+by name; when it is already gone, there is nothing to do. If GitHub rejects the
+ruleset, the task stops before it turns on auto-merge. A job renamed in CI is renamed in the ruleset too, or each queue
 entry waits out the 60-minute timeout for a check that never reports.
 
 A project without CI, for example a private repo with GitHub Actions off, puts the

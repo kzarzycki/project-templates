@@ -289,10 +289,11 @@ class AgentMiseTasksTest(unittest.TestCase):
                 ]
                 self.assertEqual(expected, diff_cover)
 
-    def fake_github(self, ruleset: dict | None, allow_auto_merge: bool) -> Path:
-        """A gh that keeps one repo's `main` ruleset and allow_auto_merge in a JSON file."""
+    def fake_github(self, rulesets: dict[str, dict], allow_auto_merge: bool, delete_404: bool = False) -> Path:
+        """A gh that keeps one repo's rulesets (id -> body) and allow_auto_merge in a JSON file."""
         state = self.bin / "github.json"
-        state.write_text(json.dumps({"ruleset": ruleset, "allow_auto_merge": allow_auto_merge}))
+        state.write_text(json.dumps({"rulesets": rulesets, "allow_auto_merge": allow_auto_merge,
+                                     "delete_404": delete_404}))
         gh = self.bin / "gh"
         gh.write_text(
             f"#!{sys.executable}\n"
@@ -303,15 +304,19 @@ class AgentMiseTasksTest(unittest.TestCase):
             "args = sys.argv[2:]\n"
             "method = args[args.index('-X') + 1] if '-X' in args else 'GET'\n"
             "path = next(a for a in args if a.startswith('repos/'))\n"
+            "rulesets = data['rulesets']\n"
             "if path.endswith('/rulesets') and method == 'GET':\n"
-            "    print(data.get('id', 42) if data['ruleset'] else '')\n"
-            "elif '/rulesets' in path and method == 'GET':\n"
-            "    print(json.dumps(data['ruleset']))\n"
-            "elif method in ('PUT', 'POST'):\n"
-            "    data['ruleset'] = json.loads(Path(args[args.index('--input') + 1]).read_text())\n"
-            "    print(42)\n"
+            "    import re\n"
+            "    name = re.search(r'\\.name == \"([^\"]+)\"', args[args.index('--jq') + 1]).group(1)\n"
+            "    print(''.join(f'{i}\\n' for i, r in rulesets.items() if r['name'] == name), end='')\n"
+            "elif method == 'POST':\n"
+            "    rulesets['100'] = json.loads(Path(args[args.index('--input') + 1]).read_text())\n"
+            "elif method == 'PUT':\n"
+            "    rulesets[path.rsplit('/', 1)[1]] = json.loads(Path(args[args.index('--input') + 1]).read_text())\n"
             "elif method == 'DELETE':\n"
-            "    data['ruleset'] = None\n"
+            "    if data['delete_404']:\n"
+            "        sys.exit('gh: Not Found (HTTP 404)')\n"
+            "    del rulesets[path.rsplit('/', 1)[1]]\n"
             "elif method == 'PATCH':\n"
             "    data['allow_auto_merge'] = args[args.index('-F') + 1].split('=')[1] == 'true'\n"
             "else:\n"
@@ -319,103 +324,55 @@ class AgentMiseTasksTest(unittest.TestCase):
             "state.write_text(json.dumps(data))\n"
         )
         gh.chmod(0o755)
-        self.initialize_git()
         return state
 
-    def restore(self) -> None:
-        subprocess.run(["sh", ".git/merge-queue/restore.sh"], cwd=self.project, env=self.env, check=True)
+    def applied(self) -> dict:
+        return json.loads((self.project / ".github/rulesets/main.json").read_text())
 
-    def test_merge_queue_restore_puts_back_the_ruleset_it_overwrote(self) -> None:
-        original = {"name": "main", "rules": [{"type": "pull_request",
-                                               "parameters": {"required_approving_review_count": 2}}]}
-        state = self.fake_github(original, allow_auto_merge=False)
+    def test_merge_queue_creates_its_ruleset_and_prints_the_auto_merge_restore(self) -> None:
+        state = self.fake_github({}, allow_auto_merge=False)
 
-        for _ in range(2):  # a rerun keeps the first save
-            result = self.run_task("merge-queue")
-            self.assertEqual(0, result.returncode, result.stderr)
-        applied = json.loads(state.read_text())
-        self.assertNotEqual(original, applied["ruleset"])
-        self.assertTrue(applied["allow_auto_merge"])
+        result = self.run_task("merge-queue")
 
-        self.restore()
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual({"100": self.applied()}, json.loads(state.read_text())["rulesets"])
+        self.assertEqual("loop-merge-queue", self.applied()["name"])
+        self.assertTrue(json.loads(state.read_text())["allow_auto_merge"])
+        [restore] = [line.split("restore: ", 1)[1] for line in result.stdout.splitlines() if "restore: " in line]
+        self.assertEqual("gh api -X PATCH 'repos/{owner}/{repo}' -F allow_auto_merge=false", restore)
+        subprocess.run(["sh", "-c", restore], env=self.env, check=True)
+        self.assertFalse(json.loads(state.read_text())["allow_auto_merge"])
 
-        self.assertEqual({"ruleset": original, "allow_auto_merge": False}, json.loads(state.read_text()))
+    def test_merge_queue_updates_its_ruleset_found_by_name(self) -> None:
+        state = self.fake_github({"5": {"name": "loop-merge-queue", "rules": []}}, allow_auto_merge=True)
 
-    def fail_once(self, condition: str) -> None:
-        """The fake gh exits 1 the first time `condition` holds."""
-        gh = self.bin / "gh"
-        marker = self.bin / "failed-once"
-        gh.write_text(gh.read_text().replace(
-            "if path.endswith('/rulesets') and method == 'GET':",
-            f"if ({condition}) and not Path({str(marker)!r}).exists():\n"
-            f"    Path({str(marker)!r}).touch()\n"
-            "    sys.exit('simulated HTTP 503')\n"
-            "if path.endswith('/rulesets') and method == 'GET':",
-        ))
+        result = self.run_task("merge-queue")
 
-    def test_merge_queue_failed_snapshot_read_is_retaken_on_retry(self) -> None:
-        original = {"name": "main", "rules": [{"type": "pull_request",
-                                               "parameters": {"required_approving_review_count": 2}}]}
-        for condition in ("method == 'GET' and path.endswith('/rulesets/42')",
-                          "method == 'GET' and path.endswith('{repo}')"):
-            with self.subTest(failed_read=condition):
-                (self.bin / "failed-once").unlink(missing_ok=True)
-                shutil.rmtree(self.project / ".git", ignore_errors=True)
-                state = self.fake_github(original, allow_auto_merge=True)
-                self.fail_once(condition)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual({"5": self.applied()}, json.loads(state.read_text())["rulesets"])
 
-                self.assertNotEqual(0, self.run_task("merge-queue").returncode)
-                retry = self.run_task("merge-queue")
-                self.assertEqual(0, retry.returncode, retry.stderr)
-                self.restore()
-
-                self.assertEqual({"ruleset": original, "allow_auto_merge": True}, json.loads(state.read_text()))
-
-    def test_merge_queue_restore_fails_when_putting_the_ruleset_back_fails(self) -> None:
-        state = self.fake_github({"name": "main", "rules": []}, allow_auto_merge=False)
-        self.assertEqual(0, self.run_task("merge-queue").returncode)
-        self.fail_once("method == 'PUT'")
-
-        restore = subprocess.run(["sh", ".git/merge-queue/restore.sh"], cwd=self.project, env=self.env)
-
-        self.assertNotEqual(0, restore.returncode)
-        self.assertTrue(json.loads(state.read_text())["allow_auto_merge"])  # it stopped before the PATCH
-
-    def test_merge_queue_keeps_a_replacement_ruleset_it_did_not_create(self) -> None:
-        state = self.fake_github(None, allow_auto_merge=True)
-        self.assertEqual(0, self.run_task("merge-queue").returncode)
-        self.restore()
-        replacement = {"name": "main", "rules": [{"type": "deletion"}]}
-        state.write_text(json.dumps({"ruleset": replacement, "id": 77, "allow_auto_merge": False}))
+    def test_merge_queue_leaves_another_main_ruleset_untouched(self) -> None:
+        main = {"name": "main", "rules": [{"type": "pull_request",
+                                           "parameters": {"required_approving_review_count": 2}}]}
+        state = self.fake_github({"7": main}, allow_auto_merge=True)
 
         self.assertEqual(0, self.run_task("merge-queue").returncode)
-        self.restore()
+        self.assertEqual({"7": main, "100": self.applied()}, json.loads(state.read_text())["rulesets"])
+        self.assertEqual(0, self.run_task("merge-queue", "--revert").returncode)
+        self.assertEqual({"7": main}, json.loads(state.read_text())["rulesets"])
 
-        self.assertEqual({"ruleset": replacement, "id": 77, "allow_auto_merge": False}, json.loads(state.read_text()))
-        self.assertFalse((self.project / ".git/merge-queue").exists())
+    def test_merge_queue_revert_deletes_its_ruleset_by_name_and_is_done_when_gone(self) -> None:
+        state = self.fake_github({"5": {"name": "loop-merge-queue", "rules": []}}, allow_auto_merge=True)
 
-    def test_merge_queue_snapshots_a_ruleset_that_replaced_the_one_it_created(self) -> None:
-        state = self.fake_github(None, allow_auto_merge=True)
-        self.assertEqual(0, self.run_task("merge-queue").returncode)
-        replacement = {"name": "main", "rules": [{"type": "deletion"}]}
-        state.write_text(json.dumps({"ruleset": replacement, "id": 77, "allow_auto_merge": True}))
+        self.assertEqual(0, self.run_task("merge-queue", "--revert").returncode)
+        self.assertEqual({}, json.loads(state.read_text())["rulesets"])
+        again = self.run_task("merge-queue", "--revert")
+        self.assertEqual(0, again.returncode, again.stderr)
+        self.assertIn("nothing to revert", again.stdout)
 
-        self.assertEqual(0, self.run_task("merge-queue").returncode)
-        self.restore()
-
-        self.assertEqual(replacement, json.loads(state.read_text())["ruleset"])
-
-    def test_merge_queue_restore_deletes_only_the_ruleset_it_created(self) -> None:
-        state = self.fake_github(None, allow_auto_merge=True)
-
-        for _ in range(2):
-            result = self.run_task("merge-queue")
-            self.assertEqual(0, result.returncode, result.stderr)
-        self.assertIsNotNone(json.loads(state.read_text())["ruleset"])
-
-        self.restore()
-
-        self.assertEqual({"ruleset": None, "allow_auto_merge": True}, json.loads(state.read_text()))
+        self.fake_github({"5": {"name": "loop-merge-queue", "rules": []}}, allow_auto_merge=True, delete_404=True)
+        raced = self.run_task("merge-queue", "--revert")  # another run deleted it between list and DELETE
+        self.assertEqual(0, raced.returncode, raced.stderr)
 
     def test_check_passes_in_a_generated_python_project(self) -> None:
         # Real toolchain: uv, pre-commit and network for the hook repos.
