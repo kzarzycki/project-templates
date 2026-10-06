@@ -151,17 +151,33 @@ run = [
 [tasks.merge-queue]
 description = "Land main through a merge queue: apply .github/rulesets/main.json to this repo on GitHub and allow auto-merge."
 # The ruleset requires the CI and gate jobs by name: rename a job, update the ruleset, rerun this.
-# It prints the ruleset id. Revert: gh api -X DELETE 'repos/{owner}/{repo}/rulesets/<id>', and
-# gh api -X PATCH 'repos/{owner}/{repo}' -F allow_auto_merge=false if auto-merge was off before.
+# The first run saves what it changes in .git/merge-queue/: the previous allow_auto_merge, and the
+# previous `main` ruleset it overwrites (or a note that it created one). restore.sh there puts it
+# back: PUT the saved ruleset, or DELETE the one it created, then the saved auto-merge value.
 run = '''
 command -v gh >/dev/null || { echo "error: gh is required; install the GitHub CLI and run 'gh auth login'" >&2; exit 127; }
+saved="$(git rev-parse --git-dir)/merge-queue"
+mkdir -p "$saved"
+[ -f "$saved/allow_auto_merge" ] || gh api 'repos/{owner}/{repo}' --jq .allow_auto_merge > "$saved/allow_auto_merge"
 id="$(gh api --paginate 'repos/{owner}/{repo}/rulesets' --jq '.[] | select(.source_type == "Repository" and .name == "main") | .id')"
 if [ -n "$id" ]; then
+  # A rerun keeps the first save: the ruleset is this task's own by then.
+  [ -f "$saved/ruleset.json" ] || [ -f "$saved/created" ] || gh api "repos/{owner}/{repo}/rulesets/$id" \
+    --jq '{name, target, enforcement, conditions, rules, bypass_actors}' > "$saved/ruleset.json"
   gh api -X PUT "repos/{owner}/{repo}/rulesets/$id" --input .github/rulesets/main.json --jq .id
 else
-  gh api -X POST 'repos/{owner}/{repo}/rulesets' --input .github/rulesets/main.json --jq .id
+  id="$(gh api -X POST 'repos/{owner}/{repo}/rulesets' --input .github/rulesets/main.json --jq .id)"
+  echo "$id" > "$saved/created"
+  rm -f "$saved/ruleset.json"
 fi
+if [ -f "$saved/ruleset.json" ]; then
+  echo "gh api -X PUT 'repos/{owner}/{repo}/rulesets/$id' --input '$saved/ruleset.json'" > "$saved/restore.sh"
+else
+  echo "gh api -X DELETE 'repos/{owner}/{repo}/rulesets/$id'" > "$saved/restore.sh"
+fi
+echo "gh api -X PATCH 'repos/{owner}/{repo}' -F allow_auto_merge=$(cat "$saved/allow_auto_merge")" >> "$saved/restore.sh"
 gh api -X PATCH 'repos/{owner}/{repo}' -F allow_auto_merge=true --jq '"allow_auto_merge: \(.allow_auto_merge)"'
+echo "ruleset $id applied; to undo: sh '$saved/restore.sh'"
 '''
 {% endif -%}
 {% endif -%}

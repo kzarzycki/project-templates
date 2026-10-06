@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -31,12 +33,6 @@ def fake_executable(directory: Path, name: str) -> None:
             'if [ "${1:-}" = "compile" ] && '
             '[ -n "${FAKE_APM_ORPHAN_PATH:-}" ]; then\n'
             '  rm -f "$FAKE_APM_ORPHAN_PATH"\n'
-            "fi\n"
-        )
-    if name == "gh":
-        script += (
-            'if [ "${2:-}" = "--paginate" ] && [ -n "${FAKE_GH_RULESET_ID:-}" ]; then\n'
-            '  printf "%s\\n" "$FAKE_GH_RULESET_ID"\n'
             "fi\n"
         )
     path.write_text(script)
@@ -293,35 +289,69 @@ class AgentMiseTasksTest(unittest.TestCase):
                 ]
                 self.assertEqual(expected, diff_cover)
 
-    def test_merge_queue_creates_the_ruleset_then_allows_auto_merge(self) -> None:
-        fake_executable(self.bin, "gh")
-
-        result = self.run_task("merge-queue")
-
-        self.assertEqual(0, result.returncode, result.stderr)
-        gh = f"{self.bin}/gh api"
-        self.assertEqual(
-            [
-                f"{gh} --paginate repos/{{owner}}/{{repo}}/rulesets --jq"
-                ' .[] | select(.source_type == "Repository" and .name == "main") | .id',
-                f"{gh} -X POST repos/{{owner}}/{{repo}}/rulesets --input .github/rulesets/main.json --jq .id",
-                f"{gh} -X PATCH repos/{{owner}}/{{repo}} -F allow_auto_merge=true --jq"
-                ' "allow_auto_merge: \\(.allow_auto_merge)"',
-            ],
-            self.commands(),
+    def fake_github(self, ruleset: dict | None, allow_auto_merge: bool) -> Path:
+        """A gh that keeps one repo's `main` ruleset and allow_auto_merge in a JSON file."""
+        state = self.bin / "github.json"
+        state.write_text(json.dumps({"ruleset": ruleset, "allow_auto_merge": allow_auto_merge}))
+        gh = self.bin / "gh"
+        gh.write_text(
+            f"#!{sys.executable}\n"
+            "import json, sys\n"
+            "from pathlib import Path\n"
+            f"state = Path({str(state)!r})\n"
+            "data = json.loads(state.read_text())\n"
+            "args = sys.argv[2:]\n"
+            "method = args[args.index('-X') + 1] if '-X' in args else 'GET'\n"
+            "path = next(a for a in args if a.startswith('repos/'))\n"
+            "if path.endswith('/rulesets') and method == 'GET':\n"
+            "    print(42 if data['ruleset'] else '')\n"
+            "elif '/rulesets' in path and method == 'GET':\n"
+            "    print(json.dumps(data['ruleset']))\n"
+            "elif method in ('PUT', 'POST'):\n"
+            "    data['ruleset'] = json.loads(Path(args[args.index('--input') + 1]).read_text())\n"
+            "    print(42)\n"
+            "elif method == 'DELETE':\n"
+            "    data['ruleset'] = None\n"
+            "elif method == 'PATCH':\n"
+            "    data['allow_auto_merge'] = args[args.index('-F') + 1].split('=')[1] == 'true'\n"
+            "else:\n"
+            "    print(str(data['allow_auto_merge']).lower())\n"
+            "state.write_text(json.dumps(data))\n"
         )
+        gh.chmod(0o755)
+        self.initialize_git()
+        return state
 
-    def test_merge_queue_updates_an_existing_ruleset_in_place(self) -> None:
-        fake_executable(self.bin, "gh")
-        self.env["FAKE_GH_RULESET_ID"] = "42"
+    def restore(self) -> None:
+        subprocess.run(["sh", ".git/merge-queue/restore.sh"], cwd=self.project, env=self.env, check=True)
 
-        result = self.run_task("merge-queue")
+    def test_merge_queue_restore_puts_back_the_ruleset_it_overwrote(self) -> None:
+        original = {"name": "main", "rules": [{"type": "pull_request",
+                                               "parameters": {"required_approving_review_count": 2}}]}
+        state = self.fake_github(original, allow_auto_merge=False)
 
-        self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual(
-            f"{self.bin}/gh api -X PUT repos/{{owner}}/{{repo}}/rulesets/42 --input .github/rulesets/main.json --jq .id",
-            self.commands()[1],
-        )
+        for _ in range(2):  # a rerun keeps the first save
+            result = self.run_task("merge-queue")
+            self.assertEqual(0, result.returncode, result.stderr)
+        applied = json.loads(state.read_text())
+        self.assertNotEqual(original, applied["ruleset"])
+        self.assertTrue(applied["allow_auto_merge"])
+
+        self.restore()
+
+        self.assertEqual({"ruleset": original, "allow_auto_merge": False}, json.loads(state.read_text()))
+
+    def test_merge_queue_restore_deletes_only_the_ruleset_it_created(self) -> None:
+        state = self.fake_github(None, allow_auto_merge=True)
+
+        for _ in range(2):
+            result = self.run_task("merge-queue")
+            self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIsNotNone(json.loads(state.read_text())["ruleset"])
+
+        self.restore()
+
+        self.assertEqual({"ruleset": None, "allow_auto_merge": True}, json.loads(state.read_text()))
 
     def test_check_passes_in_a_generated_python_project(self) -> None:
         # Real toolchain: uv, pre-commit and network for the hook repos.
