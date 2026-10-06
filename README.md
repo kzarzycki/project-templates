@@ -138,7 +138,8 @@ auto-merges a pending one. Before it changes anything, the first run saves
 the previous `main` ruleset (or notes that it created one) and the previous
 auto-merge setting in `.git/merge-queue/`; `sh .git/merge-queue/restore.sh`
 puts the saved ruleset back, or deletes the one it created, and restores
-auto-merge. If GitHub rejects the ruleset, the task stops before it turns
+auto-merge. It stops at the first failed call, and a full restore clears the
+saved state, so the next run records its own starting point. If GitHub rejects the ruleset, the task stops before it turns
 on auto-merge. A job renamed in CI is renamed in the ruleset too, or each queue
 entry waits out the 60-minute timeout for a check that never reports.
 

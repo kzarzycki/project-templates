@@ -166,6 +166,8 @@ fi
 id="$(gh api --paginate 'repos/{owner}/{repo}/rulesets' --jq '.[] | select(.source_type == "Repository" and .name == "main") | .id')"
 if [ -n "$id" ]; then
   # A rerun keeps the first save: the ruleset is this task's own by then.
+  # A ruleset counts as this task's own only while its id is the one the task created.
+  if [ "$(cat "$saved/created" 2>/dev/null)" != "$id" ]; then rm -f "$saved/created"; fi
   if [ ! -f "$saved/ruleset.json" ] && [ ! -f "$saved/created" ]; then
     gh api "repos/{owner}/{repo}/rulesets/$id" \
       --jq '{name, target, enforcement, conditions, rules, bypass_actors}' > "$saved/ruleset.json.tmp"
@@ -185,6 +187,8 @@ else
   echo "gh api -X DELETE 'repos/{owner}/{repo}/rulesets/$id'" >> "$saved/restore.sh"
 fi
 echo "gh api -X PATCH 'repos/{owner}/{repo}' -F allow_auto_merge=$(cat "$saved/allow_auto_merge")" >> "$saved/restore.sh"
+# After a full restore the snapshots are spent: the next apply records its own starting state.
+echo "rm -rf '$saved'" >> "$saved/restore.sh"
 gh api -X PATCH 'repos/{owner}/{repo}' -F allow_auto_merge=true --jq '"allow_auto_merge: \(.allow_auto_merge)"'
 echo "ruleset $id applied; to undo: sh '$saved/restore.sh'"
 '''

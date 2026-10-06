@@ -304,7 +304,7 @@ class AgentMiseTasksTest(unittest.TestCase):
             "method = args[args.index('-X') + 1] if '-X' in args else 'GET'\n"
             "path = next(a for a in args if a.startswith('repos/'))\n"
             "if path.endswith('/rulesets') and method == 'GET':\n"
-            "    print(42 if data['ruleset'] else '')\n"
+            "    print(data.get('id', 42) if data['ruleset'] else '')\n"
             "elif '/rulesets' in path and method == 'GET':\n"
             "    print(json.dumps(data['ruleset']))\n"
             "elif method in ('PUT', 'POST'):\n"
@@ -380,6 +380,30 @@ class AgentMiseTasksTest(unittest.TestCase):
 
         self.assertNotEqual(0, restore.returncode)
         self.assertTrue(json.loads(state.read_text())["allow_auto_merge"])  # it stopped before the PATCH
+
+    def test_merge_queue_keeps_a_replacement_ruleset_it_did_not_create(self) -> None:
+        state = self.fake_github(None, allow_auto_merge=True)
+        self.assertEqual(0, self.run_task("merge-queue").returncode)
+        self.restore()
+        replacement = {"name": "main", "rules": [{"type": "deletion"}]}
+        state.write_text(json.dumps({"ruleset": replacement, "id": 77, "allow_auto_merge": False}))
+
+        self.assertEqual(0, self.run_task("merge-queue").returncode)
+        self.restore()
+
+        self.assertEqual({"ruleset": replacement, "id": 77, "allow_auto_merge": False}, json.loads(state.read_text()))
+        self.assertFalse((self.project / ".git/merge-queue").exists())
+
+    def test_merge_queue_snapshots_a_ruleset_that_replaced_the_one_it_created(self) -> None:
+        state = self.fake_github(None, allow_auto_merge=True)
+        self.assertEqual(0, self.run_task("merge-queue").returncode)
+        replacement = {"name": "main", "rules": [{"type": "deletion"}]}
+        state.write_text(json.dumps({"ruleset": replacement, "id": 77, "allow_auto_merge": True}))
+
+        self.assertEqual(0, self.run_task("merge-queue").returncode)
+        self.restore()
+
+        self.assertEqual(replacement, json.loads(state.read_text())["ruleset"])
 
     def test_merge_queue_restore_deletes_only_the_ruleset_it_created(self) -> None:
         state = self.fake_github(None, allow_auto_merge=True)
