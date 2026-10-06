@@ -1,0 +1,5 @@
+# Changed lines are fully covered against origin/$BASE_REF (default main), once that exists.
+# CI passes a 40-hex commit instead: on a push the commit before it, in a merge queue the queue's base.
+ref="${BASE_REF:-main}"
+# Length via wc: a brace followed by a hash opens a template comment.
+if [ "$(( $(printf %s "$ref" | wc -c) ))" -eq 40 ] && [ -z "$(printf %s "$ref" | tr -d 0-9a-f)" ]; then base="$ref"; else base="origin/$ref"; fi

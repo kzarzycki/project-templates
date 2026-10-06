@@ -1,12 +1,17 @@
 name: CI
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main, master]
+  # A merge queue runs the required checks on each PR combined with main.
+  merge_group:
 
 permissions:
   contents: read
 
+# A PR's newer push cancels its older run. Every push to main and every queue entry keeps
+# its own run, so a red main can be pinned to the merge that caused it.
 concurrency:
-  group: {% raw %}${{ github.workflow }}-${{ github.ref }}{% endraw %}
-  cancel-in-progress: true
+  group: {% raw %}ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}{% endraw %}
+  cancel-in-progress: {% raw %}${{ github.event_name == 'pull_request' }}{% endraw %}

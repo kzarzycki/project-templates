@@ -8,6 +8,8 @@
 //     (vitest: reporters include "json"; @vitest/coverage-v8).
 //   - BASE_REF env (e.g. "main"); compares against origin/$BASE_REF, falling
 //     back to the repo root commit on a first push (diff then empty → passes).
+//     CI passes a 40-hex commit instead (a push's previous head, a merge queue's
+//     base), compared as is; one this checkout lacks gates nothing.
 // BASE_REF arrives via env from the workflow — never inline a CI expression here.
 
 import { execFileSync } from "node:child_process";
@@ -23,11 +25,13 @@ function git(args) {
 
 function resolveBase() {
   const ref = process.env.BASE_REF || "main";
-  const candidate = `origin/${ref}`;
+  const commit = /^[0-9a-f]{40}$/.test(ref);
+  const candidate = commit ? ref : `origin/${ref}`;
   try {
-    git(["rev-parse", "--verify", candidate]);
+    git(["rev-parse", "--verify", `${candidate}^{commit}`]);
     return candidate;
   } catch {
+    if (commit) return null;
     // No base branch yet (first push) → root commit; on the bootstrap commit
     // that equals HEAD, so the diff is empty and the gate passes. If there are
     // no commits at all, there is nothing to gate.

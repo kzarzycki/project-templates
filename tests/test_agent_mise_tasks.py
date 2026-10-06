@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -263,6 +265,114 @@ class AgentMiseTasksTest(unittest.TestCase):
             ],
             self.commands()[:3],
         )
+
+    def test_check_measures_changed_lines_against_the_commit_ci_passes(self) -> None:
+        for name in ("uv", "pre-commit"):
+            fake_executable(self.bin, name)
+        (self.bin / "mise").symlink_to(MISE)
+        self.initialize_git()
+        base = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=self.project, check=True, capture_output=True, text=True
+        ).stdout.strip()
+
+        for ref, compared in ((base, base), ("0" * 40, None), ("main", None)):
+            with self.subTest(ref=ref):
+                self.log.unlink(missing_ok=True)
+                self.env["BASE_REF"] = ref
+
+                result = self.run_task("check")
+
+                self.assertEqual(0, result.returncode, result.stderr)
+                diff_cover = [line for line in self.commands() if "diff-cover" in line]
+                expected = [] if compared is None else [
+                    f"{self.bin}/uv run diff-cover coverage.xml --compare-branch={compared} --fail-under=100"
+                ]
+                self.assertEqual(expected, diff_cover)
+
+    def fake_github(self, rulesets: dict[str, dict], allow_auto_merge: bool, delete_404: bool = False) -> Path:
+        """A gh that keeps one repo's rulesets (id -> body) and allow_auto_merge in a JSON file."""
+        state = self.bin / "github.json"
+        state.write_text(json.dumps({"rulesets": rulesets, "allow_auto_merge": allow_auto_merge,
+                                     "delete_404": delete_404}))
+        gh = self.bin / "gh"
+        gh.write_text(
+            f"#!{sys.executable}\n"
+            "import json, sys\n"
+            "from pathlib import Path\n"
+            f"state = Path({str(state)!r})\n"
+            "data = json.loads(state.read_text())\n"
+            "args = sys.argv[2:]\n"
+            "method = args[args.index('-X') + 1] if '-X' in args else 'GET'\n"
+            "path = next(a for a in args if a.startswith('repos/'))\n"
+            "rulesets = data['rulesets']\n"
+            "if path.endswith('/rulesets') and method == 'GET':\n"
+            "    import re\n"
+            "    name = re.search(r'\\.name == \"([^\"]+)\"', args[args.index('--jq') + 1]).group(1)\n"
+            "    print(''.join(f'{i}\\n' for i, r in rulesets.items() if r['name'] == name), end='')\n"
+            "elif method == 'POST':\n"
+            "    rulesets['100'] = json.loads(Path(args[args.index('--input') + 1]).read_text())\n"
+            "elif method == 'PUT':\n"
+            "    rulesets[path.rsplit('/', 1)[1]] = json.loads(Path(args[args.index('--input') + 1]).read_text())\n"
+            "elif method == 'DELETE':\n"
+            "    if data['delete_404']:\n"
+            "        sys.exit('gh: Not Found (HTTP 404)')\n"
+            "    del rulesets[path.rsplit('/', 1)[1]]\n"
+            "elif method == 'PATCH':\n"
+            "    data['allow_auto_merge'] = args[args.index('-F') + 1].split('=')[1] == 'true'\n"
+            "else:\n"
+            "    print(str(data['allow_auto_merge']).lower())\n"
+            "state.write_text(json.dumps(data))\n"
+        )
+        gh.chmod(0o755)
+        return state
+
+    def applied(self) -> dict:
+        return json.loads((self.project / ".github/rulesets/main.json").read_text())
+
+    def test_merge_queue_creates_its_ruleset_and_prints_the_auto_merge_restore(self) -> None:
+        state = self.fake_github({}, allow_auto_merge=False)
+
+        result = self.run_task("merge-queue")
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual({"100": self.applied()}, json.loads(state.read_text())["rulesets"])
+        self.assertEqual("loop-merge-queue", self.applied()["name"])
+        self.assertTrue(json.loads(state.read_text())["allow_auto_merge"])
+        [restore] = [line.split("restore: ", 1)[1] for line in result.stdout.splitlines() if "restore: " in line]
+        self.assertEqual("gh api -X PATCH 'repos/{owner}/{repo}' -F allow_auto_merge=false", restore)
+        subprocess.run(["sh", "-c", restore], env=self.env, check=True)
+        self.assertFalse(json.loads(state.read_text())["allow_auto_merge"])
+
+    def test_merge_queue_updates_its_ruleset_found_by_name(self) -> None:
+        state = self.fake_github({"5": {"name": "loop-merge-queue", "rules": []}}, allow_auto_merge=True)
+
+        result = self.run_task("merge-queue")
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual({"5": self.applied()}, json.loads(state.read_text())["rulesets"])
+
+    def test_merge_queue_leaves_another_main_ruleset_untouched(self) -> None:
+        main = {"name": "main", "rules": [{"type": "pull_request",
+                                           "parameters": {"required_approving_review_count": 2}}]}
+        state = self.fake_github({"7": main}, allow_auto_merge=True)
+
+        self.assertEqual(0, self.run_task("merge-queue").returncode)
+        self.assertEqual({"7": main, "100": self.applied()}, json.loads(state.read_text())["rulesets"])
+        self.assertEqual(0, self.run_task("merge-queue", "--revert").returncode)
+        self.assertEqual({"7": main}, json.loads(state.read_text())["rulesets"])
+
+    def test_merge_queue_revert_deletes_its_ruleset_by_name_and_is_done_when_gone(self) -> None:
+        state = self.fake_github({"5": {"name": "loop-merge-queue", "rules": []}}, allow_auto_merge=True)
+
+        self.assertEqual(0, self.run_task("merge-queue", "--revert").returncode)
+        self.assertEqual({}, json.loads(state.read_text())["rulesets"])
+        again = self.run_task("merge-queue", "--revert")
+        self.assertEqual(0, again.returncode, again.stderr)
+        self.assertIn("nothing to revert", again.stdout)
+
+        self.fake_github({"5": {"name": "loop-merge-queue", "rules": []}}, allow_auto_merge=True, delete_404=True)
+        raced = self.run_task("merge-queue", "--revert")  # another run deleted it between list and DELETE
+        self.assertEqual(0, raced.returncode, raced.stderr)
 
     def test_check_passes_in_a_generated_python_project(self) -> None:
         # Real toolchain: uv, pre-commit and network for the hook repos.
