@@ -5,16 +5,19 @@ name: Gate
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review, edited, labeled, unlabeled]
+  # In the merge queue the gate job is skipped, which counts as passed: a PR's proofs were
+  # checked on the PR before it could be queued. The trigger exists so the required check reports.
+  merge_group:
 
 permissions: {}
 
 concurrency:
-  group: {% raw %}gate-${{ github.event.pull_request.number }}{% endraw %}
+  group: {% raw %}gate-${{ github.event.pull_request.number || github.sha }}{% endraw %}
   cancel-in-progress: true
 
 jobs:
   gate:
-    if: {% raw %}${{ !github.event.pull_request.draft && github.event.pull_request.user.login != 'dependabot[bot]' }}{% endraw %}
+    if: {% raw %}${{ github.event_name == 'pull_request' && !github.event.pull_request.draft && github.event.pull_request.user.login != 'dependabot[bot]' }}{% endraw %}
     runs-on: ubuntu-latest
     permissions:
       contents: read

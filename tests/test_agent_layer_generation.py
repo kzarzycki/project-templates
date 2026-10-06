@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import atexit
+import json
 import os
 import re
 import subprocess
@@ -781,6 +782,8 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertEqual('mise run gate merge "$PR"', gate["jobs"]["gate"]["steps"][-1]["run"])
         self.assertEqual({"install": False}, gate["jobs"]["gate"]["steps"][-2]["with"])  # gate.py needs no toolchain
         self.assertIn("labeled", gate[True]["pull_request"]["types"])  # PyYAML reads `on` as True
+        self.assertIn("merge_group", gate[True])
+        self.assertTrue(gate["jobs"]["gate"]["if"].startswith("${{ github.event_name == 'pull_request' && "))
         repos = yaml.safe_load((project / ".pre-commit-config.yaml").read_text())["repos"]
         hooks = [hook for repo in repos for hook in repo["hooks"]]
         self.assertIn(
@@ -824,6 +827,70 @@ class AgentLayerGenerationTest(unittest.TestCase):
             (project / ".apm/instructions/project.instructions.md").read_text(),
         )
 
+    def test_every_leaf_lands_through_a_merge_queue_requiring_its_own_jobs(self) -> None:
+        leaves = (
+            ("software/python", {}),
+            ("software/node", {}),
+            ("software/java", {}),
+            ("data/dbt", {}),
+            ("authoring/content", {}),
+            ("ai/skills", {}),
+            ("ai/mcp", {"language": "python"}),
+            ("ai/mcp", {"language": "node"}),
+            ("infra/terraform", {}),
+        )
+        for project_type, answers in leaves:
+            with self.subTest(project_type=project_type, **answers):
+                project = render(project_type, **answers)
+
+                ci = yaml.safe_load((project / ".github/workflows/ci.yml").read_text())
+                self.assertIn("ready_for_review", ci[True]["pull_request"]["types"])
+                self.assertIn("merge_group", ci[True])
+                self.assertEqual(
+                    "ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}",
+                    ci["concurrency"]["group"],
+                )
+                self.assertEqual("${{ github.event_name == 'pull_request' }}", ci["concurrency"]["cancel-in-progress"])
+                [(job_name, job)] = ci["jobs"].items()
+                self.assertEqual("${{ !github.event.pull_request.draft }}", job["if"])
+                [gate_step] = [step for step in job["steps"] if step.get("name") == "Gate"]
+                self.assertEqual(
+                    "${{ github.base_ref || github.event.merge_group.base_sha || github.event.before }}",
+                    gate_step["env"]["BASE_REF"],
+                )
+
+                ruleset = json.loads((project / ".github/rulesets/main.json").read_text())
+                rules = {rule["type"]: rule.get("parameters") for rule in ruleset["rules"]}
+                gate_jobs = yaml.safe_load((project / ".github/workflows/gate.yml").read_text())["jobs"]
+                self.assertEqual(
+                    [job_name, *gate_jobs],
+                    [check["context"] for check in rules["required_status_checks"]["required_status_checks"]],
+                )
+                self.assertEqual("SQUASH", rules["merge_queue"]["merge_method"])
+                self.assertEqual("ALLGREEN", rules["merge_queue"]["grouping_strategy"])
+                self.assertEqual(["squash"], rules["pull_request"]["allowed_merge_methods"])
+                self.assertEqual([], ruleset["bypass_actors"])
+
+    def test_node_coverage_gate_compares_against_the_commit_ci_passes(self) -> None:
+        project = render("software/node")
+        subprocess.run(["git", "init", "-q"], cwd=project, check=True)
+        commit_project(project, "scaffold")
+        base = subprocess.run(["git", "rev-parse", "HEAD"], cwd=project, check=True,
+                              capture_output=True, text=True).stdout.strip()
+        (project / "src/index.ts").write_text((project / "src/index.ts").read_text() + "export const added = 1;\n")
+        commit_project(project, "change")
+
+        def gate(ref: str) -> subprocess.CompletedProcess[str]:
+            return subprocess.run(["node", "scripts/check-coverage.mjs"], cwd=project,
+                                  env={**os.environ, "BASE_REF": ref}, capture_output=True, text=True)
+
+        compared = gate(base)  # the change is seen, so the gate wants its coverage
+        self.assertEqual(1, compared.returncode)
+        self.assertIn("coverage/coverage-final.json not found", compared.stderr)
+        missing = gate("0" * 40)  # a push that created the branch: no commit before it
+        self.assertEqual(0, missing.returncode, missing.stderr)
+        self.assertIn("no commits to compare against", missing.stdout)
+
     def test_without_the_example_an_adopted_repo_gets_no_starter_code(self) -> None:
         project = render(include_example=False)
         self.assertFalse((project / "src").exists())
@@ -848,6 +915,8 @@ class AgentLayerGenerationTest(unittest.TestCase):
                 self.assertFalse((project / "docs/agents").exists())
                 self.assertNotIn("[tasks.gate]", (project / "mise.toml").read_text())
                 self.assertFalse((project / ".github/workflows/gate.yml").exists())
+                self.assertFalse((project / ".github/rulesets").exists())
+                self.assertNotIn("[tasks.merge-queue]", (project / "mise.toml").read_text())
                 self.assertNotIn("loop-gate", (project / ".pre-commit-config.yaml").read_text())
                 self.assertNotIn(
                     "engineering-loop",

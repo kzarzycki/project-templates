@@ -1,4 +1,2 @@
 uv run pytest --cov --cov-report=xml
-# Changed lines are fully covered against origin/$BASE_REF (default main), once that branch exists.
-base="origin/${BASE_REF:-main}"
-if git rev-parse -q --verify "$base" >/dev/null; then uv run diff-cover coverage.xml --compare-branch="$base" --fail-under=100; fi
+{% include "templates/_base/_diff_base.part" %}if git rev-parse -q --verify "$base^{commit}" >/dev/null; then uv run diff-cover coverage.xml --compare-branch="$base" --fail-under=100; fi

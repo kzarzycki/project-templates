@@ -1,6 +1,8 @@
 {% include "templates/_base/_ci_header.yml.jinja" %}
 jobs:
   validate:
+    # A draft runs nothing until ready_for_review; a push or a queue entry has no PR, so it always runs.
+    if: {% raw %}${{ !github.event.pull_request.draft }}{% endraw %}
     runs-on: ubuntu-latest
     steps:
 {% if not include_mise %}

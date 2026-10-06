@@ -13,7 +13,9 @@
 {% if project_type == 'software/node' or (language | default('')) == 'node' %}      - run: mise exec -- npm ci
 {% endif %}      - name: Gate
         env:
-          BASE_REF: {% raw %}${{ github.base_ref }}{% endraw %}
+          # A push compares against the commit before it, a queue entry against the queue's
+          # base commit; github.base_ref is set only on a PR.
+          BASE_REF: {% raw %}${{ github.base_ref || github.event.merge_group.base_sha || github.event.before }}{% endraw %}
         run: mise run check
 {% else %}      - name: pre-commit
         run: pipx run pre-commit run --all-files --show-diff-on-failure

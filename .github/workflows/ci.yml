@@ -122,6 +122,10 @@ jobs:
           grep -q '^\[tasks.gate\]$' mise.toml
           grep -q 'run: mise run gate merge "$PR"' .github/workflows/gate.yml
           grep -q 'entry: mise run gate build' .pre-commit-config.yaml
+          grep -q '^\[tasks.merge-queue\]$' mise.toml
+          grep -q '^  merge_group:$' .github/workflows/ci.yml
+          grep -q '^  merge_group:$' .github/workflows/gate.yml
+          python3 -m json.tool .github/rulesets/main.json >/dev/null
           test -f docs/agents/loop.md
           test -f docs/agents/issue-tracker.md
           test -f docs/agents/coding-standards.md

@@ -33,6 +33,12 @@ def fake_executable(directory: Path, name: str) -> None:
             '  rm -f "$FAKE_APM_ORPHAN_PATH"\n'
             "fi\n"
         )
+    if name == "gh":
+        script += (
+            'if [ "${2:-}" = "--paginate" ] && [ -n "${FAKE_GH_RULESET_ID:-}" ]; then\n'
+            '  printf "%s\\n" "$FAKE_GH_RULESET_ID"\n'
+            "fi\n"
+        )
     path.write_text(script)
     path.chmod(0o755)
 
@@ -262,6 +268,59 @@ class AgentMiseTasksTest(unittest.TestCase):
                 f"{self.bin}/apm install --frozen --target claude,codex",
             ],
             self.commands()[:3],
+        )
+
+    def test_check_measures_changed_lines_against_the_commit_ci_passes(self) -> None:
+        for name in ("uv", "pre-commit"):
+            fake_executable(self.bin, name)
+        (self.bin / "mise").symlink_to(MISE)
+        self.initialize_git()
+        base = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=self.project, check=True, capture_output=True, text=True
+        ).stdout.strip()
+
+        for ref, compared in ((base, base), ("0" * 40, None), ("main", None)):
+            with self.subTest(ref=ref):
+                self.log.unlink(missing_ok=True)
+                self.env["BASE_REF"] = ref
+
+                result = self.run_task("check")
+
+                self.assertEqual(0, result.returncode, result.stderr)
+                diff_cover = [line for line in self.commands() if "diff-cover" in line]
+                expected = [] if compared is None else [
+                    f"{self.bin}/uv run diff-cover coverage.xml --compare-branch={compared} --fail-under=100"
+                ]
+                self.assertEqual(expected, diff_cover)
+
+    def test_merge_queue_creates_the_ruleset_then_allows_auto_merge(self) -> None:
+        fake_executable(self.bin, "gh")
+
+        result = self.run_task("merge-queue")
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        gh = f"{self.bin}/gh api"
+        self.assertEqual(
+            [
+                f"{gh} --paginate repos/{{owner}}/{{repo}}/rulesets --jq"
+                ' .[] | select(.source_type == "Repository" and .name == "main") | .id',
+                f"{gh} -X POST repos/{{owner}}/{{repo}}/rulesets --input .github/rulesets/main.json --jq .id",
+                f"{gh} -X PATCH repos/{{owner}}/{{repo}} -F allow_auto_merge=true --jq"
+                ' "allow_auto_merge: \\(.allow_auto_merge)"',
+            ],
+            self.commands(),
+        )
+
+    def test_merge_queue_updates_an_existing_ruleset_in_place(self) -> None:
+        fake_executable(self.bin, "gh")
+        self.env["FAKE_GH_RULESET_ID"] = "42"
+
+        result = self.run_task("merge-queue")
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(
+            f"{self.bin}/gh api -X PUT repos/{{owner}}/{{repo}}/rulesets/42 --input .github/rulesets/main.json --jq .id",
+            self.commands()[1],
         )
 
     def test_check_passes_in_a_generated_python_project(self) -> None:
