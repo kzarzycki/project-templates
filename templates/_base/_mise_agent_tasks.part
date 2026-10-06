@@ -158,12 +158,19 @@ run = '''
 command -v gh >/dev/null || { echo "error: gh is required; install the GitHub CLI and run 'gh auth login'" >&2; exit 127; }
 saved="$(git rev-parse --git-dir)/merge-queue"
 mkdir -p "$saved"
-[ -f "$saved/allow_auto_merge" ] || gh api 'repos/{owner}/{repo}' --jq .allow_auto_merge > "$saved/allow_auto_merge"
+# A snapshot is published only after its read succeeds, so a failed read never passes for one.
+if [ ! -f "$saved/allow_auto_merge" ]; then
+  gh api 'repos/{owner}/{repo}' --jq .allow_auto_merge > "$saved/allow_auto_merge.tmp"
+  mv "$saved/allow_auto_merge.tmp" "$saved/allow_auto_merge"
+fi
 id="$(gh api --paginate 'repos/{owner}/{repo}/rulesets' --jq '.[] | select(.source_type == "Repository" and .name == "main") | .id')"
 if [ -n "$id" ]; then
   # A rerun keeps the first save: the ruleset is this task's own by then.
-  [ -f "$saved/ruleset.json" ] || [ -f "$saved/created" ] || gh api "repos/{owner}/{repo}/rulesets/$id" \
-    --jq '{name, target, enforcement, conditions, rules, bypass_actors}' > "$saved/ruleset.json"
+  if [ ! -f "$saved/ruleset.json" ] && [ ! -f "$saved/created" ]; then
+    gh api "repos/{owner}/{repo}/rulesets/$id" \
+      --jq '{name, target, enforcement, conditions, rules, bypass_actors}' > "$saved/ruleset.json.tmp"
+    mv "$saved/ruleset.json.tmp" "$saved/ruleset.json"
+  fi
   gh api -X PUT "repos/{owner}/{repo}/rulesets/$id" --input .github/rulesets/main.json --jq .id
 else
   id="$(gh api -X POST 'repos/{owner}/{repo}/rulesets' --input .github/rulesets/main.json --jq .id)"

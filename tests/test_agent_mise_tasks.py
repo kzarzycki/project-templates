@@ -341,6 +341,36 @@ class AgentMiseTasksTest(unittest.TestCase):
 
         self.assertEqual({"ruleset": original, "allow_auto_merge": False}, json.loads(state.read_text()))
 
+    def fail_once(self, condition: str) -> None:
+        """The fake gh exits 1 the first time `condition` holds."""
+        gh = self.bin / "gh"
+        marker = self.bin / "failed-once"
+        gh.write_text(gh.read_text().replace(
+            "if path.endswith('/rulesets') and method == 'GET':",
+            f"if ({condition}) and not Path({str(marker)!r}).exists():\n"
+            f"    Path({str(marker)!r}).touch()\n"
+            "    sys.exit('simulated HTTP 503')\n"
+            "if path.endswith('/rulesets') and method == 'GET':",
+        ))
+
+    def test_merge_queue_failed_snapshot_read_is_retaken_on_retry(self) -> None:
+        original = {"name": "main", "rules": [{"type": "pull_request",
+                                               "parameters": {"required_approving_review_count": 2}}]}
+        for condition in ("method == 'GET' and path.endswith('/rulesets/42')",
+                          "method == 'GET' and path.endswith('{repo}')"):
+            with self.subTest(failed_read=condition):
+                (self.bin / "failed-once").unlink(missing_ok=True)
+                shutil.rmtree(self.project / ".git", ignore_errors=True)
+                state = self.fake_github(original, allow_auto_merge=True)
+                self.fail_once(condition)
+
+                self.assertNotEqual(0, self.run_task("merge-queue").returncode)
+                retry = self.run_task("merge-queue")
+                self.assertEqual(0, retry.returncode, retry.stderr)
+                self.restore()
+
+                self.assertEqual({"ruleset": original, "allow_auto_merge": True}, json.loads(state.read_text()))
+
     def test_merge_queue_restore_deletes_only_the_ruleset_it_created(self) -> None:
         state = self.fake_github(None, allow_auto_merge=True)
 
