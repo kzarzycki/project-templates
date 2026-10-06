@@ -177,10 +177,12 @@ else
   echo "$id" > "$saved/created"
   rm -f "$saved/ruleset.json"
 fi
+# restore.sh stops at the first failed call, so a failed ruleset restore never reports success.
+echo "set -e" > "$saved/restore.sh"
 if [ -f "$saved/ruleset.json" ]; then
-  echo "gh api -X PUT 'repos/{owner}/{repo}/rulesets/$id' --input '$saved/ruleset.json'" > "$saved/restore.sh"
+  echo "gh api -X PUT 'repos/{owner}/{repo}/rulesets/$id' --input '$saved/ruleset.json'" >> "$saved/restore.sh"
 else
-  echo "gh api -X DELETE 'repos/{owner}/{repo}/rulesets/$id'" > "$saved/restore.sh"
+  echo "gh api -X DELETE 'repos/{owner}/{repo}/rulesets/$id'" >> "$saved/restore.sh"
 fi
 echo "gh api -X PATCH 'repos/{owner}/{repo}' -F allow_auto_merge=$(cat "$saved/allow_auto_merge")" >> "$saved/restore.sh"
 gh api -X PATCH 'repos/{owner}/{repo}' -F allow_auto_merge=true --jq '"allow_auto_merge: \(.allow_auto_merge)"'

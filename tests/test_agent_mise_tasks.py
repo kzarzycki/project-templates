@@ -371,6 +371,16 @@ class AgentMiseTasksTest(unittest.TestCase):
 
                 self.assertEqual({"ruleset": original, "allow_auto_merge": True}, json.loads(state.read_text()))
 
+    def test_merge_queue_restore_fails_when_putting_the_ruleset_back_fails(self) -> None:
+        state = self.fake_github({"name": "main", "rules": []}, allow_auto_merge=False)
+        self.assertEqual(0, self.run_task("merge-queue").returncode)
+        self.fail_once("method == 'PUT'")
+
+        restore = subprocess.run(["sh", ".git/merge-queue/restore.sh"], cwd=self.project, env=self.env)
+
+        self.assertNotEqual(0, restore.returncode)
+        self.assertTrue(json.loads(state.read_text())["allow_auto_merge"])  # it stopped before the PATCH
+
     def test_merge_queue_restore_deletes_only_the_ruleset_it_created(self) -> None:
         state = self.fake_github(None, allow_auto_merge=True)
 
