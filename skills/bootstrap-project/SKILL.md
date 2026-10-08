@@ -86,11 +86,11 @@ pack.
 
 ```bash
 mise install
-mise run agent-sync
-mise run agent-sync -- --refresh
-mise run agent-sync -- --frozen
-mise run agent-claude
-mise run agent-codex
+mise run agent:sync
+mise run agent:sync -- --refresh
+mise run agent:sync -- --frozen
+mise run agent:claude
+mise run agent:codex
 ```
 
 The bootstrap wrapper only renders the files. It does not install APM or fnox,
@@ -102,7 +102,7 @@ dependencies, and coding-agent-specific additions.
 Native CLI authentication stays native; a working `gh auth login` does not need a
 copied token.
 
-Every project with mise gets `mise run check`, the one gate agents and CI run.
+Every project with mise gets its checks as mise tasks: `mise run check` (lint and unit tests) before a push, `mise run check:all` for every part CI runs, one `lint:<tool>` task per linter that the commit hooks call.
 With `engineering_loop=true` the scaffold also turns the engineering loop on
 and seeds `docs/agents/loop.md`, `issue-tracker.md` and `coding-standards.md`
 for the owner to fill in.

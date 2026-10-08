@@ -20,6 +20,6 @@
 ## Checklist
 
 - [ ] Commits follow Conventional Commits
-- [ ] Checks pass locally (`pre-commit run --all-files`)
+- [ ] Checks pass locally (`{% if include_mise %}mise run check{% else %}pre-commit run --all-files{% endif %}`)
 - [ ] Docs / ADR updated if behavior or a decision changed
 {%- endif %}

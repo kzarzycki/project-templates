@@ -5,7 +5,11 @@
 {% include "templates/_base/_claude_conventions.md.jinja" %}
 ## Tooling (content)
 
+{% if include_mise -%}
+- `mise run check:lint` — lint everything (`lint:markdownlint` autofixes via `--fix`) · `mise run test:fast` — the link check.
+{% else -%}
 - `pre-commit run --all-files` — lint everything (markdownlint autofixes via `--fix`).
+{% endif -%}
 - `markdownlint .` — lint Markdown · style overrides live in `.markdownlint.jsonc`.
 - CI runs a link check (lychee) over all `*.md`; broken links fail the build.
 - Docs live in `docs/`; start from `docs/index.md`.

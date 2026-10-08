@@ -6,8 +6,8 @@
 ## Tooling (Terraform)
 
 - `mise install` — terraform + tflint + pre-commit, pinned in `mise.toml`
-- `mise run fmt` — `terraform fmt -recursive` · `mise run lint` — tflint
-- `mise run validate` — `terraform init -backend=false` + `terraform validate` (offline)
+- `mise run check:lint` — every `lint:` task: `lint:terraform-fmt`, `lint:terraform-validate` (offline, no backend), `lint:tflint` and the repo-wide lints
+- `mise run test:fast` — `terraform test` (offline) · `mise run check` — lint + tests
 - `mise run plan` — `terraform init` + `terraform plan`
-- Pre-commit runs `terraform_fmt` + `terraform_tflint` on commit; tflint config is `.tflint.hcl`.
+- Pre-commit runs {% if include_mise %}`lint:terraform-fmt` and `lint:tflint`{% else %}`terraform_fmt` + `terraform_tflint`{% endif %} on commit; tflint config is `.tflint.hcl`.
 - State and `*.tfvars` hold secrets — gitignored, never committed. The `.terraform.lock.hcl` lockfile IS committed. Configure the backend per environment.
