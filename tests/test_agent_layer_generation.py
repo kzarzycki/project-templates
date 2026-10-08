@@ -930,6 +930,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
                 self.assertEqual("SQUASH", rules["merge_queue"]["merge_method"])
                 self.assertEqual("ALLGREEN", rules["merge_queue"]["grouping_strategy"])
                 self.assertEqual(["squash"], rules["pull_request"]["allowed_merge_methods"])
+                self.assertTrue(rules["pull_request"]["required_review_thread_resolution"])  # an open thread blocks the merge
                 self.assertEqual([], ruleset["bypass_actors"])
 
                 # Hooks: one local repo, no rev; each commit hook calls its own lint: task.

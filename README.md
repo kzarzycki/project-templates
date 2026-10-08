@@ -170,7 +170,7 @@ to main and every `merge_group` entry, each in its own run, so a red main points
 at one merge. A push compares changed lines against the commit before it, a
 queue entry against the queue's base. With the loop on,
 `.github/rulesets/main.json` is the `loop-merge-queue` ruleset on main: changes
-only through a squashed PR, no bypass, and a merge queue (squash, all-green
+only through a squashed PR with every review thread resolved, no bypass, and a merge queue (squash, all-green
 grouping) that requires exactly two names, CI's `check` job and the
 `loop:approvals` status. `mise run setup:github` (alias `merge-queue`) creates
 that ruleset on GitHub, or updates it if one with that name exists, and sets
@@ -243,7 +243,8 @@ a custom check becomes a `check:<name>` task.
 
 Updating to v0.6.0, with the loop on, adds `mise run loop:land <pr>`, and the
 approvals workflow turns on auto-merge for a ready PR whose proofs hold; its job
-now needs `contents: write`.
+now needs `contents: write`. The ruleset now requires every review thread
+resolved: run `mise run setup:github` to update it.
 
 ## Adopt an existing (pre-template) repo
 
