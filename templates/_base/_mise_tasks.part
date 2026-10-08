@@ -219,8 +219,11 @@ if [ "$(printf '%s' "$pull" | cut -f3)" = "app/dependabot" ]; then
   exit 0
 fi
 if [ "$ACTION" = synchronize ]; then
-  # The label never covers a head the owner didn't see.
-  gh pr edit "$PR" --remove-label approved:merge >/dev/null 2>&1 || true
+  # The label never covers a head the owner didn't see. A 404 means it was not on the PR.
+  out="$(gh api -X DELETE "repos/$GITHUB_REPOSITORY/issues/$PR/labels/approved:merge" 2>&1)" || case "$out" in
+    *"HTTP 404"*) ;;
+    *) post "$head" failure "could not remove approved:merge after the push"; echo "ci:approvals: could not remove approved:merge: $out" >&2; exit 1 ;;
+  esac
 fi
 code=0
 out="$(mise run --quiet --skip-tools loop:approvals merge "$PR")" || code=$?

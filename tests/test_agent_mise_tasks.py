@@ -311,7 +311,11 @@ class AgentMiseTasksTest(unittest.TestCase):
             "path = next(a for a in args if a.startswith('repos/'))\n"
             "fields = dict(args[i + 1].split('=', 1) for i, a in enumerate(args) if a in ('-f', '-F'))\n"
             "rulesets = data['rulesets']\n"
-            "if '/statuses/' in path:\n"
+            "if '/labels/' in path:\n"
+            "    data['edits'].append([method, path])\n"
+            "    state.write_text(json.dumps(data))\n"
+            "    sys.exit({'404': 'gh: Label does not exist (HTTP 404)', '403': 'gh: Resource not accessible by integration (HTTP 403)'}.get(data.get('label_delete')))\n"
+            "elif '/statuses/' in path:\n"
             "    data['statuses'].append({'sha': path.rsplit('/', 1)[1], **fields})\n"
             "elif '/actions/runs/' in path:\n"
             "    print(''.join(f'{name}\\n' for name in data['failed_jobs']), end='')\n"
@@ -458,10 +462,16 @@ class AgentMiseTasksTest(unittest.TestCase):
 
     def test_ci_approvals_on_a_push_removes_the_merge_approval_first(self) -> None:
         (self.bin / "mise").symlink_to(MISE)
-        result, github = self.approvals_run(3, ACTION="synchronize")
-        self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual([["edit", "7", "--remove-label", "approved:merge"]], github["edits"])
-        self.assertEqual("pending", github["statuses"][0]["state"])
+        for label_delete, code, states in ((None, 0, ["pending"]), ("404", 0, ["pending"]), ("403", 1, ["failure"])):
+            with self.subTest(label_delete=label_delete):
+                self.fake_github(pr=["abc123", "false", "owner"], label_delete=label_delete)
+                result, github = self.approvals_run(3, ACTION="synchronize")
+                self.assertEqual(code, result.returncode, result.stdout + result.stderr)
+                self.assertEqual([["DELETE", "repos/o/r/issues/7/labels/approved:merge"]], github["edits"])
+                self.assertEqual(states, [status["state"] for status in github["statuses"]])
+        # Only the label being absent is tolerated; any other failure is printed and fails the job.
+        self.assertIn("could not remove approved:merge", result.stderr)
+        self.assertIn("HTTP 403", result.stderr)
 
     def test_ci_approvals_passes_a_queue_commit_and_dependabot_and_skips_a_draft(self) -> None:
         (self.bin / "mise").symlink_to(MISE)

@@ -149,8 +149,8 @@ the owner's `approved:merge` label; a push removes it. The
 holds. It reruns when a label or the PR body changes and when CI completes, and
 posts success on a merge-queue commit, since a PR is queued only once its status
 was green. GitHub's free plan has no protection for private repos, so there the
-status is a red mark, not a block: it catches a forgotten step, not a
-deliberate one.
+status is only a mark (pending while it waits, red on a missing proof), not a
+block: it catches a forgotten step, not a deliberate one.
 
 Where GitHub offers rulesets and merge queues, main lands through a queue.
 Generated CI skips draft PRs (marking one ready starts it) and runs on every push

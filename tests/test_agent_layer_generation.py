@@ -793,7 +793,8 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertEqual("approvals", job_name)  # not loop:approvals: its check run must not stand in for the status
         self.assertEqual("mise run ci:approvals", job["steps"][-1]["run"])
         self.assertEqual({"install": False}, job["steps"][-2]["with"])  # approvals.py needs no toolchain
-        self.assertEqual("write", job["permissions"]["statuses"])
+        self.assertEqual("write", job["permissions"]["statuses"])  # posts loop:approvals
+        self.assertEqual("write", job["permissions"]["pull-requests"])  # removes approved:merge on a push
         on = approvals[True]  # PyYAML reads `on` as True
         self.assertIn("labeled", on["pull_request"]["types"])
         self.assertIn("synchronize", on["pull_request"]["types"])
@@ -801,7 +802,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         ci_name = yaml.safe_load(workflow)["name"]
         self.assertEqual({"workflows": [ci_name], "types": ["completed"]}, on["workflow_run"])
         self.assertIn("context=loop:approvals", tasks["ci:approvals"]["run"])
-        self.assertIn("--remove-label approved:merge", tasks["ci:approvals"]["run"])
+        self.assertIn("issues/$PR/labels/approved:merge", tasks["ci:approvals"]["run"])
         self.assertEqual("merge-queue", tasks["setup:github"]["alias"])
         self.assertIn("-F allow_auto_merge=true -F delete_branch_on_merge=true", tasks["setup:github"]["run"])
         self.assertIn(".worktrees/", (project / ".gitignore").read_text().splitlines())
@@ -909,7 +910,8 @@ class AgentLayerGenerationTest(unittest.TestCase):
                 rules = {rule["type"]: rule.get("parameters") for rule in ruleset["rules"]}
                 required = [check["context"] for check in rules["required_status_checks"]["required_status_checks"]]
                 self.assertEqual(["check", "loop:approvals"], required)
-                self.assertIn("check", jobs)
+                self.assertEqual("check", jobs["check"].get("name", "check"))  # the check run's name, not just the key
+                self.assertEqual(15368, rules["required_status_checks"]["required_status_checks"][0]["integration_id"])  # GitHub Actions
                 self.assertIn("context=loop:approvals", tasks["ci:approvals"]["run"])
                 self.assertEqual("SQUASH", rules["merge_queue"]["merge_method"])
                 self.assertEqual("ALLGREEN", rules["merge_queue"]["grouping_strategy"])
