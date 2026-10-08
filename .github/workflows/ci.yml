@@ -120,6 +120,7 @@ jobs:
           grep -q '^\[tasks.check\]$' mise.toml
           grep -q 'run: mise run ci:parts' .github/workflows/ci.yml
           grep -q '^\[tasks."loop:approvals"\]$' mise.toml
+          grep -q '^\[tasks."loop:land"\]$' mise.toml
           grep -q 'run: mise run ci:approvals' .github/workflows/approvals.yml
           grep -q '^\[tasks."setup:github"\]$' mise.toml
           grep -q '^  merge_group:$' .github/workflows/ci.yml

@@ -148,9 +148,21 @@ the owner's `approved:merge` label; a push removes it. The
 `check` or the label, failure when a proof is missing, success once every proof
 holds. It reruns when a label or the PR body changes and when CI completes, and
 posts success on a merge-queue commit, since a PR is queued only once its status
-was green. GitHub's free plan has no protection for private repos, so there the
+was green. On success on a ready PR that has no auto-merge request yet, it turns
+auto-merge on with the repo's `GITHUB_TOKEN`, pinned to the head
+(`--match-head-commit`), so a PR made ready by hand lands with no agent action;
+the job needs `contents: write` and `pull-requests: write` for that. It never
+replaces an existing request. GitHub's free plan has no protection for private repos, so there the
 status is only a mark (pending while it waits, red on a missing proof), not a
 block: it catches a forgotten step, not a deliberate one.
+
+`mise run loop:land <pr>` is the one way an agent lands a PR: it runs the pack's
+`approvals.py land`, which checks every merge proof, then marks the PR ready and
+squash-merges it pinned to its head, or turns auto-merge on while only required
+checks are pending. It exits 0 once the PR merged or auto-merge is on, 1 on a
+missing proof (the PR is left untouched) and 3 while it waits: run it again. It
+runs as you, so its merge starts main's push workflows, which a merge caused by
+the workflow's `GITHUB_TOKEN` does not.
 
 Where GitHub offers rulesets and merge queues, main lands through a queue.
 Generated CI skips draft PRs (marking one ready starts it) and runs on every push
@@ -163,8 +175,8 @@ grouping) that requires exactly two names, CI's `check` job and the
 `loop:approvals` status. `mise run setup:github` (alias `merge-queue`) creates
 that ruleset on GitHub, or updates it if one with that name exists, and sets
 the repository's `allow_auto_merge` and `delete_branch_on_merge` to true, so
-`gh pr merge <n> --auto` queues the PR once both names are green and its branch
-is deleted after the merge. It never reads or changes another ruleset: GitHub
+`mise run loop:land <n>` (or the approvals workflow) queues the PR once both
+names are green and its branch is deleted after the merge. It never reads or changes another ruleset: GitHub
 applies every active ruleset on a branch, so the repo's own rules on main keep
 applying alongside it. The task prints both settings' previous values and the
 `gh api -X PATCH` command that restores them. `mise run setup:github --revert`
@@ -228,6 +240,10 @@ Updating to v0.5.0, with mise on:
 
 A repo that edited `mise.toml`, its hooks or its CI resolves those files once:
 a custom check becomes a `check:<name>` task.
+
+Updating to v0.6.0, with the loop on, adds `mise run loop:land <pr>`, and the
+approvals workflow turns on auto-merge for a ready PR whose proofs hold; its job
+now needs `contents: write`.
 
 ## Adopt an existing (pre-template) repo
 

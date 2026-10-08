@@ -306,7 +306,7 @@ class AgentMiseTasksTest(unittest.TestCase):
             "    else:\n"
             "        data['edits'].append(args)\n"
             "    state.write_text(json.dumps(data))\n"
-            "    sys.exit()\n"
+            "    sys.exit(data.get('merge_fails') if args[0] == 'merge' else None)\n"
             "method = args[args.index('-X') + 1] if '-X' in args else 'GET'\n"
             "path = next(a for a in args if a.startswith('repos/'))\n"
             "fields = dict(args[i + 1].split('=', 1) for i, a in enumerate(args) if a in ('-f', '-F'))\n"
@@ -439,7 +439,7 @@ class AgentMiseTasksTest(unittest.TestCase):
         script.write_text(f"import sys\nprint('approvals said {code}')\nsys.exit({code})\n")
         state = self.bin / "github.json"
         if not state.exists():
-            self.fake_github(pr=["abc123", "false", "owner"])
+            self.fake_github(pr=["abc123", "false", "owner", "false"])
         self.env.update({"GITHUB_REPOSITORY": "o/r", "EVENT": "pull_request", "ACTION": "labeled", "PR": "7",
                          "QUEUE_HEAD": "", "RUN_URL": "https://example.com/run", **env})
         result = self.run_task("ci:approvals")
@@ -458,13 +458,51 @@ class AgentMiseTasksTest(unittest.TestCase):
                      "description": f"approvals said {code}", "target_url": "https://example.com/run"},
                     status,
                 )
-                self.assertEqual([], github["edits"])
+                # Only every proof holding turns auto-merge on; a wait or a missing proof leaves the PR alone.
+                merges = [["merge", "7", "--auto", "--squash", "--match-head-commit", "abc123"]] if code == 0 else []
+                self.assertEqual(merges, github["edits"])
+
+    def test_ci_approvals_turns_auto_merge_on_only_for_a_ready_pr_without_a_request(self) -> None:
+        (self.bin / "mise").symlink_to(MISE)
+        self.fake_github(pr=["abc123", "false", "owner", "true"])  # loop:land's request is already there
+        kept, github = self.approvals_run(0)
+        self.assertEqual(0, kept.returncode, kept.stdout + kept.stderr)
+        self.assertEqual(["success"], [status["state"] for status in github["statuses"]])
+        self.assertEqual([], github["edits"])
+        self.assertIn("already has auto-merge on", kept.stdout)
+
+        self.fake_github(pr=["abc123", "true", "owner", "false"])  # a draft gets no status and no request
+        draft, github = self.approvals_run(0)
+        self.assertEqual(0, draft.returncode, draft.stderr)
+        self.assertEqual(([], []), (github["statuses"], github["edits"]))
+
+        self.fake_github(pr=["abc123", "false", "app/dependabot", "false"])  # no loop proofs, so no auto-merge
+        _, github = self.approvals_run(0)
+        self.assertEqual([], github["edits"])
+
+        self.fake_github(pr=["abc123", "false", "owner", "false"], merge_fails=1)
+        refused, github = self.approvals_run(0)
+        self.assertEqual(1, refused.returncode, refused.stdout + refused.stderr)
+        self.assertEqual(["success"], [status["state"] for status in github["statuses"]])  # the gate stays green
+        self.assertIn("could not turn on auto-merge for PR #7 at abc123", refused.stdout)
+
+    def test_loop_land_runs_approvals_land_on_the_pr_and_keeps_its_exit(self) -> None:
+        script = self.project / ".agents/skills/engineering-loop/scripts/approvals.py"
+        missing = self.run_task("loop:land", "7")
+        self.assertEqual(1, missing.returncode)
+        self.assertIn("run mise run agent:sync", missing.stderr)
+
+        script.parent.mkdir(parents=True, exist_ok=True)
+        script.write_text("import sys\nprint(' '.join(sys.argv[1:]))\nsys.exit(3)\n")
+        waiting = self.run_task("loop:land", "7")
+        self.assertEqual(3, waiting.returncode, waiting.stderr)
+        self.assertEqual("land 7", waiting.stdout.strip())
 
     def test_ci_approvals_on_a_push_removes_the_merge_approval_first(self) -> None:
         (self.bin / "mise").symlink_to(MISE)
         for label_delete, code, states in ((None, 0, ["pending"]), ("404", 0, ["pending"]), ("403", 1, ["failure"])):
             with self.subTest(label_delete=label_delete):
-                self.fake_github(pr=["abc123", "false", "owner"], label_delete=label_delete)
+                self.fake_github(pr=["abc123", "false", "owner", "false"], label_delete=label_delete)
                 result, github = self.approvals_run(3, ACTION="synchronize")
                 self.assertEqual(code, result.returncode, result.stdout + result.stderr)
                 self.assertEqual([["DELETE", "repos/o/r/issues/7/labels/approved:merge"]], github["edits"])
@@ -478,11 +516,11 @@ class AgentMiseTasksTest(unittest.TestCase):
         _, queued = self.approvals_run(2, EVENT="merge_group", QUEUE_HEAD="q1", PR="")
         self.assertEqual([("q1", "success")], [(s["sha"], s["state"]) for s in queued["statuses"]])
 
-        self.fake_github(pr=["abc123", "false", "app/dependabot"])
+        self.fake_github(pr=["abc123", "false", "app/dependabot", "false"])
         _, dependabot = self.approvals_run(2)
         self.assertEqual([("abc123", "success")], [(s["sha"], s["state"]) for s in dependabot["statuses"]])
 
-        self.fake_github(pr=["abc123", "true", "owner"])
+        self.fake_github(pr=["abc123", "true", "owner", "false"])
         draft, github = self.approvals_run(2)
         self.assertEqual(0, draft.returncode, draft.stderr)
         self.assertEqual([], github["statuses"])

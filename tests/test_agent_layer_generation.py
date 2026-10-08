@@ -787,6 +787,10 @@ class AgentLayerGenerationTest(unittest.TestCase):
             'python3 .agents/skills/engineering-loop/scripts/approvals.py check "${usage_point}" ${usage_pr:-}',
             approvals_run[-1],
         )
+        self.assertEqual(
+            'python3 .agents/skills/engineering-loop/scripts/approvals.py land "${usage_pr}"',
+            tasks["loop:land"]["run"][-1],
+        )
         self.assertFalse((project / ".github/workflows/gate.yml").exists())
         approvals = yaml.safe_load((project / ".github/workflows/approvals.yml").read_text())
         [(job_name, job)] = approvals["jobs"].items()
@@ -794,7 +798,17 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertEqual("mise run ci:approvals", job["steps"][-1]["run"])
         self.assertEqual({"install": False}, job["steps"][-2]["with"])  # approvals.py needs no toolchain
         self.assertEqual("write", job["permissions"]["statuses"])  # posts loop:approvals
-        self.assertEqual("write", job["permissions"]["pull-requests"])  # removes approved:merge on a push
+        # The least that turns auto-merge on: write on contents and pull requests, read on the rest.
+        self.assertEqual(
+            {"contents": "write", "issues": "read", "pull-requests": "write", "checks": "read", "statuses": "write"},
+            job["permissions"],
+        )
+        self.assertEqual({}, approvals["permissions"])
+        # Auto-merge is pinned to the head the proofs covered, and only after a success, never on a request.
+        approvals_task = tasks["ci:approvals"]["run"]
+        self.assertIn('gh pr merge "$PR" --auto --squash --match-head-commit "$head"', approvals_task)
+        self.assertLess(approvals_task.index('post "$head" success "${first'), approvals_task.index("gh pr merge"))
+        self.assertLess(approvals_task.index("autoMergeRequest"), approvals_task.index("gh pr merge"))
         on = approvals[True]  # PyYAML reads `on` as True
         self.assertIn("labeled", on["pull_request"]["types"])
         self.assertIn("synchronize", on["pull_request"]["types"])
@@ -860,7 +874,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         contract = {
             "check", "check:all", "check:lint", "check:unit", "check:secrets", "check:agents",
             "test:fast", "test:unit", "test:changed", "ci:parts", "ci:check", "ci:approvals",
-            "loop:approvals", "setup:dev", "setup:github", "agent:sync", "agent:claude", "agent:codex",
+            "loop:approvals", "loop:land", "setup:dev", "setup:github", "agent:sync", "agent:claude", "agent:codex",
         }
         aliases = {
             "check:lint": ["lint", "fmt"], "test:fast": "test", "setup:dev": "bootstrap",
@@ -976,7 +990,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
 
                 tasks = tomllib.loads((project / "mise.toml").read_text())["tasks"]
                 self.assertFalse((project / "docs/agents").exists())
-                self.assertEqual(set(), {"loop:approvals", "ci:approvals", "setup:github"} & set(tasks))
+                self.assertEqual(set(), {"loop:approvals", "loop:land", "ci:approvals", "setup:github"} & set(tasks))
                 self.assertFalse((project / ".github/workflows/approvals.yml").exists())
                 self.assertFalse((project / ".github/workflows/gate.yml").exists())
                 self.assertFalse((project / ".github/rulesets").exists())

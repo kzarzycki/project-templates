@@ -194,8 +194,19 @@ run = [
   'python3 .agents/skills/engineering-loop/scripts/approvals.py check "${usage_point}" ${usage_pr:-}',
 ]
 
+[tasks."loop:land"]
+description = "The one way an agent lands a PR: every merge proof, then ready and a squash merge pinned to the head, or auto-merge while required checks are pending. Exits 0 merged or auto-merge on, 1 on a missing proof, 3 while it waits."
+usage = '''
+arg "<pr>" help="the PR number"
+'''
+# ponytail: the path is the codex target's copy; without codex, point it at .claude/skills.
+run = [
+  'test -f .agents/skills/engineering-loop/scripts/approvals.py || { echo "loop:land: the engineering-loop skill is not installed; run mise run agent:sync and commit its output" >&2; exit 1; }',
+  'python3 .agents/skills/engineering-loop/scripts/approvals.py land "${usage_pr}"',
+]
+
 [tasks."ci:approvals"]
-description = "CI's approvals step: posts loop:approvals merge's result as the loop:approvals commit status on the PR head (pending while it waits); success on a merge-queue commit; a push removes approved:merge first."
+description = "CI's approvals step: posts loop:approvals merge's result as the loop:approvals commit status on the PR head (pending while it waits); success on a merge-queue commit; a push removes approved:merge first; on success turns on auto-merge at the head unless the PR has a request."
 # A job ends only as success or failure, and GitHub counts a skipped job as passed, so the
 # result is a commit status, which main's ruleset requires. The workflow sets EVENT, ACTION,
 # PR, QUEUE_HEAD and RUN_URL.
@@ -211,7 +222,7 @@ if [ "$EVENT" = merge_group ]; then
   exit 0
 fi
 [ -n "${PR:-}" ] || { echo "ci:approvals: no PR for this run; nothing to post"; exit 0; }
-pull="$(gh pr view "$PR" --json headRefOid,isDraft,author --jq '[.headRefOid, .isDraft, .author.login] | @tsv')"
+pull="$(gh pr view "$PR" --json headRefOid,isDraft,author,autoMergeRequest --jq '[.headRefOid, .isDraft, .author.login, .autoMergeRequest != null] | @tsv')"
 head="$(printf '%s' "$pull" | cut -f1)"
 if [ "$(printf '%s' "$pull" | cut -f2)" = true ]; then echo "ci:approvals: PR #$PR is a draft; nothing to post"; exit 0; fi
 if [ "$(printf '%s' "$pull" | cut -f3)" = "app/dependabot" ]; then
@@ -231,9 +242,18 @@ printf '%s\n' "$out"
 first="$(printf '%s\n' "$out" | sed -n 1p)"
 case "$code" in
   0) post "$head" success "${first:-every proof holds}" ;;
-  3) post "$head" pending "$first" ;;
+  3) post "$head" pending "$first"; exit 0 ;;
   *) post "$head" failure "${first:-loop:approvals exited $code}"; exit 1 ;;
 esac
+# Every proof holds on a ready PR (a draft returned above), so a PR made ready by hand lands with no agent
+# action. A request already there is left alone: loop:land's runs as a person, so its merge starts the
+# post-merge workflows, which a merge caused by this job's github.token does not. Pinned to the head the
+# proofs covered; gh merges at once when nothing is pending.
+if [ "$(printf '%s' "$pull" | cut -f4)" = true ]; then echo "ci:approvals: PR #$PR already has auto-merge on; left as is"; exit 0; fi
+gh pr merge "$PR" --auto --squash --match-head-commit "$head" || {
+  echo "::error::ci:approvals: could not turn on auto-merge for PR #$PR at $head; loop:approvals is still success, so mise run loop:land $PR lands it"
+  exit 1
+}
 '''
 
 [tasks."setup:github"]
