@@ -1,21 +1,7 @@
 [tools]
 {% include "templates/_lang/python/_mise_tools.part" -%}
-pre-commit = "4.6.0"
+{% include "templates/_base/_mise_tools.part" -%}
 {% include "templates/_base/_mise_agent_tasks.part" %}
-{% set check_commands %}{% include "templates/_lang/python/_check.part" %}{% endset -%}
-{% include "templates/_base/_mise_check_task.part" %}
+{% include "templates/_base/_mise_tasks.part" %}
 
-[tasks.test]
-run = "uv run pytest"
-
-[tasks.lint]
-run = "uv run ruff check ."
-
-[tasks.fmt]
-run = "uv run ruff format ."
-
-[tasks.bootstrap]
-run = "uv sync && pre-commit install --install-hooks"
-
-[hooks]
-postinstall = "pre-commit install --install-hooks"
+{% include "templates/_lang/python/_mise_tasks.part" %}

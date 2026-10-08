@@ -1,41 +1,17 @@
 [tools]
 {% include "templates/_lang/" ~ language ~ "/_mise_tools.part" -%}
-pre-commit = "4.6.0"
+{% include "templates/_base/_mise_tools.part" -%}
 {% include "templates/_base/_mise_agent_tasks.part" %}
-{% set check_commands %}{% include "templates/_lang/" ~ language ~ "/_check.part" %}{% if include_example %}{% if language == 'python' %}uv run python scripts/smoke_server.py
-{% else %}node scripts/smoke-server.mjs
-{% endif %}{% endif %}{% endset -%}
-{% include "templates/_base/_mise_check_task.part" %}
-{% if language == 'python' %}
-[tasks.test]
-run = "uv run pytest"
+{% include "templates/_base/_mise_tasks.part" %}
 
-[tasks.lint]
-run = "uv run ruff check ."
-
-[tasks.fmt]
-run = "uv run ruff format ."
-{% if include_example %}
-[tasks.smoke]
-run = "uv run python scripts/smoke_server.py"
+{% include "templates/_lang/" ~ language ~ "/_mise_tasks.part" %}{% if include_example %}
+[tasks."test:smoke"]
+alias = "smoke"
+description = "Builds the MCP server and checks it answers (scripts/smoke)."
+{% if language == 'python' %}run = "uv run python scripts/smoke_server.py"
+{% else %}run = "node scripts/smoke-server.mjs"
 {% endif %}
-[tasks.bootstrap]
-run = "uv sync && pre-commit install --install-hooks"
-{% endif %}{% if language == 'node' %}
-[tasks.test]
-run = "npm test"
-
-[tasks.lint]
-run = "npm run check"
-
-[tasks.fmt]
-run = "npm run check"
-{% if include_example %}
-[tasks.smoke]
-run = "node scripts/smoke-server.mjs"
+[tasks."check:smoke"]
+description = "Runs test:smoke: the MCP server builds and answers."
+depends = ["test:smoke"]
 {% endif %}
-[tasks.bootstrap]
-run = "npm install && pre-commit install --install-hooks"
-{% endif %}
-[hooks]
-postinstall = "pre-commit install --install-hooks"

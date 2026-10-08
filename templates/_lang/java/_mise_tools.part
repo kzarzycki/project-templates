@@ -1,2 +1,3 @@
 java = "temurin-{{ java_version }}"
 gradle = "9.6.1"
+"pipx:diff-cover" = "10.6.0"

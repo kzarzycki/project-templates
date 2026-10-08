@@ -1,21 +1,7 @@
 [tools]
 {% include "templates/_lang/java/_mise_tools.part" -%}
-pre-commit = "4.6.0"
+{% include "templates/_base/_mise_tools.part" -%}
 {% include "templates/_base/_mise_agent_tasks.part" %}
-{% set check_commands %}{% include "templates/_lang/java/_check.part" %}{% endset -%}
-{% include "templates/_base/_mise_check_task.part" %}
+{% include "templates/_base/_mise_tasks.part" %}
 
-[tasks.test]
-run = "./gradlew test"
-
-[tasks.lint]
-run = "./gradlew spotlessCheck"
-
-[tasks.fmt]
-run = "./gradlew spotlessApply"
-
-[tasks.bootstrap]
-run = "./gradlew build && pre-commit install --install-hooks"
-
-[hooks]
-postinstall = "pre-commit install --install-hooks"
+{% include "templates/_lang/java/_mise_tasks.part" %}

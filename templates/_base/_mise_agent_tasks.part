@@ -11,7 +11,8 @@ fnox = "1.30.0"
 {% endif -%}
 {% if include_agent_layer %}
 
-[tasks.agent-sync]
+[tasks."agent:sync"]
+alias = "agent-sync"
 description = "Converge project-owned coding agent configuration."
 usage = '''
 flag "--refresh" help="Resolve available dependency releases before convergence"
@@ -61,7 +62,7 @@ if [ "$mode" = frozen ]; then
   if [ -n "$frozen_changes" ]; then
     echo "error: frozen agent configuration changed:" >&2
     echo "$frozen_changes" >&2
-    echo "run 'mise run agent-sync' and commit the resulting agent configuration" >&2
+    echo "run 'mise run agent:sync' and commit the resulting agent configuration" >&2
     exit 1
   fi
 fi
@@ -90,7 +91,7 @@ if [ "$mode" = frozen ]; then
   if [ -n "$frozen_changes" ]; then
     echo "error: frozen agent configuration changed:" >&2
     echo "$frozen_changes" >&2
-    echo "run 'mise run agent-sync' and commit the resulting agent configuration" >&2
+    echo "run 'mise run agent:sync' and commit the resulting agent configuration" >&2
     exit 1
   fi
 fi
@@ -98,7 +99,8 @@ fi
 
 # Launcher tasks are coding-agent-specific. Add one only when the coding agent
 # has a stable CLI.
-[tasks.agent-claude]
+[tasks."agent:claude"]
+alias = "agent-claude"
 {% if include_fnox -%}
 description = "Launch Claude Code with this repository's machine bindings."
 {% else -%}
@@ -116,7 +118,8 @@ claude
 {% endif -%}
 """
 
-[tasks.agent-codex]
+[tasks."agent:codex"]
+alias = "agent-codex"
 {% if include_fnox -%}
 description = "Launch Codex with this repository's machine bindings."
 {% else -%}
@@ -133,48 +136,4 @@ fnox exec --non-interactive --if-missing error -- codex
 codex
 {% endif -%}
 """
-{% if loop_enabled %}
-
-[tasks.gate]
-description = "The proof gate: each loop step left its proof. The loop, the pre-push hook and CI run it."
-usage = '''
-arg "<point>" help="build or merge"
-arg "[pr]" help="the PR number; default: this branch's PR"
-'''
-# Add the project's own checks as more lines; the gate stops at the first that fails.
-# ponytail: the path is the codex target's copy; without codex, point it at .claude/skills.
-run = [
-  'test -f .agents/skills/engineering-loop/scripts/gate.py || { echo "gate: the engineering-loop skill is not installed; run mise run agent-sync and commit its output" >&2; exit 1; }',
-  'python3 .agents/skills/engineering-loop/scripts/gate.py check "${usage_point}" ${usage_pr:-}',
-]
-
-[tasks.merge-queue]
-description = "Land main through a merge queue: apply the loop-merge-queue ruleset (.github/rulesets/main.json) and allow auto-merge. --revert deletes that ruleset."
-usage = '''
-flag "--revert" help="Delete the loop-merge-queue ruleset; auto-merge is restored with the command apply printed"
-'''
-# The task owns only the ruleset named loop-merge-queue and never reads or changes another one:
-# GitHub layers every active ruleset on a branch, so the repo's own rules keep applying.
-# The ruleset requires the CI and gate jobs by name: rename a job, update the ruleset, rerun this.
-run = '''
-command -v gh >/dev/null || { echo "error: gh is required; install the GitHub CLI and run 'gh auth login'" >&2; exit 127; }
-id="$(gh api --paginate 'repos/{owner}/{repo}/rulesets' --jq '.[] | select(.source_type == "Repository" and .name == "loop-merge-queue") | .id')"
-if [ "${usage_revert:-false}" = true ]; then
-  if [ -z "$id" ]; then echo "no loop-merge-queue ruleset: nothing to revert"; exit 0; fi
-  # A 404 means another run deleted it first: the revert is done either way.
-  out="$(gh api -X DELETE "repos/{owner}/{repo}/rulesets/$id" 2>&1)" || case "$out" in *"HTTP 404"*) ;; *) echo "$out" >&2; exit 1 ;; esac
-  echo "deleted ruleset loop-merge-queue ($id)"
-  exit 0
-fi
-if [ -n "$id" ]; then
-  gh api -X PUT "repos/{owner}/{repo}/rulesets/$id" --input .github/rulesets/main.json --jq '"updated ruleset loop-merge-queue (\(.id))"'
-else
-  gh api -X POST 'repos/{owner}/{repo}/rulesets' --input .github/rulesets/main.json --jq '"created ruleset loop-merge-queue (\(.id))"'
-fi
-previous="$(gh api 'repos/{owner}/{repo}' --jq .allow_auto_merge)"
-gh api -X PATCH 'repos/{owner}/{repo}' -F allow_auto_merge=true >/dev/null
-echo "allow_auto_merge was $previous, now true; restore: gh api -X PATCH 'repos/{owner}/{repo}' -F allow_auto_merge=$previous"
-echo "revert the ruleset: mise run merge-queue --revert"
-'''
-{% endif -%}
 {% endif -%}

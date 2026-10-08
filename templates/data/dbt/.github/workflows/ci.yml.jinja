@@ -1,13 +1,14 @@
 {% include "templates/_base/_ci_header.yml.jinja" %}
 jobs:
+{% if include_mise -%}
+{% include "templates/_base/_ci_jobs.yml.jinja" -%}
+{% else %}
   build:
     # A draft runs nothing until ready_for_review; a push or a queue entry has no PR, so it always runs.
     if: {% raw %}${{ !github.event.pull_request.draft }}{% endraw %}
     runs-on: ubuntu-latest
     steps:
-{% include "templates/_base/_ci_steps.yml.jinja" %}
-{% if not include_mise %}
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+{% include "templates/_base/_ci_steps.yml.jinja" %}      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "{{ python_version }}"
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
@@ -19,13 +20,4 @@ jobs:
       # so CI stays green on a fresh repo. Wire `dbt build` / `dbt test` below
       # once warehouse credentials are available as repo secrets.
       - run: uv run dbt parse
-      # - name: Build + test
-      #   env:
-      #     DBT_PROFILES_DIR: ${% raw %}{{ github.workspace }}{% endraw %}
-      #     SNOWFLAKE_ACCOUNT: ${% raw %}{{ secrets.SNOWFLAKE_ACCOUNT }}{% endraw %}
-      #     SNOWFLAKE_USER: ${% raw %}{{ secrets.SNOWFLAKE_USER }}{% endraw %}
-      #     SNOWFLAKE_PASSWORD: ${% raw %}{{ secrets.SNOWFLAKE_PASSWORD }}{% endraw %}
-      #   run: |
-      #     uv run dbt build
-      #     uv run dbt test
-{% endif %}
+{% endif -%}

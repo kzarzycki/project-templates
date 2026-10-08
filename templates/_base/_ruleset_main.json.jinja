@@ -24,8 +24,8 @@
         "strict_required_status_checks_policy": false,
         "do_not_enforce_on_create": false,
         "required_status_checks": [
-          {"context": "{{ 'validate' if project_type == 'infra/terraform' else 'build' }}", "integration_id": 15368},
-          {"context": "gate", "integration_id": 15368}
+          {"context": "check", "integration_id": 15368},
+          {"context": "loop:approvals"}
         ]
       }
     },

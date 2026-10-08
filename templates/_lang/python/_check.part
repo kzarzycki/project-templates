@@ -1,2 +1,0 @@
-uv run pytest --cov --cov-report=xml
-{% include "templates/_base/_diff_base.part" %}if git rev-parse -q --verify "$base^{commit}" >/dev/null; then uv run diff-cover coverage.xml --compare-branch="$base" --fail-under=100; fi

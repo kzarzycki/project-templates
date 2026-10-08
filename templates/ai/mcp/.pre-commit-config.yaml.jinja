@@ -1,6 +1,14 @@
 # Managed by Copier — edit the template, then `copier update`.
-# Run locally: pre-commit run --all-files   ·   Update pins: pre-commit autoupdate
 default_install_hook_types: [pre-commit, commit-msg, pre-push]
+{% if include_mise -%}
+# A hook runs at the pre-commit stage unless it names its stage.
+default_stages: [pre-commit]
+repos:
+{% include "templates/_base/_precommit_hooks.yml.jinja" -%}
+{% include "templates/_lang/" ~ language ~ "/_precommit_hooks.yml.jinja" -%}
+{% else -%}
+# Run locally: pre-commit run --all-files   ·   Update pins: pre-commit autoupdate
 repos:
 {% include "templates/_base/_precommit.yml.jinja" -%}
 {% include "templates/_lang/" ~ language ~ "/_precommit.yml.jinja" -%}
+{% endif -%}

@@ -1,19 +1,33 @@
 [tools]
-pre-commit = "4.6.0"
 "aqua:lycheeverse/lychee" = "0.24.2"
+node = "24"  # runs markdownlint
+"npm:markdownlint-cli" = "0.49.1"
+{% include "templates/_base/_mise_tools.part" -%}
 {% include "templates/_base/_mise_agent_tasks.part" %}
-{% set check_commands %}lychee --no-progress --extensions md .
-{% endset -%}
-{% include "templates/_base/_mise_check_task.part" %}
+{% include "templates/_base/_mise_tasks.part" %}
 
-[tasks.lint]
-run = "pre-commit run --all-files"
+[tasks."lint:markdownlint"]
+alias = "markdownlint"
+description = "Lints Markdown with markdownlint; fixes what it can in place."
+run = 'scripts/files-or-repo --fixer --only "\.md$" --skip "${APM_MANAGED:-}" markdownlint --fix --'
 
-[tasks.markdownlint]
-run = "markdownlint ."
+[tasks."test:fast"]
+description = "Checks every link in the Markdown files (lychee)."
+run = "lychee --no-progress --extensions md ."
 
-[tasks.bootstrap]
+[tasks."test:unit"]
+description = "Runs test:fast: this project has one test tier."
+depends = ["test:fast"]
+
+[tasks."test:changed"]
+description = "Runs test:fast: this project has no per-change test selection."
+depends = ["test:fast"]
+
+[tasks."check:unit"]
+description = "Runs test:unit; a docs project measures no coverage."
+depends = ["test:unit"]
+
+[tasks."setup:dev"]
+alias = "bootstrap"
+description = "Installs the git hooks on a fresh checkout."
 run = "pre-commit install --install-hooks"
-
-[hooks]
-postinstall = "pre-commit install --install-hooks"

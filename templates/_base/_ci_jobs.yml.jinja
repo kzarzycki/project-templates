@@ -1,0 +1,76 @@
+  # The merge checks are the mise task group check:* (all but check:all): the plan lists the
+  # parts this change needs, the matrix runs each as a job named after it, and the aggregate
+  # `check` is the one check main's ruleset requires. Add a part in mise.toml, not here.
+  # A draft runs nothing until ready_for_review; a push or a queue entry has no PR, so it always runs.
+  plan:
+    if: {% raw %}${{ !github.event.pull_request.draft }}{% endraw %}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read # paths-filter lists a PR's files through the API
+    outputs:
+      parts: {% raw %}${{ steps.parts.outputs.parts }}{% endraw %}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          filters: .github/check-paths.yml
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          install: false # listing the parts needs only mise and python3, which the runner has
+      - id: parts
+        env:
+          CHANGES: {% raw %}${{ steps.filter.outputs.changes }}{% endraw %}
+          MISE_TASK_RUN_AUTO_INSTALL: "false"
+        run: mise run ci:parts
+
+  part:
+    needs: plan
+    name: {% raw %}${{ matrix.part }}{% endraw %}
+    runs-on: ubuntu-latest
+    # ponytail: one timeout for every part, the longest's; a per-part limit would be a second definition of the part.
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        part: {% raw %}${{ fromJSON(needs.plan.outputs.parts) }}{% endraw %}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # mise installs the pinned tools; each part is the same task agents run.
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+      - run: mise run setup:dev
+      - env:
+          PART: {% raw %}${{ matrix.part }}{% endraw %}
+          # A push compares against the commit before it, a queue entry against the queue's
+          # base commit; github.base_ref is set only on a PR.
+          BASE_REF: {% raw %}${{ github.base_ref || github.event.merge_group.base_sha || github.event.before }}{% endraw %}
+        run: mise run "$PART"
+
+  check:
+    needs: [plan, part]
+    # Always, so the required check reports even when the plan or a part failed or was cancelled.
+    if: {% raw %}${{ always() && !github.event.pull_request.draft }}{% endraw %}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read # to name the failed parts
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          install: false # the verdict needs only gh, which the runner has
+      - env:
+          PLAN: {% raw %}${{ needs.plan.result }}{% endraw %}
+          PARTS: {% raw %}${{ needs.part.result }}{% endraw %}
+          GH_TOKEN: {% raw %}${{ github.token }}{% endraw %}
+          MISE_TASK_RUN_AUTO_INSTALL: "false"
+        run: mise run ci:check
