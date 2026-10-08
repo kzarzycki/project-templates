@@ -4,11 +4,19 @@
 
 ## Setup
 
+{% if include_mise -%}
+```bash
+mise install                  # the pinned tools
+mise run setup:dev            # install the git hooks
+mise run check                # Markdown lint + link check, as CI runs them
+```
+{% else -%}
 ```bash
 uv tool install pre-commit    # if not already installed
 pre-commit install            # enable git hooks
 pre-commit run --all-files    # lint Markdown
 ```
+{% endif -%}
 
 Docs live in `docs/`; start from `docs/index.md`.
 

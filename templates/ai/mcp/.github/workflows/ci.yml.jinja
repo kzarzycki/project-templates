@@ -1,14 +1,18 @@
 {% include "templates/_base/_ci_header.yml.jinja" %}
 jobs:
+{% if include_mise -%}
+{% include "templates/_base/_ci_jobs.yml.jinja" -%}
+{% else %}
   build:
     # A draft runs nothing until ready_for_review; a push or a queue entry has no PR, so it always runs.
     if: {% raw %}${{ !github.event.pull_request.draft }}{% endraw %}
     runs-on: ubuntu-latest
     steps:
 {% include "templates/_base/_ci_steps.yml.jinja" -%}
-{% if not include_mise %}{% include "templates/_lang/" ~ language ~ "/_ci_steps.yml.jinja" %}
+{% include "templates/_lang/" ~ language ~ "/_ci_steps.yml.jinja" %}
 {% if include_example and language == 'python' %}      - name: MCP server smoke check
         run: uv run python scripts/smoke_server.py
 {% endif %}{% if include_example and language == 'node' %}      - name: MCP server smoke check
         run: node scripts/smoke-server.mjs
-{% endif %}{% endif %}
+{% endif -%}
+{% endif -%}

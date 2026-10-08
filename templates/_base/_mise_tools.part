@@ -1,0 +1,12 @@
+{% set leaf_pins_uv = project_type in ['software/python', 'data/dbt'] or (project_type == 'ai/mcp' and (language | default('')) == 'python') -%}
+pre-commit = "4.6.0"
+{% if not leaf_pins_uv -%}
+uv = "0.11.29"  # mise installs the pipx: tools with uv
+{% endif -%}
+# The lint: tasks' tools; each version lives only here.
+"pipx:pre-commit-hooks" = "6.0.0"
+"pipx:detect-secrets" = "1.5.0"
+"pipx:conventional-pre-commit" = "4.4.0"
+gitleaks = "8.30.1"
+actionlint = "1.7.12"
+zizmor = "1.27.0"

@@ -1,24 +1,44 @@
 [tools]
 terraform = "{{ terraform_version }}"
 tflint = "0.63.1"
-pre-commit = "4.6.0"
+{% include "templates/_base/_mise_tools.part" -%}
 {% include "templates/_base/_mise_agent_tasks.part" %}
-{% set check_commands %}terraform init -backend=false -input=false
-terraform validate
-{% endset -%}
-{% include "templates/_base/_mise_check_task.part" %}
+{% include "templates/_base/_mise_tasks.part" %}
 
-[tasks.fmt]
-description = "Format all Terraform files."
-run = "terraform fmt -recursive"
+[tasks."lint:terraform-fmt"]
+description = "Formats the Terraform files (terraform fmt); fixes in place."
+run = 'scripts/files-or-repo --fixer --only "\.(tf|tfvars|tftest\.hcl)$" terraform fmt --'
 
-[tasks.validate]
-description = "Validate the configuration offline (no backend, no providers to download beyond init)."
+[tasks."lint:terraform-validate"]
+alias = "validate"
+description = "Validates the configuration offline (no backend; init fetches only the providers it declares)."
 run = "terraform init -backend=false -input=false && terraform validate"
 
-[tasks.lint]
-description = "Lint with tflint."
+[tasks."lint:tflint"]
+description = "Lints the Terraform modules with tflint."
 run = "tflint --init && tflint --recursive"
+
+[tasks."test:fast"]
+alias = "test"
+description = "Runs the Terraform tests (terraform test, offline: no backend)."
+run = "terraform init -backend=false -input=false && terraform test"
+
+[tasks."test:unit"]
+description = "Runs test:fast: this project has one test tier."
+depends = ["test:fast"]
+
+[tasks."test:changed"]
+description = "Runs test:fast: this project has no per-change test selection."
+depends = ["test:fast"]
+
+[tasks."check:unit"]
+description = "Runs test:unit; Terraform measures no coverage."
+depends = ["test:unit"]
+
+[tasks."setup:dev"]
+alias = "bootstrap"
+description = "Installs the git hooks on a fresh checkout."
+run = "pre-commit install --install-hooks"
 
 {% if include_fnox -%}
 # Provider credentials come from the fnox profile "infra" (see fnox.toml), so a coding
@@ -38,10 +58,4 @@ run = "terraform init -input=false && terraform plan"
 [tasks.apply]
 description = "Apply the plan."
 run = "terraform init -input=false && terraform apply"
-{% endif %}
-[tasks.bootstrap]
-description = "Install git hooks."
-run = "pre-commit install --install-hooks"
-
-[hooks]
-postinstall = "pre-commit install --install-hooks"
+{% endif -%}

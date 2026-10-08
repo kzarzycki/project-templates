@@ -1,15 +1,26 @@
 [tools]
-pre-commit = "4.6.0"
+{% include "templates/_base/_mise_tools.part" -%}
 {% include "templates/_base/_mise_agent_tasks.part" %}
-{% set check_commands %}python3 scripts/validate-skill.py
-{% endset -%}
-{% include "templates/_base/_mise_check_task.part" %}
+{% include "templates/_base/_mise_tasks.part" %}
 
-[tasks.validate]
+[tasks."test:fast"]
+alias = ["test", "validate"]
+description = "Validates the skill package: SKILL.md frontmatter and .claude-plugin/plugin.json."
 run = "python3 scripts/validate-skill.py"
 
-[tasks.bootstrap]
-run = "pre-commit install --install-hooks"
+[tasks."test:unit"]
+description = "Runs test:fast: this project has one test tier."
+depends = ["test:fast"]
 
-[hooks]
-postinstall = "pre-commit install --install-hooks"
+[tasks."test:changed"]
+description = "Runs test:fast: this project has no per-change test selection."
+depends = ["test:fast"]
+
+[tasks."check:unit"]
+description = "Runs test:unit; a skill package measures no coverage."
+depends = ["test:unit"]
+
+[tasks."setup:dev"]
+alias = "bootstrap"
+description = "Installs the git hooks on a fresh checkout."
+run = "pre-commit install --install-hooks"

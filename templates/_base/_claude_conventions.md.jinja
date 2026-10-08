@@ -2,6 +2,10 @@
 
 - **Commits:** Conventional Commits (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`). Optional scope: `feat(api):`.
 - **Branches:** `feat/<kebab-case>`, `fix/<kebab-case>`.
+{% if include_mise -%}
+- **Before committing:** show the diff and the message. Hooks run each `lint:` task on the staged files on commit; `mise run check` runs the lints and the unit tests, `mise run check:all` every check CI runs, and `mise tasks` lists the rest.
+{% else -%}
 - **Before committing:** show the diff and the message. Hooks run on commit; run `pre-commit run --all-files` to check everything.
+{% endif -%}
 - **Secrets:** never commit `.env`. CI fails if `.env` is tracked. Add false positives to `.gitleaks.toml`.
 - **Decisions:** record architecture decisions as ADRs in `docs/adr/` (start from `docs/adr/0001-record-architecture-decisions.md`).

@@ -1,0 +1,39 @@
+[tasks."lint:biome"]
+description = "Lints and formats JavaScript, TypeScript and JSON with biome; fixes in place."
+run = 'scripts/files-or-repo --fixer --only "\.(js|mjs|cjs|jsx|ts|mts|cts|tsx|json|jsonc)$" --skip "${APM_MANAGED:-}" node_modules/.bin/biome check --write --no-errors-on-unmatched --'
+
+[tasks."lint:tsc"]
+description = "Type-checks the TypeScript project (tsc --noEmit)."
+# The whole project from tsconfig.json, so no hook passes it files.
+run = "npm run --silent typecheck"
+
+[tasks."test:fast"]
+alias = "test"
+description = "Runs the fast tier: every vitest test."
+run = "npx vitest run"
+
+[tasks."test:unit"]
+description = "Runs every test but the Docker, live and cloud tiers: the fast tier plus slow."
+# ponytail: the template has one tier, so this is test:fast's selection; narrow test:fast once a tier is split off.
+run = "npx vitest run"
+
+[tasks."test:changed"]
+description = "Runs only the tests affected by the files changed since the base branch (vitest --changed); before the first push, every test."
+run = '''
+{% include "templates/_base/_diff_base.part" %}if git rev-parse -q --verify "$base^{commit}" >/dev/null; then npx vitest run --changed "$base"; else npx vitest run; fi
+'''
+
+[tasks."check:unit"]
+description = "Runs test:unit with coverage, then fails on any changed line not covered (scripts/check-coverage.mjs)."
+run = '''
+mise run --skip-tools test:unit -- --coverage
+node scripts/check-coverage.mjs
+'''
+
+[tasks."setup:dev"]
+alias = "bootstrap"
+description = "Installs the dependencies and the git hooks on a fresh checkout."
+run = '''
+if [ -f package-lock.json ]; then npm ci; else npm install; fi
+pre-commit install --install-hooks
+'''

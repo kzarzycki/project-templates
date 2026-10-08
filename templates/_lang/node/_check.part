@@ -1,3 +1,0 @@
-npm run --silent typecheck
-npx vitest run --coverage
-node scripts/check-coverage.mjs

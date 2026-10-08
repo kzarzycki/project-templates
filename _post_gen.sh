@@ -33,27 +33,9 @@ else
   log "git already initialised — adoption mode"
 fi
 
-# 2. install dependencies per pack (best-effort; never fail the scaffold)
-case "$language" in
-  python)
-    if command -v uv >/dev/null 2>&1; then
-      uv sync >/dev/null 2>&1 && log "uv sync" || log "uv sync skipped (will run on first use)"
-    fi
-    ;;
-  node)
-    if command -v npm >/dev/null 2>&1; then
-      npm install >/dev/null 2>&1 && log "npm install" || log "npm install skipped"
-    fi
-    ;;
-  java)
-    # Gradle resolves on first build; nothing to pre-install here.
-    log "java project — run ./gradlew build when ready"
-    ;;
-esac
-
-# 2b. pinned tools. Hooks such as terraform_fmt or tflint need the toolchain mise
-#     pins, so install it first and run hooks and the first commit through it.
-#     Without mise, tools are whatever is on PATH.
+# 2. pinned tools. The dependencies, the hooks (each a mise task) and the first commit
+#    run through the toolchain mise pins, so install it first. Without mise, tools are
+#    whatever is on PATH.
 with_tools() { "$@"; }
 if [ -f mise.toml ] && command -v mise >/dev/null 2>&1; then
   if mise trust -q >/dev/null 2>&1 && mise install >/dev/null 2>&1; then
@@ -64,7 +46,26 @@ if [ -f mise.toml ] && command -v mise >/dev/null 2>&1; then
   fi
 fi
 
-# 3. install pre-commit hooks (skip if pre-commit absent). On a fresh repo, force
+# 3. install dependencies per pack (best-effort; never fail the scaffold), with the
+#    pinned toolchain when mise installed it
+case "$language" in
+  python)
+    if with_tools uv --version >/dev/null 2>&1; then
+      with_tools uv sync >/dev/null 2>&1 && log "uv sync" || log "uv sync skipped (will run on first use)"
+    fi
+    ;;
+  node)
+    if with_tools npm --version >/dev/null 2>&1; then
+      with_tools npm install >/dev/null 2>&1 && log "npm install" || log "npm install skipped"
+    fi
+    ;;
+  java)
+    # Gradle resolves on first build; nothing to pre-install here.
+    log "java project — run ./gradlew build when ready"
+    ;;
+esac
+
+# 4. install pre-commit hooks (skip if pre-commit absent). On a fresh repo, force
 #    (-f): a global git template that seeds .git/hooks would otherwise drop a plain
 #    install into "migration mode" and abort every later commit. On adoption, NEVER
 #    force — that would clobber a hook the existing repo already relies on; a plain
@@ -79,7 +80,7 @@ else
   log "pre-commit not found — run 'uv tool install pre-commit && pre-commit install'"
 fi
 
-# 4. first commit — ONLY on a repo we created. On adoption we never auto-commit:
+# 5. first commit — ONLY on a repo we created. On adoption we never auto-commit:
 #    a `git add -A` here would sweep the existing repo's own files (tracked or not,
 #    even when it has no commits yet) into a "scaffold" commit. Run hooks first so
 #    any file they rewrite (EOF/whitespace) is normalised, then re-stage — otherwise
@@ -101,7 +102,7 @@ else
   log "adoption / existing commits — skipped initial commit"
 fi
 
-# 5. optional GitHub remote — only on an interactive TTY, only if no remote yet,
+# 6. optional GitHub remote — only on an interactive TTY, only if no remote yet,
 #    and only after explicit confirmation. Non-interactive runs skip silently.
 if [ -t 0 ] && command -v gh >/dev/null 2>&1 && ! git remote get-url origin >/dev/null 2>&1; then
   printf '\nCreate a GitHub repo and push? [y/N] '

@@ -1,12 +1,14 @@
 {% include "templates/_base/_ci_header.yml.jinja" %}
 jobs:
+{% if include_mise -%}
+{% include "templates/_base/_ci_jobs.yml.jinja" -%}
+{% else %}
   build:
     # A draft runs nothing until ready_for_review; a push or a queue entry has no PR, so it always runs.
     if: {% raw %}${{ !github.event.pull_request.draft }}{% endraw %}
     runs-on: ubuntu-latest
     steps:
-{% include "templates/_base/_ci_steps.yml.jinja" %}
-{%- if not include_mise %}      - name: Link check
+{% include "templates/_base/_ci_steps.yml.jinja" %}      - name: Link check
         uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
           args: "--no-progress --extensions md ."

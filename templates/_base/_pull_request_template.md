@@ -5,7 +5,7 @@
 
 ## Evidence
 
-<!-- Before and after: a screenshot, a demo video (the `demo` skill), or the test that failed and now passes.{% if loop_enabled %} The merge gate rejects a PR without this section.{% endif %} -->
+<!-- Before and after: a screenshot, a demo video (the `demo` skill), or the test that failed and now passes.{% if loop_enabled %} `loop:approvals` rejects a PR without this section.{% endif %} -->
 
 ## Merge Danger
 
@@ -20,6 +20,6 @@
 ## Checklist
 
 - [ ] Commits follow Conventional Commits
-- [ ] Checks pass locally (`pre-commit run --all-files`)
+- [ ] Checks pass locally (`{% if include_mise %}mise run check{% else %}pre-commit run --all-files{% endif %}`)
 - [ ] Docs / ADR updated if behavior or a decision changed
 {%- endif %}

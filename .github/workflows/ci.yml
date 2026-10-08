@@ -114,19 +114,26 @@ jobs:
           test ! -e .agents-toolkit
           test ! -e scripts/agent-layer
           grep -q 'git: kzarzycki/agent-skills/engineering' apm.yml
-          grep -q '^\[tasks.agent-sync\]$' mise.toml
-          grep -q '^\[tasks.agent-claude\]$' mise.toml
-          grep -q '^\[tasks.agent-codex\]$' mise.toml
+          grep -q '^\[tasks."agent:sync"\]$' mise.toml
+          grep -q '^\[tasks."agent:claude"\]$' mise.toml
+          grep -q '^\[tasks."agent:codex"\]$' mise.toml
           grep -q '^\[tasks.check\]$' mise.toml
-          grep -q 'run: mise run check' .github/workflows/ci.yml
-          grep -q '^\[tasks.gate\]$' mise.toml
-          grep -q 'run: mise run gate merge "$PR"' .github/workflows/gate.yml
-          grep -q 'entry: mise run gate build' .pre-commit-config.yaml
-          grep -q '^\[tasks.merge-queue\]$' mise.toml
+          grep -q 'run: mise run ci:parts' .github/workflows/ci.yml
+          grep -q '^\[tasks."loop:approvals"\]$' mise.toml
+          grep -q 'run: mise run ci:approvals' .github/workflows/approvals.yml
+          grep -q '^\[tasks."setup:github"\]$' mise.toml
           grep -q '^  merge_group:$' .github/workflows/ci.yml
-          grep -q '^  merge_group:$' .github/workflows/gate.yml
+          grep -q '^  merge_group:$' .github/workflows/approvals.yml
+          test ! -e .github/workflows/gate.yml
+          grep -Eq '^ *(- )?(repo: [^l]|rev:)' .pre-commit-config.yaml && exit 1
           python3 -m json.tool .github/rulesets/main.json >/dev/null
           test -f docs/agents/loop.md
           test -f docs/agents/issue-tracker.md
           test -f docs/agents/coding-standards.md
           grep -q 'engineering-loop' .apm/instructions/project.instructions.md
+      - name: Run every check the generated CI runs
+        working-directory: _out/ci-proj
+        run: mise run check:all
+      - name: List the generated CI's parts
+        working-directory: _out/ci-proj
+        run: mise run ci:parts

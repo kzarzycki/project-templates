@@ -1,0 +1,10 @@
+# Path filters for the check: parts (mise.toml), read by CI's plan job with dorny/paths-filter.
+# A part listed here runs only when the change touches a matching path; every other part runs
+# on every change. A key is a part's name, its value a list of globs, for example:
+#
+#   check:docs:
+#     - "docs/**"
+#     - mkdocs.yml
+#
+# Replace the `{}` below with the first filter. check:lint has none, so the matrix is never empty.
+{}

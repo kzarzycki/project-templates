@@ -1,6 +1,16 @@
 # Managed by Copier — edit the template, then `copier update`.
-# Run locally: pre-commit run --all-files   ·   Update pins: pre-commit autoupdate
 default_install_hook_types: [pre-commit, commit-msg, pre-push]
+{% if include_mise -%}
+# A hook runs at the pre-commit stage unless it names its stage.
+default_stages: [pre-commit]
+repos:
+{% include "templates/_base/_precommit_hooks.yml.jinja" %}
+      - id: lint:sqlfluff
+        name: lint:sqlfluff
+        entry: mise run lint:sqlfluff --
+        language: system
+{% else -%}
+# Run locally: pre-commit run --all-files   ·   Update pins: pre-commit autoupdate
 repos:
 {% include "templates/_base/_precommit.yml.jinja" %}
   - repo: https://github.com/sqlfluff/sqlfluff
@@ -8,3 +18,4 @@ repos:
     hooks:
       - id: sqlfluff-lint
       - id: sqlfluff-fix
+{% endif -%}

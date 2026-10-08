@@ -36,17 +36,39 @@ copier copy --trust gh:your-org/project-templates my-tool \
 See `copier.yml` for every question. Post-generation (`_post_gen.sh`) runs git
 init, installs deps, installs hooks, and makes the first commit.
 
-## The gate: `mise run check`
+## The checks: `mise run check`
 
-With `include_mise=true` every project gets `mise run check`: the toolchain's
-tests (and diff coverage against `origin/$BASE_REF`, default `main`, once that
-branch exists, or against the commit CI passes as `BASE_REF`), the project's own checks, then `pre-commit run --all-files`,
-which carries lint and format. With the agent layer on it also runs
-`mise run agent-sync -- --frozen` once `apm.lock.yaml` is committed; before the
-first sync it says so and skips that step. Generated CI installs the pinned
-tools with mise and runs `mise run check` as its gate, so agents and CI run the
-same command. A project adds a check by editing the task. Without mise, CI keeps
-its per-step gate.
+With `include_mise=true` every check is a mise task, and each tool's version
+lives once, in `mise.toml` `[tools]` or the toolchain's lock file:
+
+- `lint:<tool>` is one task per linter or formatter. Run with no files it
+  checks the whole repo; the commit hook passes the staged files. A fixer task
+  rewrites the files and fails when it changed one.
+- `check:lint` (aliases `lint`, `fmt`) runs every `lint:` task, with or
+  without pre-commit installed.
+- `check:unit` runs the tests with diff coverage against `origin/$BASE_REF`
+  (default `main`) once that branch exists. `test:fast` (alias `test`),
+  `test:unit` and `test:changed` (the pre-push hook) run the tests alone.
+- `check:secrets` scans the branch's commits with gitleaks.
+- `check:agents`, with the agent layer on, runs `agent:sync -- --frozen` once
+  `apm.lock.yaml` is committed.
+- `check` runs `check:lint` and `check:unit`; `check:all` runs every `check:`
+  part.
+- `setup:dev` (alias `bootstrap`) installs the dependencies and the git hooks.
+
+`.pre-commit-config.yaml` holds only `repo: local` hooks with
+`language: system`; each hook's entry is `mise run lint:<tool> --`, so pre-commit
+only stashes unstaged changes and passes the staged files.
+
+Generated CI runs the same tasks. A `plan` job runs `mise run ci:parts`, which
+lists the `check:` parts (all but `check:all`) this change needs:
+`.github/check-paths.yml` maps a part to the paths that run it, and a part it
+does not name always runs. A matrix job named after each part runs
+`mise run <part>`. The aggregate `check` job passes only when the plan and every
+part passed, and names a failed part with the command that reruns it. A project
+adds a check as a `check:<name>` task in `mise.toml`; CI picks it up with no
+workflow change. Without mise, CI keeps its per-step gate and remote-pinned
+hooks.
 
 ## Coding-agent integration
 
@@ -58,13 +80,16 @@ agent-layer scaffold only.
 
 ```bash
 mise install
-mise run agent-sync
-mise run agent-sync -- --refresh
-mise run agent-sync -- --frozen
-mise run agent-claude
-mise run agent-codex
+mise run agent:sync
+mise run agent:sync -- --refresh
+mise run agent:sync -- --frozen
+mise run agent:claude
+mise run agent:codex
 mise run check
 ```
+
+The old names `agent-sync`, `agent-claude` and `agent-codex` still run, as
+aliases.
 
 The first default sync creates `apm.lock.yaml`, installs the selected skills,
 compiles both supported coding-agent targets, and audits the result. Commit the
@@ -103,7 +128,7 @@ committed to the repo.
 
 With the pack on, `engineering_loop=true` (the default) turns on the pack's
 `engineering-loop` skill: one line in `.apm/instructions/project.instructions.md`,
-which `agent-sync` compiles into `AGENTS.md`, says every change that lands as a
+which `agent:sync` compiles into `AGENTS.md`, says every change that lands as a
 PR runs it. Deleting that line turns the loop off. The loop reads this project's
 facts from three files, seeded with a heading and a short prompt per fact:
 
@@ -115,13 +140,17 @@ facts from three files, seeded with a heading and a short prompt per fact:
   extra labels and categories;
 - `docs/agents/coding-standards.md`: domain facts only.
 
-Its gate is `mise run check`. `mise run gate <build|merge> [pr]` checks the
-proof each loop step leaves on GitHub (the pack's `gate.py`, then any check the
-project adds to the task); a pre-push hook runs it for build, and its own
-workflow, `.github/workflows/gate.yml`, runs it for merge on every ready PR, apart
-from the project's CI. GitHub's free plan has no protection for private
-repos, so that job is a red check, not a block: it catches a forgotten step, not
-a deliberate one.
+`mise run loop:approvals <point> [pr]` (alias `gate`) checks the proof each loop
+step leaves on GitHub, with the pack's `approvals.py`. Every merge also needs
+the owner's `approved:merge` label; a push removes it. The
+`.github/workflows/approvals.yml` workflow posts the merge result as the
+`loop:approvals` commit status on the PR head: pending while it waits for CI's
+`check` or the label, failure when a proof is missing, success once every proof
+holds. It reruns when a label or the PR body changes and when CI completes, and
+posts success on a merge-queue commit, since a PR is queued only once its status
+was green. GitHub's free plan has no protection for private repos, so there the
+status is only a mark (pending while it waits, red on a missing proof), not a
+block: it catches a forgotten step, not a deliberate one.
 
 Where GitHub offers rulesets and merge queues, main lands through a queue.
 Generated CI skips draft PRs (marking one ready starts it) and runs on every push
@@ -130,23 +159,23 @@ at one merge. A push compares changed lines against the commit before it, a
 queue entry against the queue's base. With the loop on,
 `.github/rulesets/main.json` is the `loop-merge-queue` ruleset on main: changes
 only through a squashed PR, no bypass, and a merge queue (squash, all-green
-grouping) that requires the CI job and `gate`. In the queue the gate job is
-skipped, which counts as passed: the PR's proofs were checked before it could
-be queued. `mise run merge-queue` creates that ruleset on GitHub, or updates it
-if one with that name exists, and turns on auto-merge, so `gh pr merge <n>`
-queues a green PR and auto-merges a pending one. It never reads or changes
-another ruleset: GitHub applies every active ruleset on a branch, so the repo's
-own rules on main keep applying alongside it. The task prints the previous
-`allow_auto_merge` value and the `gh api -X PATCH` command that restores it.
-`mise run merge-queue --revert` deletes the `loop-merge-queue` ruleset, found
-by name; when it is already gone, there is nothing to do. If GitHub rejects the
-ruleset, the task stops before it turns on auto-merge. A job renamed in CI is renamed in the ruleset too, or each queue
-entry waits out the 60-minute timeout for a check that never reports.
+grouping) that requires exactly two names, CI's `check` job and the
+`loop:approvals` status. `mise run setup:github` (alias `merge-queue`) creates
+that ruleset on GitHub, or updates it if one with that name exists, and sets
+the repository's `allow_auto_merge` and `delete_branch_on_merge` to true, so
+`gh pr merge <n> --auto` queues the PR once both names are green and its branch
+is deleted after the merge. It never reads or changes another ruleset: GitHub
+applies every active ruleset on a branch, so the repo's own rules on main keep
+applying alongside it. The task prints both settings' previous values and the
+`gh api -X PATCH` command that restores them. `mise run setup:github --revert`
+deletes the `loop-merge-queue` ruleset, found by name; when it is already gone,
+there is nothing to do. If GitHub rejects the ruleset, the task stops before it
+changes the settings.
 
 A project without CI, for example a private repo with GitHub Actions off, puts the
-line `CI: none` in `docs/agents/loop.md`. The merge gate then stops looking for
-green CI checks. Its proof instead is
-`python3 .agents/skills/engineering-loop/scripts/gate.py record-check <pr>`, run
+line `CI: none` in `docs/agents/loop.md`. The merge approval then stops looking for
+a green `check`. Its proof instead is
+`python3 .agents/skills/engineering-loop/scripts/approvals.py local-ci <pr>`, run
 on a clean checkout at the PR's head commit. It runs `mise run check` there and,
 when the check passes without changing the tree, posts `Local check passed` with
 that head on the PR. So anything the project's CI enforced has to be in
@@ -176,6 +205,29 @@ skeletons, the `gate` task, its pre-push hook and its workflow.
 Updating to v0.4.1 replaces the PR template with the `pr` skill's Summary,
 Evidence and Merge Danger when the engineering pack is on, and moves the pack to
 `^0.9.0`. A repo that edited its PR template resolves that file once.
+
+Updating to v0.5.0, with mise on:
+
+- Splits `check` into `lint:<tool>` tasks and `check:` parts. `check`,
+  `check:all`, `check:lint`, `check:unit`, `check:secrets`, `check:agents`,
+  `test:fast`, `test:unit`, `test:changed`, `ci:parts`, `setup:dev`, and with
+  the loop on `loop:approvals` and `setup:github`, are the new names. The old
+  names (`lint`, `fmt`, `test`, `bootstrap`, `gate`, `merge-queue`,
+  `agent-sync`, `agent-claude`, `agent-codex`) still run, as aliases.
+- Rewrites `.pre-commit-config.yaml` to local hooks that call
+  `mise run lint:<tool> --`, and moves every hook tool's version into
+  `mise.toml`. The `.env` check becomes `lint:env`; pre-push runs
+  `test:changed` and `check:secrets`.
+- Replaces the CI job with the `plan`, part matrix and `check` jobs, and adds
+  `.github/check-paths.yml`.
+- With the loop on, replaces `.github/workflows/gate.yml` with
+  `approvals.yml`. The ruleset now requires `check` and `loop:approvals`:
+  delete `gate.yml`, then run `mise run setup:github` to update the ruleset and
+  turn on `delete_branch_on_merge`.
+- Moves the pack to `^0.12.0` and gitignores `.worktrees/`.
+
+A repo that edited `mise.toml`, its hooks or its CI resolves those files once:
+a custom check becomes a `check:<name>` task.
 
 ## Adopt an existing (pre-template) repo
 

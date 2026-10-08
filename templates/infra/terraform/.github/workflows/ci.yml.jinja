@@ -1,11 +1,13 @@
 {% include "templates/_base/_ci_header.yml.jinja" %}
 jobs:
+{% if include_mise -%}
+{% include "templates/_base/_ci_jobs.yml.jinja" -%}
+{% else %}
   validate:
     # A draft runs nothing until ready_for_review; a push or a queue entry has no PR, so it always runs.
     if: {% raw %}${{ !github.event.pull_request.draft }}{% endraw %}
     runs-on: ubuntu-latest
     steps:
-{% if not include_mise %}
       # setup-* only install binaries — no repo needed yet, so they run before
       # the shared checkout/pre-commit block. The terraform_fmt + terraform_tflint
       # hooks then find both tools on PATH.
@@ -14,11 +16,8 @@ jobs:
           terraform_version: "{{ terraform_version }}"
           terraform_wrapper: false
       - uses: terraform-linters/setup-tflint@6e1e0642c0289bd619021bf6b34e3c08ed1e005a # v6.3.0
-{% endif %}
-{% include "templates/_base/_ci_steps.yml.jinja" %}
-{% if not include_mise %}
-      - name: terraform validate
+{% include "templates/_base/_ci_steps.yml.jinja" %}      - name: terraform validate
         run: |
           terraform init -backend=false -input=false
           terraform validate
-{% endif %}
+{% endif -%}

@@ -1,0 +1,33 @@
+[tasks."lint:ruff"]
+description = "Lints Python with ruff; fixes what it can in place."
+run = 'scripts/files-or-repo --only "\.pyi?$" --skip "${APM_MANAGED:-}" uv run ruff check --fix --exit-non-zero-on-fix --'
+
+[tasks."lint:ruff-format"]
+description = "Formats Python with ruff; fixes in place."
+run = 'scripts/files-or-repo --only "\.pyi?$" --skip "${APM_MANAGED:-}" uv run ruff format --exit-non-zero-on-format --'
+
+[tasks."test:fast"]
+alias = "test"
+description = "Runs the fast tier (the pyproject default selection)."
+run = "uv run pytest"
+
+[tasks."test:unit"]
+description = "Runs every test but the Docker, live and cloud tiers: the fast tier plus slow."
+# ponytail: the template has one tier, so this is test:fast's selection; add `-m` here once a tier is marked.
+run = "uv run pytest"
+
+[tasks."test:changed"]
+description = "Runs only the tests whose code changed since the last run (pytest-testmon); its first run runs them all."
+run = "uv run pytest --testmon"
+
+[tasks."check:unit"]
+description = "Runs test:unit with coverage, then fails on any changed line not covered (diff-cover)."
+run = '''
+mise run --skip-tools test:unit -- --cov --cov-report=xml
+{% include "templates/_base/_diff_base.part" %}if git rev-parse -q --verify "$base^{commit}" >/dev/null; then uv run diff-cover coverage.xml --compare-branch="$base" --fail-under=100; fi
+'''
+
+[tasks."setup:dev"]
+alias = "bootstrap"
+description = "Installs the dependencies and the git hooks on a fresh checkout."
+run = "uv sync && pre-commit install --install-hooks"

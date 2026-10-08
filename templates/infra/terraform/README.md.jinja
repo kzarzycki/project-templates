@@ -6,11 +6,11 @@
 
 ```bash
 mise install                  # terraform + tflint + pre-commit, pinned
-mise run bootstrap            # install git hooks
-mise run validate             # init (no backend) + validate
+mise run setup:dev            # install git hooks
+mise run check                # lint (fmt, validate, tflint) + terraform test
 ```
 
-Common tasks: `mise run fmt` · `mise run lint` · `mise run plan`.
+Common tasks: `mise run check:lint` · `mise run test:fast` · `mise run plan`.
 
 State and `*.tfvars` hold secrets and are gitignored — configure the backend and
 provider for your environment.

@@ -1,27 +1,52 @@
 [tools]
 python = "{{ python_version }}"
 uv = "0.11.29"
-pre-commit = "4.6.0"
+{% include "templates/_base/_mise_tools.part" -%}
 {% include "templates/_base/_mise_agent_tasks.part" %}
-{% set check_commands %}uv run dbt deps
-uv run dbt parse
-{% endset -%}
-{% include "templates/_base/_mise_check_task.part" %}
+{% include "templates/_base/_mise_tasks.part" %}
+
+[tasks."lint:sqlfluff"]
+description = "Lints the models' SQL with sqlfluff; fixes what it can in place."
+run = 'scripts/files-or-repo --fixer --only "\.sql$" uv run sqlfluff fix --'
+
+[tasks."test:fast"]
+description = "Parses the dbt project offline (dbt deps, then dbt parse); dbt test needs the warehouse."
+# dbt parse reads a profile but connects to nothing, so it runs on profiles.yml.example, with
+# placeholders for the credentials that aren't set.
+run = '''
+uv run dbt deps
+profiles="$(mktemp -d)"
+trap 'rm -rf "$profiles"' EXIT
+cp profiles.yml.example "$profiles/profiles.yml"
+SNOWFLAKE_ACCOUNT="${SNOWFLAKE_ACCOUNT:-offline}" SNOWFLAKE_USER="${SNOWFLAKE_USER:-offline}" SNOWFLAKE_PASSWORD="${SNOWFLAKE_PASSWORD:-offline}" \
+  uv run dbt parse --profiles-dir "$profiles"
+'''
+
+[tasks."test:unit"]
+description = "Runs test:fast: this project has one test tier."
+depends = ["test:fast"]
+
+[tasks."test:changed"]
+description = "Runs test:fast: this project has no per-change test selection."
+depends = ["test:fast"]
+
+[tasks."check:unit"]
+description = "Runs test:unit; dbt measures no coverage."
+depends = ["test:unit"]
+
+[tasks."setup:dev"]
+alias = "bootstrap"
+description = "Installs the dependencies and the git hooks on a fresh checkout."
+run = "uv sync && pre-commit install --install-hooks"
 
 [tasks.deps]
+description = "Installs the dbt packages (dbt deps)."
 run = "uv run dbt deps"
 
 [tasks.build]
+description = "Builds and tests the models in the warehouse (dbt build)."
 run = "uv run dbt build"
 
 [tasks.test]
+description = "Runs the data tests in the warehouse (dbt test)."
 run = "uv run dbt test"
-
-[tasks.lint]
-run = "uv run sqlfluff lint models/"
-
-[tasks.bootstrap]
-run = "uv sync && pre-commit install --install-hooks"
-
-[hooks]
-postinstall = "pre-commit install --install-hooks"

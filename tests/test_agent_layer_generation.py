@@ -129,12 +129,25 @@ def run_agent_sync(
     project: Path, env: dict[str, str], *arguments: str
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [MISE, "run", "--skip-tools", "agent-sync", "--", *arguments],
+        [MISE, "run", "--skip-tools", "agent:sync", "--", *arguments],
         cwd=project,
         env=env,
         capture_output=True,
         text=True,
     )
+
+
+LEAVES = (
+    ("software/python", {}),
+    ("software/node", {}),
+    ("software/java", {}),
+    ("data/dbt", {}),
+    ("authoring/content", {}),
+    ("ai/skills", {}),
+    ("ai/mcp", {"language": "python"}),
+    ("ai/mcp", {"language": "node"}),
+    ("infra/terraform", {}),
+)
 
 
 class AgentLayerGenerationTest(unittest.TestCase):
@@ -148,11 +161,11 @@ class AgentLayerGenerationTest(unittest.TestCase):
                 "include_agent_layer",
                 "include_engineering_workflow",
                 "include_fnox",
-                "mise run agent-sync",
-                "mise run agent-sync -- --refresh",
-                "mise run agent-sync -- --frozen",
-                "mise run agent-claude",
-                "mise run agent-codex",
+                "mise run agent:sync",
+                "mise run agent:sync -- --refresh",
+                "mise run agent:sync -- --frozen",
+                "mise run agent:claude",
+                "mise run agent:codex",
             ):
                 self.assertIn(expected, document)
             self.assertIn("project-owned", document)
@@ -257,6 +270,8 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertIn("test ! -e .agents-toolkit", workflow)
         self.assertIn("engineering_loop=true", workflow)
         self.assertIn("grep -q '^\\[tasks.check\\]$' mise.toml", workflow)
+        self.assertIn("run: mise run check:all", workflow)
+        self.assertIn("run: mise run ci:parts", workflow)
         self.assertIn("test -f docs/agents/loop.md", workflow)
         self.assertIn(
             "jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c", workflow
@@ -307,7 +322,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
             [
                 {
                     "git": "kzarzycki/agent-skills/engineering",
-                    "ref": "^0.9.0",
+                    "ref": "^0.12.0",
                 }
             ],
             yaml.safe_load(apm)["dependencies"]["apm"],
@@ -318,13 +333,8 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertEqual("0.30.0", mise["tools"].get("github:microsoft/apm"))
         self.assertEqual("1.30.0", mise["tools"]["fnox"])
         self.assertEqual(
-            {"agent-sync", "agent-claude", "agent-codex"},
-            set(mise["tasks"])
-            & {
-                "agent-sync",
-                "agent-claude",
-                "agent-codex",
-            },
+            {"agent:sync": "agent-sync", "agent:claude": "agent-claude", "agent:codex": "agent-codex"},
+            {name: mise["tasks"][name].get("alias") for name in ("agent:sync", "agent:claude", "agent:codex")},
         )
         rendered = "\n".join(
             path.read_text(errors="ignore")
@@ -363,7 +373,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         manifest = (project / "apm.yml").read_text()
         answers = (project / ".copier-answers.yml").read_text()
         self.assertEqual(1, manifest.count("git: kzarzycki/agent-skills/engineering"))
-        self.assertIn("ref: ^0.9.0", manifest)
+        self.assertIn("ref: ^0.12.0", manifest)
         self.assertIn("include_engineering_workflow: true", answers)
         self.assertNotIn("engineering_capability_source", answers)
         self.assertNotIn("engineering_capability_ref", answers)
@@ -372,7 +382,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
             ["## Summary", "## Evidence", "## Merge Danger"],
             [line for line in template.splitlines() if line.startswith("## ")],
         )
-        self.assertIn("The merge gate rejects a PR without this section.", template)
+        self.assertIn("`loop:approvals` rejects a PR without this section.", template)
 
     def test_engineering_workflow_can_be_disabled(self) -> None:
         project = render(
@@ -758,39 +768,58 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertNotEqual(0, stale.returncode)
         self.assertIn("frozen agent configuration changed", stale.stderr)
 
-    def test_loop_render_seeds_gate_ci_skeletons_and_loop_line(self) -> None:
+    def test_loop_render_seeds_approvals_ci_skeletons_and_loop_line(self) -> None:
         project = render()
 
         mise = tomllib.loads((project / "mise.toml").read_text())
-        self.assertIn("pre-commit run --all-files", mise["tasks"]["check"]["run"])
-        self.assertIn(
-            "mise run --skip-tools agent-sync -- --frozen", mise["tasks"]["check"]["run"]
-        )
+        tasks = mise["tasks"]
+        self.assertEqual(["check:lint", "check:unit"], tasks["check"]["depends"])
+        self.assertEqual(["check:*"], tasks["check:all"]["depends"])
+        self.assertIn("mise run --skip-tools agent:sync -- --frozen", tasks["check:agents"]["run"])
+        self.assertEqual("mise run --skip-tools --jobs 1 --continue-on-error 'lint:*'", tasks["check:lint"]["run"])
         workflow = (project / ".github/workflows/ci.yml").read_text()
-        steps = yaml.safe_load(workflow)["jobs"]["build"]["steps"]
-        self.assertEqual(
-            ["mise run check"], [step["run"] for step in steps if step.get("name") == "Gate"]
-        )
+        self.assertEqual(["plan", "part", "check"], list(yaml.safe_load(workflow)["jobs"]))
         self.assertNotIn("pytest", workflow)
-        gate_run = mise["tasks"]["gate"]["run"]
-        self.assertIn("mise run agent-sync", gate_run[0])
+        approvals_run = tasks["loop:approvals"]["run"]
+        self.assertEqual("gate", tasks["loop:approvals"]["alias"])
+        self.assertIn("mise run agent:sync", approvals_run[0])
         self.assertEqual(
-            'python3 .agents/skills/engineering-loop/scripts/gate.py check "${usage_point}" ${usage_pr:-}',
-            gate_run[-1],
+            'python3 .agents/skills/engineering-loop/scripts/approvals.py check "${usage_point}" ${usage_pr:-}',
+            approvals_run[-1],
         )
-        gate = yaml.safe_load((project / ".github/workflows/gate.yml").read_text())
-        self.assertEqual('mise run gate merge "$PR"', gate["jobs"]["gate"]["steps"][-1]["run"])
-        self.assertEqual({"install": False}, gate["jobs"]["gate"]["steps"][-2]["with"])  # gate.py needs no toolchain
-        self.assertIn("labeled", gate[True]["pull_request"]["types"])  # PyYAML reads `on` as True
-        self.assertIn("merge_group", gate[True])
-        self.assertTrue(gate["jobs"]["gate"]["if"].startswith("${{ github.event_name == 'pull_request' && "))
-        repos = yaml.safe_load((project / ".pre-commit-config.yaml").read_text())["repos"]
-        hooks = [hook for repo in repos for hook in repo["hooks"]]
-        self.assertIn(
-            {"id": "loop-gate", "name": "loop gate (mise run gate build)", "entry": "mise run gate build",
-             "language": "system", "pass_filenames": False, "always_run": True, "stages": ["pre-push"]},
-            hooks,
-        )
+        self.assertFalse((project / ".github/workflows/gate.yml").exists())
+        approvals = yaml.safe_load((project / ".github/workflows/approvals.yml").read_text())
+        [(job_name, job)] = approvals["jobs"].items()
+        self.assertEqual("approvals", job_name)  # not loop:approvals: its check run must not stand in for the status
+        self.assertEqual("mise run ci:approvals", job["steps"][-1]["run"])
+        self.assertEqual({"install": False}, job["steps"][-2]["with"])  # approvals.py needs no toolchain
+        self.assertEqual("write", job["permissions"]["statuses"])  # posts loop:approvals
+        self.assertEqual("write", job["permissions"]["pull-requests"])  # removes approved:merge on a push
+        on = approvals[True]  # PyYAML reads `on` as True
+        self.assertIn("labeled", on["pull_request"]["types"])
+        self.assertIn("synchronize", on["pull_request"]["types"])
+        self.assertIn("merge_group", on)
+        ci_name = yaml.safe_load(workflow)["name"]
+        self.assertEqual({"workflows": [ci_name], "types": ["completed"]}, on["workflow_run"])
+        self.assertIn("context=loop:approvals", tasks["ci:approvals"]["run"])
+        self.assertIn("issues/$PR/labels/approved:merge", tasks["ci:approvals"]["run"])
+        self.assertEqual("merge-queue", tasks["setup:github"]["alias"])
+        self.assertIn("-F allow_auto_merge=true -F delete_branch_on_merge=true", tasks["setup:github"]["run"])
+        self.assertIn(".worktrees/", (project / ".gitignore").read_text().splitlines())
+        hooks = {
+            hook["id"]: hook
+            for repo in yaml.safe_load((project / ".pre-commit-config.yaml").read_text())["repos"]
+            for hook in repo["hooks"]
+        }
+        for name in ("test:changed", "check:secrets"):
+            self.assertEqual(
+                {"id": name, "name": name, "entry": f"mise run {name}", "language": "system",
+                 "pass_filenames": False, "always_run": True, "stages": ["pre-push"]},
+                hooks[name],
+            )
+        approvals_seed = (project / "docs/agents/loop.md").read_text()
+        self.assertIn("Every merge waits for the owner's `approved:merge` label", approvals_seed)
+        self.assertIn("where the point is\nspec or plan.", approvals_seed)
         for name, headings in (
             (
                 "loop.md",
@@ -828,20 +857,25 @@ class AgentLayerGenerationTest(unittest.TestCase):
         )
 
     def test_every_leaf_lands_through_a_merge_queue_requiring_its_own_jobs(self) -> None:
-        leaves = (
-            ("software/python", {}),
-            ("software/node", {}),
-            ("software/java", {}),
-            ("data/dbt", {}),
-            ("authoring/content", {}),
-            ("ai/skills", {}),
-            ("ai/mcp", {"language": "python"}),
-            ("ai/mcp", {"language": "node"}),
-            ("infra/terraform", {}),
-        )
-        for project_type, answers in leaves:
+        contract = {
+            "check", "check:all", "check:lint", "check:unit", "check:secrets", "check:agents",
+            "test:fast", "test:unit", "test:changed", "ci:parts", "ci:check", "ci:approvals",
+            "loop:approvals", "setup:dev", "setup:github", "agent:sync", "agent:claude", "agent:codex",
+        }
+        aliases = {
+            "check:lint": ["lint", "fmt"], "test:fast": "test", "setup:dev": "bootstrap",
+            "loop:approvals": "gate", "setup:github": "merge-queue", "agent:sync": "agent-sync",
+            "agent:claude": "agent-claude", "agent:codex": "agent-codex",
+        }
+        for project_type, answers in LEAVES:
             with self.subTest(project_type=project_type, **answers):
                 project = render(project_type, **answers)
+
+                tasks = tomllib.loads((project / "mise.toml").read_text())["tasks"]
+                self.assertEqual(set(), contract - set(tasks))
+                expected = {**aliases, "test:fast": {"ai/skills": ["test", "validate"], "data/dbt": None}.get(project_type, "test")}
+                self.assertEqual(expected, {name: tasks[name].get("alias") for name in aliases})  # dbt's test is dbt test
+                self.assertTrue([name for name in tasks if name.startswith("lint:")])
 
                 ci = yaml.safe_load((project / ".github/workflows/ci.yml").read_text())
                 self.assertIn("ready_for_review", ci[True]["pull_request"]["types"])
@@ -851,25 +885,53 @@ class AgentLayerGenerationTest(unittest.TestCase):
                     ci["concurrency"]["group"],
                 )
                 self.assertEqual("${{ github.event_name == 'pull_request' }}", ci["concurrency"]["cancel-in-progress"])
-                [(job_name, job)] = ci["jobs"].items()
-                self.assertEqual("${{ !github.event.pull_request.draft }}", job["if"])
-                [gate_step] = [step for step in job["steps"] if step.get("name") == "Gate"]
+                jobs = ci["jobs"]
+                self.assertEqual(["plan", "part", "check"], list(jobs))
+                self.assertEqual("${{ !github.event.pull_request.draft }}", jobs["plan"]["if"])
+                self.assertEqual("${{ always() && !github.event.pull_request.draft }}", jobs["check"]["if"])
+                self.assertEqual(["plan", "part"], jobs["check"]["needs"])
+                self.assertEqual("${{ fromJSON(needs.plan.outputs.parts) }}", jobs["part"]["strategy"]["matrix"]["part"])
+                self.assertEqual("${{ matrix.part }}", jobs["part"]["name"])
                 self.assertEqual(
                     "${{ github.base_ref || github.event.merge_group.base_sha || github.event.before }}",
-                    gate_step["env"]["BASE_REF"],
+                    jobs["part"]["steps"][-1]["env"]["BASE_REF"],
                 )
+                yaml.safe_load((project / ".github/check-paths.yml").read_text())  # paths-filter reads it
 
+                # Every step that runs a command runs a mise task: the task is the check's one definition.
+                for workflow in (project / ".github/workflows").glob("*.yml"):
+                    for job_name, job in yaml.safe_load(workflow.read_text())["jobs"].items():
+                        for step in job["steps"]:
+                            if "run" in step:
+                                self.assertRegex(step["run"], r"^mise run \S+$", f"{workflow.name} {job_name}")
+
+                # The ruleset's two names: CI's aggregate job and the status the approvals step posts.
                 ruleset = json.loads((project / ".github/rulesets/main.json").read_text())
                 rules = {rule["type"]: rule.get("parameters") for rule in ruleset["rules"]}
-                gate_jobs = yaml.safe_load((project / ".github/workflows/gate.yml").read_text())["jobs"]
-                self.assertEqual(
-                    [job_name, *gate_jobs],
-                    [check["context"] for check in rules["required_status_checks"]["required_status_checks"]],
-                )
+                required = [check["context"] for check in rules["required_status_checks"]["required_status_checks"]]
+                self.assertEqual(["check", "loop:approvals"], required)
+                self.assertEqual("check", jobs["check"].get("name", "check"))  # the check run's name, not just the key
+                self.assertEqual(15368, rules["required_status_checks"]["required_status_checks"][0]["integration_id"])  # GitHub Actions
+                self.assertIn("context=loop:approvals", tasks["ci:approvals"]["run"])
                 self.assertEqual("SQUASH", rules["merge_queue"]["merge_method"])
                 self.assertEqual("ALLGREEN", rules["merge_queue"]["grouping_strategy"])
                 self.assertEqual(["squash"], rules["pull_request"]["allowed_merge_methods"])
                 self.assertEqual([], ruleset["bypass_actors"])
+
+                # Hooks: one local repo, no rev; each commit hook calls its own lint: task.
+                config = yaml.safe_load((project / ".pre-commit-config.yaml").read_text())
+                self.assertEqual(["local"], [repo["repo"] for repo in config["repos"]])
+                self.assertNotIn("rev", config["repos"][0])
+                for hook in config["repos"][0]["hooks"]:
+                    self.assertEqual("system", hook["language"], hook["id"])
+                    if hook.get("stages") == ["pre-push"]:
+                        self.assertEqual(f"mise run {hook['id']}", hook["entry"])
+                    else:
+                        self.assertTrue(hook["id"].startswith("lint:"), hook["id"])
+                        self.assertEqual(f"mise run {hook['id']} --", hook["entry"])
+                        self.assertIn(hook["id"], tasks)
+                self.assertTrue(os.access(project / "scripts/files-or-repo", os.X_OK))
+                self.assertTrue(os.access(project / "scripts/check-symlinks.sh", os.X_OK))
 
     def test_node_coverage_gate_compares_against_the_commit_ci_passes(self) -> None:
         project = render("software/node")
@@ -912,12 +974,12 @@ class AgentLayerGenerationTest(unittest.TestCase):
             with self.subTest(**answers):
                 project = render(**answers)
 
+                tasks = tomllib.loads((project / "mise.toml").read_text())["tasks"]
                 self.assertFalse((project / "docs/agents").exists())
-                self.assertNotIn("[tasks.gate]", (project / "mise.toml").read_text())
+                self.assertEqual(set(), {"loop:approvals", "ci:approvals", "setup:github"} & set(tasks))
+                self.assertFalse((project / ".github/workflows/approvals.yml").exists())
                 self.assertFalse((project / ".github/workflows/gate.yml").exists())
                 self.assertFalse((project / ".github/rulesets").exists())
-                self.assertNotIn("[tasks.merge-queue]", (project / "mise.toml").read_text())
-                self.assertNotIn("loop-gate", (project / ".pre-commit-config.yaml").read_text())
                 self.assertNotIn(
                     "engineering-loop",
                     (project / ".apm/instructions/project.instructions.md").read_text(),
@@ -944,24 +1006,21 @@ class AgentLayerGenerationTest(unittest.TestCase):
 
         mise = tomllib.loads((project / "mise.toml").read_text())
         self.assertIn("aqua:lycheeverse/lychee", mise["tools"])
-        self.assertIn(
-            "lychee --no-progress --extensions md .", mise["tasks"]["check"]["run"]
-        )
-        steps = yaml.safe_load((project / ".github/workflows/ci.yml").read_text())[
-            "jobs"
-        ]["build"]["steps"]
-        self.assertEqual(
-            ["mise run check"], [step["run"] for step in steps if "run" in step and step.get("name") == "Gate"]
-        )
-        self.assertNotIn("lychee", " ".join(str(step) for step in steps))
+        self.assertEqual("lychee --no-progress --extensions md .", mise["tasks"]["test:fast"]["run"])
+        self.assertEqual(["test:unit"], mise["tasks"]["check:unit"]["depends"])
+        self.assertNotIn("lychee", (project / ".github/workflows/ci.yml").read_text())
 
         off = render("authoring/content", include_mise=False)
         self.assertIn("lychee-action", (off / ".github/workflows/ci.yml").read_text())
 
     def test_ci_without_mise_keeps_the_per_step_gate(self) -> None:
-        workflow = (render(include_mise=False) / ".github/workflows/ci.yml").read_text()
+        project = render(include_mise=False)
+        workflow = (project / ".github/workflows/ci.yml").read_text()
 
-        self.assertNotIn("mise run check", workflow)
+        self.assertNotIn("mise run", workflow)
+        self.assertFalse((project / "scripts/files-or-repo").exists())
+        self.assertFalse((project / ".github/check-paths.yml").exists())
+        self.assertIn("rev: v6.0.0", (project / ".pre-commit-config.yaml").read_text())
         self.assertIn("pipx run pre-commit run --all-files", workflow)
         self.assertIn("uv run pytest --cov", workflow)
 
@@ -978,7 +1037,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertFalse((project / "fnox.toml").exists())
         self.assertFalse((project / ".apm").exists())
         self.assertFalse((project / ".agents-toolkit").exists())
-        self.assertNotIn("agent-sync", (project / "mise.toml").read_text())
+        self.assertNotIn("agent:sync", (project / "mise.toml").read_text())
 
     def test_agent_layer_pins_python_when_leaf_does_not(self) -> None:
         project = render(
@@ -1001,11 +1060,11 @@ class AgentLayerGenerationTest(unittest.TestCase):
         tasks = tomllib.loads((project / "mise.toml").read_text())["tasks"]
         self.assertEqual(
             "Converge project-owned coding agent configuration.",
-            tasks["agent-sync"]["description"],
+            tasks["agent:sync"]["description"],
         )
-        self.assertEqual("Launch Claude Code.", tasks["agent-claude"]["description"])
-        self.assertEqual("Launch Codex.", tasks["agent-codex"]["description"])
-        for task in ("agent-claude", "agent-codex"):
+        self.assertEqual("Launch Claude Code.", tasks["agent:claude"]["description"])
+        self.assertEqual("Launch Codex.", tasks["agent:codex"]["description"])
+        for task in ("agent:claude", "agent:codex"):
             description = tasks[task]["description"].lower()
             self.assertNotIn("fnox", description)
             self.assertNotIn("machine bindings", description)
@@ -1045,15 +1104,27 @@ class AgentLayerGenerationTest(unittest.TestCase):
                 self.assertFalse((project / "fnox.toml").exists())
                 self.assertFalse((project / ".apm").exists())
                 self.assertFalse((project / ".agents-toolkit").exists())
-                self.assertNotIn("agent-sync", (project / "mise.toml").read_text())
+                self.assertNotIn("agent:sync", (project / "mise.toml").read_text())
 
     def test_autofixing_hooks_skip_apm_managed_trees(self) -> None:
         # APM hash-tracks every file it deploys, so a hook that rewrites one
         # produces drift that only surfaces later as a --frozen failure.
-        base = (ROOT / "templates/_base/_precommit.yml.jinja").read_text()
-        anchor = re.search(r"exclude: &apm_managed '([^']+)'", base)
-        self.assertIsNotNone(anchor)
-        managed = re.compile(anchor.group(1))
+        for project_type, fixers in (
+            ("authoring/content", ("lint:eof", "lint:whitespace", "lint:markdownlint")),
+            ("software/python", ("lint:eof", "lint:whitespace", "lint:ruff", "lint:ruff-format")),
+            ("software/node", ("lint:eof", "lint:whitespace", "lint:biome")),
+        ):
+            with self.subTest(project_type=project_type):
+                mise = tomllib.loads((render(project_type=project_type) / "mise.toml").read_text())
+                managed = re.compile(mise["env"]["APM_MANAGED"])
+                for task in fixers:
+                    self.assertIn('--skip "${APM_MANAGED:-}"', mise["tasks"][task]["run"], task)
+                self.assertNotIn("APM_MANAGED", mise["tasks"]["lint:gitleaks"]["run"])
+                # The lockfile is generated hashes, so it cannot carry an inline
+                # pragma; everything else — vendored skills included — is scanned.
+                secrets = re.search(r'--skip "([^"]+)"', mise["tasks"]["lint:detect-secrets"]["run"])
+                self.assertRegex("apm.lock.yaml", secrets.group(1))
+                self.assertNotRegex(".agents/skills/wayfinder/SKILL.md", secrets.group(1))
 
         for path in (
             ".agents/skills/wayfinder/SKILL.md",
@@ -1078,49 +1149,6 @@ class AgentLayerGenerationTest(unittest.TestCase):
             "apm.yml",
         ):
             self.assertNotRegex(path, managed, f"{path} must stay linted")
-
-        # Every hook that rewrites the files it is handed must carry the alias.
-        autofixing = {
-            "templates/_base/_precommit.yml.jinja": (
-                "end-of-file-fixer",
-                "trailing-whitespace",
-            ),
-            "templates/authoring/content/.pre-commit-config.yaml.jinja": (
-                "markdownlint",
-            ),
-            "templates/_lang/python/_precommit.yml.jinja": (
-                "ruff-check",
-                "ruff-format",
-            ),
-            "templates/_lang/node/_precommit.yml.jinja": ("biome-check",),
-        }
-        for source, hook_ids in autofixing.items():
-            text = (ROOT / source).read_text()
-            for hook_id in hook_ids:
-                block = re.search(
-                    rf"- id: {re.escape(hook_id)}\n(?:        .*\n)*", text
-                )
-                self.assertIsNotNone(block, f"{hook_id} missing from {source}")
-                self.assertIn("exclude:", block.group(0), f"{hook_id} in {source}")
-
-        # The anchor is declared before any leaf aliases it, so each rendered
-        # config is loadable YAML with the exclude resolved.
-        for project_type in ("authoring/content", "software/python", "software/node"):
-            project = render(project_type=project_type)
-            config = yaml.safe_load((project / ".pre-commit-config.yaml").read_text())
-            excludes = {
-                hook["id"]: hook.get("exclude")
-                for repo in config["repos"]
-                for hook in repo["hooks"]
-            }
-            self.assertEqual(managed.pattern, excludes["end-of-file-fixer"])
-            self.assertEqual(managed.pattern, excludes["trailing-whitespace"])
-            self.assertIsNone(excludes["gitleaks"])
-            # The lockfile is generated hashes, so it cannot carry an inline
-            # pragma; everything else — vendored skills included — is scanned.
-            secrets = re.compile(excludes["detect-secrets"])
-            self.assertRegex("apm.lock.yaml", secrets)
-            self.assertNotRegex(".agents/skills/wayfinder/SKILL.md", secrets)
 
 
 if __name__ == "__main__":

@@ -9,6 +9,9 @@ fnox.local.toml
 # Local session memory — holds a pid and a write lock, not shared state.
 .memsearch/
 
+# Agents' worktrees
+.worktrees/
+
 # OS / editor
 .DS_Store
 *.swp

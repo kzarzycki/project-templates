@@ -18,7 +18,7 @@ class VersionContractTest(unittest.TestCase):
         # (vX.Y.Z) must match this version.
         plugin = json.loads(self.text(".claude-plugin/plugin.json"))
 
-        self.assertEqual("0.4.1", plugin["version"])
+        self.assertEqual("0.5.0", plugin["version"])
 
     def test_default_runtimes_use_current_stable_or_lts_lines(self) -> None:
         copier = self.text("copier.yml")
@@ -35,6 +35,7 @@ class VersionContractTest(unittest.TestCase):
 
     def test_mise_tools_are_qualified_and_do_not_float(self) -> None:
         mise_sources = list((ROOT / "templates").rglob("mise.toml.jinja"))
+        mise_sources.extend((ROOT / "templates").rglob("_mise_tools.part"))
         combined = "\n".join(path.read_text() for path in mise_sources)
 
         self.assertNotIn('= "latest"', combined)
@@ -56,6 +57,7 @@ class VersionContractTest(unittest.TestCase):
             "lycheeverse/lychee-action": "e7477775783ea5526144ba13e8db5eec57747ce8",  # pragma: allowlist secret
             "hashicorp/setup-terraform": "dfe3c3f87815947d99a8997f908cb6525fc44e9e",  # pragma: allowlist secret
             "terraform-linters/setup-tflint": "6e1e0642c0289bd619021bf6b34e3c08ed1e005a",  # pragma: allowlist secret
+            "dorny/paths-filter": "ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d",  # pragma: allowlist secret
         }
         workflow_sources = [ROOT / ".github/workflows/ci.yml"]
         workflow_sources.extend((ROOT / "templates").rglob("*.yml.jinja"))
@@ -107,6 +109,25 @@ class VersionContractTest(unittest.TestCase):
             self.assertIn(f"rev: {revision}", base)
         self.assertIn("rev: v0.15.22", python)
         self.assertIn("rev: v0.49.1", authoring)
+
+    def test_mise_hooks_pin_each_tool_once_in_mise(self) -> None:
+        # With mise, a hook names no remote repo and no rev: each tool's one version is in
+        # mise.toml [tools] (or the toolchain's lock file), and the hook calls its lint: task.
+        tools = self.text("templates/_base/_mise_tools.part")
+        hooks = self.text("templates/_base/_precommit_hooks.yml.jinja")
+
+        for tool, version in (
+            ('"pipx:pre-commit-hooks"', "6.0.0"),
+            ('"pipx:detect-secrets"', "1.5.0"),
+            ('"pipx:conventional-pre-commit"', "4.4.0"),
+            ("gitleaks", "8.30.1"),
+            ("actionlint", "1.7.12"),
+            ("zizmor", "1.27.0"),
+        ):
+            self.assertEqual(1, tools.count(f'{tool} = "{version}"'), tool)
+            self.assertNotIn(version, hooks)
+        self.assertNotIn("rev:", hooks)
+        self.assertEqual(["local"], re.findall(r"repo: (\S+)", hooks))
 
     def test_java_build_uses_current_qualified_releases(self) -> None:
         build = self.text("templates/_lang/java/_build.gradle.kts.jinja")
