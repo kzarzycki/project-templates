@@ -19,6 +19,7 @@ description = "Lints the Terraform modules with tflint."
 run = "tflint --init && tflint --recursive"
 
 [tasks."test:fast"]
+alias = "test"
 description = "Runs the Terraform tests (terraform test, offline: no backend)."
 run = "terraform init -backend=false -input=false && terraform test"
 

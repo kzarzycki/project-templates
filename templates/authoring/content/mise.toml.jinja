@@ -12,6 +12,7 @@ description = "Lints Markdown with markdownlint; fixes what it can in place."
 run = 'scripts/files-or-repo --fixer --only "\.md$" --skip "${APM_MANAGED:-}" markdownlint --fix --'
 
 [tasks."test:fast"]
+alias = "test"
 description = "Checks every link in the Markdown files (lychee)."
 run = "lychee --no-progress --extensions md ."
 

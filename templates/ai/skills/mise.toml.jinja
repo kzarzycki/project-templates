@@ -4,7 +4,7 @@
 {% include "templates/_base/_mise_tasks.part" %}
 
 [tasks."test:fast"]
-alias = "validate"
+alias = ["test", "validate"]
 description = "Validates the skill package: SKILL.md frontmatter and .claude-plugin/plugin.json."
 run = "python3 scripts/validate-skill.py"
 

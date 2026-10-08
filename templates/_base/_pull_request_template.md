@@ -5,7 +5,7 @@
 
 ## Evidence
 
-<!-- Before and after: a screenshot, a demo video (the `demo` skill), or the test that failed and now passes.{% if loop_enabled %} The merge gate rejects a PR without this section.{% endif %} -->
+<!-- Before and after: a screenshot, a demo video (the `demo` skill), or the test that failed and now passes.{% if loop_enabled %} `loop:approvals` rejects a PR without this section.{% endif %} -->
 
 ## Merge Danger
 
