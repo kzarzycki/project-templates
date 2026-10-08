@@ -141,11 +141,16 @@ facts from three files, seeded with a heading and a short prompt per fact:
 - `docs/agents/coding-standards.md`: domain facts only.
 
 `mise run loop:approvals <point> [pr]` (alias `gate`) checks the proof each loop
-step leaves on GitHub, with the pack's `approvals.py`. Every merge also needs
-the owner's `approved:merge` label; a push removes it. The
+step leaves on GitHub, with the pack's `approvals.py`. The gates are the merge
+approval: the verifier's verdict is a review on the PR, and a PR whose proofs
+hold needs no person's label. A `merge:` rule in `docs/agents/loop.md` §
+Approvals asks for the owner's `approved:merge` label; a push removes it. The
+seed asks for it on a change to `.github/**`, `.pre-commit-config.yaml`,
+`mise.toml`, `apm.yml`, `docs/agents/**` or `CODEOWNERS`; `- merge: always`
+asks for it on every merge. The
 `.github/workflows/approvals.yml` workflow posts the merge result as the
 `loop:approvals` commit status on the PR head: pending while it waits for CI's
-`check` or the label, failure when a proof is missing, success once every proof
+`check` or a label a rule asks for, failure when a proof is missing, success once every proof
 holds. It reruns when a label or the PR body changes and when CI completes, and
 posts success on a merge-queue commit, since a PR is queued only once its status
 was green. On success on a ready PR that has no auto-merge request yet, it turns
@@ -241,10 +246,18 @@ Updating to v0.5.0, with mise on:
 A repo that edited `mise.toml`, its hooks or its CI resolves those files once:
 a custom check becomes a `check:<name>` task.
 
-Updating to v0.6.0, with the loop on, adds `mise run loop:land <pr>`, and the
-approvals workflow turns on auto-merge for a ready PR whose proofs hold; its job
-now needs `contents: write`. The ruleset now requires every review thread
-resolved: run `mise run setup:github` to update it.
+Updating to v0.6.0 moves the pack to `^0.13.0`. With the loop on:
+
+- Adds `mise run loop:land <pr>`, and the approvals workflow turns on auto-merge
+  for a ready PR whose proofs hold; its job now needs `contents: write`.
+- The gates become the merge approval: `approved:merge` is needed only where a
+  `merge:` rule in `docs/agents/loop.md` § Approvals asks. A new project's seed
+  asks for it on CI, hook, task, pack and loop-file paths; an existing
+  `loop.md` has no rule, so add one, or `- merge: always` to keep a label on
+  every merge.
+- The verifier's verdict is a PR review; a verdict comment no longer counts.
+- The ruleset requires every review thread resolved: run
+  `mise run setup:github` to update it.
 
 ## Adopt an existing (pre-template) repo
 

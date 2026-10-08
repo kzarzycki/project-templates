@@ -25,14 +25,20 @@ The skill that fills each stage this project changes, one line each, such as
 
 ## Approvals
 
-Every merge waits for the owner's `approved:merge` label on the PR; a push
-removes it. Where a person must approve a spec or a plan too, beyond the loop's
-own approval: one rule per line as `- <point>: <condition>`, where the point is
-spec or plan. `mise run loop:approvals` reads `always`, `size:L or larger`,
-`component <name>`, `category <name>` and `` path `<glob>` ``, joined by `or`;
-the loop judges any other words. The person approves by adding the
-`approved:<point>` label. Required reviews and code owners go in branch
-protection and `CODEOWNERS`, which the loop obeys. "None" is an answer.
+The gates are the merge approval: a PR whose proofs hold merges with no
+person's label. Where a person must approve too: one rule per line as
+`- <point>: <condition>`, where the point is spec, plan or merge. A merge rule
+asks for the owner's `approved:merge` label on the PR; a push removes it.
+`mise run loop:approvals` reads `always`, `size:L or larger`, `component <name>`,
+`category <name>` and `path <glob>` (read from the PR's files), joined by `or`;
+the loop judges any other words, and a merge condition the gate can't read asks
+for the label. The person approves by adding the `approved:<point>` label. The
+rule below asks for it on a change to CI, hooks, tasks, the agent pack or these
+files; replacing it with `- merge: always` restores a label on every merge.
+Required reviews and code owners go in branch protection and `CODEOWNERS`, which
+the loop obeys. "None" is an answer.
+
+- merge: path .github/** or path .pre-commit-config.yaml or path mise.toml or path apm.yml or path docs/agents/** or path CODEOWNERS
 
 ## In use
 

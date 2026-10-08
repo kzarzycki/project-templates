@@ -182,7 +182,7 @@ exit 1
 {% if loop_enabled %}
 [tasks."loop:approvals"]
 alias = "gate"
-description = "Checks the loop's proofs on GitHub: approved spec, verdict, Evidence, merge approval. merge exits 3 while it waits for check or the owner's approved:merge."
+description = "Checks the loop's proofs on GitHub: approved spec, verdict, Evidence, merge approval. merge exits 3 while it waits for check, or for the owner's approved:merge where a merge: rule asks."
 usage = '''
 arg "<point>" help="build or merge"
 arg "[pr]" help="the PR number; default: this branch's PR"
