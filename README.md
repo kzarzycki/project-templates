@@ -321,7 +321,9 @@ Updating to v0.8.0 moves the pack to `^0.16.0`. With the loop on:
   issue is never deleted.
 
 Without mise, CI's `uv sync` becomes `uv sync --locked`, so a stale `uv.lock`
-fails CI there too.
+fails CI there too. A new project gets its `uv.lock` at generation; an existing
+repo without mise that has none (dbt) runs `uv lock` and commits it before
+updating.
 
 ## Adopt an existing (pre-template) repo
 

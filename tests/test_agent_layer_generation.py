@@ -1089,6 +1089,13 @@ class AgentLayerGenerationTest(unittest.TestCase):
                      for step in job["steps"] if step.get("run", "").startswith("uv sync")]
             self.assertEqual(["uv sync --locked"], steps, leaf)
 
+    def test_post_gen_locks_a_uv_project_outside_the_python_leaves(self) -> None:
+        # dbt resolves no language, so post-gen's uv sync skips it; CI's `uv sync --locked` needs the lock
+        project = render("data/dbt", include_mise=False)
+        env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+        subprocess.run(["bash", str(ROOT / "_post_gen.sh"), "data/dbt", "python"], cwd=project, env=env, check=True, capture_output=True)
+        self.assertTrue((project / "uv.lock").exists())
+
     def test_apm_version_has_one_template_source(self) -> None:
         partial = (ROOT / "templates/_base/_mise_agent_tasks.part").read_text()
 

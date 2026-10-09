@@ -64,6 +64,11 @@ case "$language" in
     log "java project — run ./gradlew build when ready"
     ;;
 esac
+# A uv project outside the python leaves (dbt) still needs its lock committed: CI runs
+# `uv sync --locked`, which fails without one.
+if [ "$language" != python ] && [ -f pyproject.toml ] && [ ! -f uv.lock ] && with_tools uv --version >/dev/null 2>&1; then
+  with_tools uv lock >/dev/null 2>&1 && log "uv lock" || log "uv lock skipped: run it before the first push"
+fi
 
 # 4. install pre-commit hooks (skip if pre-commit absent). On a fresh repo, force
 #    (-f): a global git template that seeds .git/hooks would otherwise drop a plain
