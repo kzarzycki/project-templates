@@ -30,13 +30,15 @@ Only people approve; the rest is this standing policy, which
 of a bug, a `Found while #<n>` follow-up, or a writer's sub-issue of an epic the
 owner approved; any other spec waits for the owner. `merge: auto unless risk`
 lands a PR on its gates unless it is high risk: `risk:high` on the PR or its
-issue, or a `risk:` rule below matches. A high-risk merge waits for the owner's
+issue, a `risk:` rule below matches, or the verifier's cap was reached with a
+blocker or major open. A high-risk merge waits for the owner's
 `approved:merge` label, added after the head's push. A `risk:` condition reads
 `always`, `size:L or larger`, `component <name>`, `category <name>` and
 `path <glob>`, joined by `or`; a condition the gate can't read matches. The rule
 below marks a change to CI, hooks, tasks, the agent pack or these files as high
 risk; `risk: always` restores a label on every merge. A line `cap: <n>` changes
-the verifier's pass cap from the skill's default. Required reviews and code
+the verifier's pass cap from the skill's default, and a `plan: <condition>`
+line asks for the owner's approval of a matching plan. Required reviews and code
 owners go in branch protection and `CODEOWNERS`, which the loop obeys.
 
 - spec: auto unless risk

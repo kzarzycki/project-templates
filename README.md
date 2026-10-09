@@ -177,7 +177,7 @@ merge starts no push workflow on main (CI's push run, Pages, tags). To have it
 start them, give the workflow a GitHub App's token:
 
 1. Create a GitHub App with repository permissions Contents: write, Pull requests:
-   write, Commit statuses: write, Issues: read, Checks: read and Actions: read, and install it on
+   write, Commit statuses: write, Issues: write, Checks: read and Actions: read, and install it on
    the repo.
 2. Set the repo variable `APPROVALS_APP_CLIENT_ID` to the App's client ID and the
    secret `APPROVALS_APP_PRIVATE_KEY` to a private key it generated
@@ -290,9 +290,11 @@ Updating to v0.7.0 moves the pack to `^0.15.0`. With the loop on:
   The seed's § Approvals gets `- spec: auto unless risk`,
   `- merge: auto unless risk` and a `risk:` rule; an existing `loop.md` keeps
   its lines, a `merge:` condition read as a `risk:` rule, so add the two policy
-  lines to let agents approve bugs, follow-ups and stories of an approved epic.
+  lines to let the policy approve bugs, follow-ups and stories of an approved epic.
 - The approvals job gets `issues: write` (and the App `permission-issues:
-  write`), so the gate can add `risk:high` to a PR it finds high risk.
+  write`), so the gate can add `risk:high` to a PR it finds high risk. A repo
+  using an App raises the App's Issues permission to write and accepts it on the
+  installation first, or the token step fails and `loop:approvals` never posts.
 - An optional `cap: <n>` line in loop.md changes the verifier's pass cap.
 
 ## Adopt an existing (pre-template) repo
