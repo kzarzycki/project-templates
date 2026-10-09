@@ -43,6 +43,7 @@ jobs:
       issues: read
       pull-requests: write # removes approved:merge on a push; turns on auto-merge
       checks: read
+      actions: read # approvals.py reads each check run's workflow (checkSuite.workflowRun)
       statuses: write # posts loop:approvals
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -59,6 +60,7 @@ jobs:
           permission-issues: read
           permission-pull-requests: write
           permission-checks: read
+          permission-actions: read
           permission-statuses: write
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:

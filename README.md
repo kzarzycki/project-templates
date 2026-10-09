@@ -156,7 +156,7 @@ posts success on a merge-queue commit, since a PR is queued only once its status
 was green. On success on a ready PR that has no auto-merge request yet, it turns
 auto-merge on with the repo's `GITHUB_TOKEN`, pinned to the head
 (`--match-head-commit`), so a PR made ready by hand lands with no agent action;
-the job needs `contents: write` and `pull-requests: write` for that. It never
+the job needs `contents: write` and `pull-requests: write` for that, and `actions: read` to read each check run's workflow (without it GitHub refuses the merge check's query). It never
 replaces an existing request. GitHub's free plan has no protection for private repos, so there the
 status is only a mark (pending while it waits, red on a missing proof), not a
 block: it catches a forgotten step, not a deliberate one.
@@ -175,7 +175,7 @@ merge starts no push workflow on main (CI's push run, Pages, tags). To have it
 start them, give the workflow a GitHub App's token:
 
 1. Create a GitHub App with repository permissions Contents: write, Pull requests:
-   write, Commit statuses: write, Issues: read and Checks: read, and install it on
+   write, Commit statuses: write, Issues: read, Checks: read and Actions: read, and install it on
    the repo.
 2. Set the repo variable `APPROVALS_APP_CLIENT_ID` to the App's client ID and the
    secret `APPROVALS_APP_PRIVATE_KEY` to a private key it generated
@@ -278,6 +278,9 @@ Updating to v0.6.0 moves the pack to `^0.13.1`. With the loop on:
   makes start main's push workflows: set `APPROVALS_APP_CLIENT_ID` and
   `APPROVALS_APP_PRIVATE_KEY` (Engineering loop). Without them it runs with
   `GITHUB_TOKEN`, as before.
+- The approvals job also gets `actions: read`: the pack reads each check run's
+  workflow, which GitHub refuses without it ("Resource not accessible by
+  integration").
 
 ## Adopt an existing (pre-template) repo
 

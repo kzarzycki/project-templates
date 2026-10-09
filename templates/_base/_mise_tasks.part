@@ -297,7 +297,7 @@ if gh api 'repos/{owner}/{repo}/actions/variables/APPROVALS_APP_CLIENT_ID' >/dev
 else
   echo "approvals workflow: runs with github.token, so a merge it makes starts no push workflow on main;" \
     "to change that, set the repo variable APPROVALS_APP_CLIENT_ID and the secret APPROVALS_APP_PRIVATE_KEY for a GitHub App" \
-    "with Contents, Pull requests and Commit statuses write and Issues and Checks read, installed on this repo"
+    "with Contents, Pull requests and Commit statuses write and Issues, Checks and Actions read, installed on this repo"
 fi
 '''
 {% endif -%}

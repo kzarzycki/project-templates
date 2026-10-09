@@ -800,7 +800,14 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertEqual("write", job["permissions"]["statuses"])  # posts loop:approvals
         # The least that turns auto-merge on: write on contents and pull requests, read on the rest.
         self.assertEqual(
-            {"contents": "write", "issues": "read", "pull-requests": "write", "checks": "read", "statuses": "write"},
+            {
+                "contents": "write",
+                "issues": "read",
+                "pull-requests": "write",
+                "checks": "read",
+                "actions": "read",
+                "statuses": "write",
+            },
             job["permissions"],
         )
         self.assertEqual({}, approvals["permissions"])
