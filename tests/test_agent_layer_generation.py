@@ -937,6 +937,8 @@ class AgentLayerGenerationTest(unittest.TestCase):
                 self.assertEqual(["plan", "part"], jobs["check"]["needs"])
                 self.assertEqual("${{ fromJSON(needs.plan.outputs.parts) }}", jobs["part"]["strategy"]["matrix"]["part"])
                 self.assertEqual("${{ matrix.part }}", jobs["part"]["name"])
+                # a stale uv.lock fails the part rather than being rewritten by setup:dev (#29)
+                self.assertEqual("1", jobs["part"]["env"]["UV_LOCKED"])
                 self.assertEqual(
                     "${{ github.base_ref || github.event.merge_group.base_sha || github.event.before }}",
                     jobs["part"]["steps"][-1]["env"]["BASE_REF"],

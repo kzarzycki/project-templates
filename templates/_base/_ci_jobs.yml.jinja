@@ -34,6 +34,8 @@
     runs-on: ubuntu-latest
     # ponytail: one timeout for every part, the longest's; a per-part limit would be a second definition of the part.
     timeout-minutes: 45
+    env:
+      UV_LOCKED: "1" # a uv sync fails on a stale uv.lock instead of rewriting it
     strategy:
       fail-fast: false
       matrix:
