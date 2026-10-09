@@ -258,9 +258,10 @@ gh pr merge "$PR" --auto --squash --match-head-commit "$head" || {
 
 [tasks."setup:github"]
 alias = "merge-queue"
-description = "Writes GitHub settings (the ruleset, auto-merge, head branch deletion) from the repo's files; runs no checks. --revert deletes the ruleset."
+description = "Writes GitHub settings (the ruleset, auto-merge, head branch deletion), then syncs the labels with the pack's labels.py, from the repo's files; runs no checks. --dry-run prints the label plan and writes nothing; --revert deletes the ruleset."
 usage = '''
 flag "--revert" help="Delete the loop-merge-queue ruleset; the repository settings are restored with the command apply printed"
+flag "--dry-run" help="Print what labels.py would change; write nothing to GitHub (no ruleset, settings or labels)"
 '''
 # The task owns only the ruleset named loop-merge-queue and never reads or changes another one:
 # GitHub layers every active ruleset on a branch, so the repo's own rules keep applying.
@@ -268,6 +269,19 @@ flag "--revert" help="Delete the loop-merge-queue ruleset; the repository settin
 # the ruleset, rerun this.
 run = '''
 command -v gh >/dev/null || { echo "error: gh is required; install the GitHub CLI and run 'gh auth login'" >&2; exit 127; }
+# The labels are the pack's: labels.py is their one definition, read from docs/agents/issue-tracker.md.
+# ponytail: the path is the codex target's copy; without codex, point it at .claude/skills.
+labels=.agents/skills/engineering-loop/scripts/labels.py
+# Checked before any write, so a missing skill never leaves the ruleset applied and the labels not.
+if [ "${usage_revert:-false}" = true ]; then
+  if [ "${usage_dry_run:-false}" = true ]; then echo "error: --dry-run and --revert cannot be combined" >&2; exit 2; fi
+elif [ ! -f "$labels" ]; then
+  echo "setup:github: the engineering-loop skill is not installed; run mise run agent:sync and commit its output" >&2
+  exit 1
+elif [ "${usage_dry_run:-false}" = true ]; then
+  echo "dry run: the ruleset and repository settings are left as they are"
+  exec python3 "$labels" --dry-run
+fi
 id="$(gh api --paginate 'repos/{owner}/{repo}/rulesets' --jq '.[] | select(.source_type == "Repository" and .name == "loop-merge-queue") | .id')"
 if [ "${usage_revert:-false}" = true ]; then
   if [ -z "$id" ]; then echo "no loop-merge-queue ruleset: nothing to revert"; exit 0; fi
@@ -299,5 +313,6 @@ else
     "to change that, set the repo variable APPROVALS_APP_CLIENT_ID and the secret APPROVALS_APP_PRIVATE_KEY for a GitHub App" \
     "with Contents, Pull requests and Commit statuses write and Issues, Checks and Actions read, installed on this repo"
 fi
+python3 "$labels"
 '''
 {% endif -%}

@@ -337,6 +337,14 @@ class AgentMiseTasksTest(unittest.TestCase):
             "state.write_text(json.dumps(data))\n"
         )
         gh.chmod(0o755)
+        # the pack's labels.py, which setup:github only calls: it logs its arguments
+        labels = self.project / ".agents/skills/engineering-loop/scripts/labels.py"
+        labels.parent.mkdir(parents=True, exist_ok=True)
+        labels.write_text(
+            "import os, sys\n"
+            "open(os.environ['COMMAND_LOG'], 'a').write(' '.join(['labels.py', *sys.argv[1:]]) + '\\n')\n"
+            "print('labels synced')\n"
+        )
         return state
 
     def applied(self) -> dict:
@@ -362,6 +370,35 @@ class AgentMiseTasksTest(unittest.TestCase):
         github = json.loads(state.read_text())
         self.assertFalse(github["allow_auto_merge"])
         self.assertFalse(github["delete_branch_on_merge"])
+
+    def test_setup_github_syncs_the_labels_with_the_packs_labels_py_after_the_ruleset(self) -> None:
+        state = self.fake_github(allow_auto_merge=True)
+
+        result = self.run_task("setup:github")
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(["labels.py"], self.commands())
+        lines = result.stdout.splitlines()
+        self.assertLess(lines.index("revert the ruleset: mise run setup:github --revert"), lines.index("labels synced"))
+
+        # --dry-run passes through and writes nothing to GitHub: no ruleset, no settings
+        self.log.unlink()
+        state = self.fake_github(allow_auto_merge=False)
+        dry = self.run_task("setup:github", "--dry-run")
+        self.assertEqual(0, dry.returncode, dry.stderr)
+        self.assertEqual(["labels.py --dry-run"], self.commands())
+        github = json.loads(state.read_text())
+        self.assertEqual(({}, False), (github["rulesets"], github["allow_auto_merge"]))
+
+        refused = self.run_task("setup:github", "--dry-run", "--revert")
+        self.assertEqual(2, refused.returncode)
+        self.assertIn("cannot be combined", refused.stderr)
+
+        # without the installed skill it stops before any write
+        (self.project / ".agents/skills/engineering-loop/scripts/labels.py").unlink()
+        missing = self.run_task("setup:github")
+        self.assertEqual(1, missing.returncode)
+        self.assertIn("run mise run agent:sync", missing.stderr)
+        self.assertEqual({}, json.loads(state.read_text())["rulesets"])
 
     def test_setup_github_updates_its_ruleset_found_by_name(self) -> None:
         state = self.fake_github({"5": {"name": "loop-merge-queue", "rules": []}}, allow_auto_merge=True)

@@ -2,8 +2,13 @@ Tracker: GitHub (engineering-loop's github.md)
 
 ## Components
 
-Where a change lands. One bullet per component, `name`: what it covers. Every
-issue carries at least one. Replace this prompt; keep the headings.
+Where a change lands: one bullet per component, its label `area:<name>` in
+backticks, then what it covers. Every issue carries at least one. Edit the list
+to the project's parts; `mise run setup:github` creates each label.
+
+{% for name, text in components %}- `area:{{ name }}`: {{ text }}
+{% endfor %}- `area:tooling`: mise tasks, git hooks, CI workflows and agent configuration
+- `area:docs`: the README and the docs outside `docs/agents/`
 
 ## Never on GitHub
 
@@ -13,9 +18,18 @@ customer data, credentials or private figures, and what to write instead.
 
 ## Extra labels
 
-Optional. Labels this project adds beyond the pack's, and what each means.
+Optional. Labels this project adds beyond the pack's: one bullet per label, its
+name in backticks, then what it means.
 
 ## Extra categories
 
-Optional. Labels that count as an issue's category beyond the method's four,
-and what each means.
+Optional. Categories beyond the method's four (`kind:bug`, `kind:enhancement`,
+`kind:chore`, `kind:documentation`): one bullet per category, its label
+`kind:<name>` in backticks, then what it means.
+
+## Renamed labels
+
+Optional. Labels to rename in place, so every issue keeps them: one bullet per
+label, its old name then its new, both in backticks, such as `frontend` becomes
+`area:web`. The pack's own renames (`bug`, `enhancement`, `chore` and
+`documentation` to their `kind:` names) need no line.
