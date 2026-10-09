@@ -289,10 +289,15 @@ echo "allow_auto_merge was $auto, delete_branch_on_merge was $delete, both now t
 echo "revert the ruleset: mise run setup:github --revert"
 # The approvals workflow's token: a merge it makes starts main's push workflows only with an App's.
 if gh api 'repos/{owner}/{repo}/actions/variables/APPROVALS_APP_CLIENT_ID' >/dev/null 2>&1; then
-  echo "approvals workflow: runs with the GitHub App APPROVALS_APP_CLIENT_ID names"
+  if gh api 'repos/{owner}/{repo}/actions/secrets/APPROVALS_APP_PRIVATE_KEY' >/dev/null 2>&1; then
+    echo "approvals workflow: runs with the GitHub App APPROVALS_APP_CLIENT_ID names"
+  else
+    echo "approvals workflow: APPROVALS_APP_CLIENT_ID is set but the secret APPROVALS_APP_PRIVATE_KEY is not, so every run fails; set it"
+  fi
 else
   echo "approvals workflow: runs with github.token, so a merge it makes starts no push workflow on main;" \
-    "to change that, set the repo variable APPROVALS_APP_CLIENT_ID and the secret APPROVALS_APP_PRIVATE_KEY (README, Merge approvals)"
+    "to change that, set the repo variable APPROVALS_APP_CLIENT_ID and the secret APPROVALS_APP_PRIVATE_KEY for a GitHub App" \
+    "with Contents, Pull requests and Commit statuses write and Issues and Checks read, installed on this repo"
 fi
 '''
 {% endif -%}
