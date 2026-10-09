@@ -25,20 +25,25 @@ The skill that fills each stage this project changes, one line each, such as
 
 ## Approvals
 
-The gates are the merge approval: a PR whose proofs hold merges with no
-person's label. Where a person must approve too: one rule per line as
-`- <point>: <condition>`, where the point is spec, plan or merge. A merge rule
-asks for the owner's `approved:merge` label on the PR; a push removes it.
-`mise run loop:approvals` reads `always`, `size:L or larger`, `component <name>`,
-`category <name>` and `path <glob>` (read from the PR's files), joined by `or`;
-the loop judges any other words, and a merge condition the gate can't read asks
-for the label. The person approves by adding the `approved:<point>` label. The
-rule below asks for it on a change to CI, hooks, tasks, the agent pack or these
-files; replacing it with `- merge: always` restores a label on every merge.
-Required reviews and code owners go in branch protection and `CODEOWNERS`, which
-the loop obeys. "None" is an answer.
+Only people approve; the rest is this standing policy, which
+`mise run loop:approvals` evaluates. `spec: auto unless risk` approves the spec
+of a bug, a `Found while #<n>` follow-up, or a writer's sub-issue of an epic the
+owner approved; any other spec waits for the owner. `merge: auto unless risk`
+lands a PR on its gates unless it is high risk: `risk:high` on the PR or its
+issue, a `risk:` rule below matches, or the verifier's cap was reached with a
+blocker or major open. A high-risk merge waits for the owner's
+`approved:merge` label, added after the head's push. A `risk:` condition reads
+`always`, `size:L or larger`, `component <name>`, `category <name>` and
+`path <glob>`, joined by `or`; a condition the gate can't read matches. The rule
+below marks a change to CI, hooks, tasks, the agent pack or these files as high
+risk; `risk: always` restores a label on every merge. A line `cap: <n>` changes
+the verifier's pass cap from the skill's default, and a `plan: <condition>`
+line asks for the owner's approval of a matching plan. Required reviews and code
+owners go in branch protection and `CODEOWNERS`, which the loop obeys.
 
-- merge: path .github/** or path .pre-commit-config.yaml or path mise.toml or path apm.yml or path docs/agents/** or path CODEOWNERS
+- spec: auto unless risk
+- merge: auto unless risk
+- risk: path .github/** or path .pre-commit-config.yaml or path mise.toml or path apm.yml or path docs/agents/** or path CODEOWNERS
 
 ## In use
 
