@@ -143,11 +143,13 @@ facts from three files, seeded with a heading and a short prompt per fact:
 `mise run loop:approvals <point> [pr]` (alias `gate`) checks the proof each loop
 step leaves on GitHub, with the pack's `approvals.py`. The gates are the merge
 approval: the verifier's verdict is a review on the PR, and a PR whose proofs
-hold needs no person's label. A `merge:` rule in `docs/agents/loop.md` §
-Approvals asks for the owner's `approved:merge` label; a push removes it. The
-seed asks for it on a change to `.github/**`, `.pre-commit-config.yaml`,
-`mise.toml`, `apm.yml`, `docs/agents/**` or `CODEOWNERS`; `- merge: always`
-asks for it on every merge. The
+hold needs no person's label. Only people approve: `docs/agents/loop.md` §
+Approvals is the owner's standing policy (`spec: auto unless risk`,
+`merge: auto unless risk`), and a high-risk PR, one with `risk:high` or matching
+a `risk:` rule, waits for the owner's `approved:merge` label; a push removes it.
+The seed marks a change to `.github/**`, `.pre-commit-config.yaml`, `mise.toml`,
+`apm.yml`, `docs/agents/**` or `CODEOWNERS` high risk; `- risk: always` asks for
+the label on every merge. The
 `.github/workflows/approvals.yml` workflow posts the merge result as the
 `loop:approvals` commit status on the PR head: pending while it waits for CI's
 `check` or a label a rule asks for, failure when a proof is missing, success once every proof
@@ -281,6 +283,17 @@ Updating to v0.6.0 moves the pack to `^0.13.1`. With the loop on:
 - The approvals job also gets `actions: read`: the pack reads each check run's
   workflow, which GitHub refuses without it ("Resource not accessible by
   integration").
+
+Updating to v0.7.0 moves the pack to `^0.15.0`. With the loop on:
+
+- Only people approve: an agent no longer records a spec or merge approval.
+  The seed's § Approvals gets `- spec: auto unless risk`,
+  `- merge: auto unless risk` and a `risk:` rule; an existing `loop.md` keeps
+  its lines, a `merge:` condition read as a `risk:` rule, so add the two policy
+  lines to let agents approve bugs, follow-ups and stories of an approved epic.
+- The approvals job gets `issues: write` (and the App `permission-issues:
+  write`), so the gate can add `risk:high` to a PR it finds high risk.
+- An optional `cap: <n>` line in loop.md changes the verifier's pass cap.
 
 ## Adopt an existing (pre-template) repo
 

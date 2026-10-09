@@ -322,7 +322,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
             [
                 {
                     "git": "kzarzycki/agent-skills/engineering",
-                    "ref": "^0.13.1",
+                    "ref": "^0.15.0",
                 }
             ],
             yaml.safe_load(apm)["dependencies"]["apm"],
@@ -373,7 +373,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         manifest = (project / "apm.yml").read_text()
         answers = (project / ".copier-answers.yml").read_text()
         self.assertEqual(1, manifest.count("git: kzarzycki/agent-skills/engineering"))
-        self.assertIn("ref: ^0.13.1", manifest)
+        self.assertIn("ref: ^0.15.0", manifest)
         self.assertIn("include_engineering_workflow: true", answers)
         self.assertNotIn("engineering_capability_source", answers)
         self.assertNotIn("engineering_capability_ref", answers)
@@ -802,7 +802,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertEqual(
             {
                 "contents": "write",
-                "issues": "read",
+                "issues": "write",
                 "pull-requests": "write",
                 "checks": "read",
                 "actions": "read",
@@ -857,14 +857,13 @@ class AgentLayerGenerationTest(unittest.TestCase):
                 hooks[name],
             )
         approvals_seed = (project / "docs/agents/loop.md").read_text()
-        self.assertIn("The gates are the merge approval", approvals_seed)
-        self.assertIn("where the point is spec, plan or merge", approvals_seed)
-        self.assertIn("replacing it with `- merge: always` restores a label on every merge", approvals_seed)
-        # The one seeded rule, the paths axis asks a label for; the gate reads `- <point>: <condition>` lines.
+        self.assertIn("Only people approve", approvals_seed)
+        self.assertIn("`risk: always` restores a label on every merge", approvals_seed)
+        # The policy lines and the one risk rule, the paths axis holds; the gate reads `- <point>: <condition>` lines.
         self.assertEqual(
-            ["- merge: path .github/** or path .pre-commit-config.yaml or path mise.toml or path apm.yml"
+            ["- spec: auto unless risk", "- merge: auto unless risk", "- risk: path .github/** or path .pre-commit-config.yaml or path mise.toml or path apm.yml"
              " or path docs/agents/** or path CODEOWNERS"],
-            re.findall(r"^[ \t]*[-*] +(?:spec|plan|merge):.*$", approvals_seed, re.MULTILINE),
+            re.findall(r"^[ \t]*[-*] +(?:spec|plan|merge|risk):.*$", approvals_seed, re.MULTILINE),
         )
         for name, headings in (
             (
