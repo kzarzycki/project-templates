@@ -141,16 +141,49 @@ facts from three files, seeded with a heading and a short prompt per fact:
 - `docs/agents/coding-standards.md`: domain facts only.
 
 `mise run loop:approvals <point> [pr]` (alias `gate`) checks the proof each loop
-step leaves on GitHub, with the pack's `approvals.py`. Every merge also needs
-the owner's `approved:merge` label; a push removes it. The
+step leaves on GitHub, with the pack's `approvals.py`. The gates are the merge
+approval: the verifier's verdict is a review on the PR, and a PR whose proofs
+hold needs no person's label. A `merge:` rule in `docs/agents/loop.md` §
+Approvals asks for the owner's `approved:merge` label; a push removes it. The
+seed asks for it on a change to `.github/**`, `.pre-commit-config.yaml`,
+`mise.toml`, `apm.yml`, `docs/agents/**` or `CODEOWNERS`; `- merge: always`
+asks for it on every merge. The
 `.github/workflows/approvals.yml` workflow posts the merge result as the
 `loop:approvals` commit status on the PR head: pending while it waits for CI's
-`check` or the label, failure when a proof is missing, success once every proof
+`check` or a label a rule asks for, failure when a proof is missing, success once every proof
 holds. It reruns when a label or the PR body changes and when CI completes, and
 posts success on a merge-queue commit, since a PR is queued only once its status
-was green. GitHub's free plan has no protection for private repos, so there the
+was green. On success on a ready PR that has no auto-merge request yet, it turns
+auto-merge on with the repo's `GITHUB_TOKEN`, pinned to the head
+(`--match-head-commit`), so a PR made ready by hand lands with no agent action;
+the job needs `contents: write` and `pull-requests: write` for that, and `actions: read` to read each check run's workflow (without it GitHub refuses the merge check's query). It never
+replaces an existing request. GitHub's free plan has no protection for private repos, so there the
 status is only a mark (pending while it waits, red on a missing proof), not a
 block: it catches a forgotten step, not a deliberate one.
+
+`mise run loop:land <pr>` is the one way an agent lands a PR: it runs the pack's
+`approvals.py land`, which checks every merge proof, then marks the PR ready and
+squash-merges it pinned to its head, or turns auto-merge on while only required
+checks are pending. It exits 0 once the PR merged or auto-merge is on, 1 on a
+missing proof (the PR is left untouched) and 3 while it waits: run it again. It
+runs as you, so a merge it makes starts main's push workflows.
+
+A draft that `loop:land` marks ready is usually merged by the approvals workflow,
+since CI's completion reaches the workflow before `land` runs again. GitHub starts
+no workflow for an event the workflow's `GITHUB_TOKEN` causes, so by default that
+merge starts no push workflow on main (CI's push run, Pages, tags). To have it
+start them, give the workflow a GitHub App's token:
+
+1. Create a GitHub App with repository permissions Contents: write, Pull requests:
+   write, Commit statuses: write, Issues: read, Checks: read and Actions: read, and install it on
+   the repo.
+2. Set the repo variable `APPROVALS_APP_CLIENT_ID` to the App's client ID and the
+   secret `APPROVALS_APP_PRIVATE_KEY` to a private key it generated
+   (`gh variable set`, `gh secret set`).
+
+With the variable set, the workflow runs everything with the App's token; without
+it, with `GITHUB_TOKEN`, as before. `mise run setup:github` prints which one the
+repo uses.
 
 Where GitHub offers rulesets and merge queues, main lands through a queue.
 Generated CI skips draft PRs (marking one ready starts it) and runs on every push
@@ -158,13 +191,13 @@ to main and every `merge_group` entry, each in its own run, so a red main points
 at one merge. A push compares changed lines against the commit before it, a
 queue entry against the queue's base. With the loop on,
 `.github/rulesets/main.json` is the `loop-merge-queue` ruleset on main: changes
-only through a squashed PR, no bypass, and a merge queue (squash, all-green
+only through a squashed PR with every review thread resolved, no bypass, and a merge queue (squash, all-green
 grouping) that requires exactly two names, CI's `check` job and the
 `loop:approvals` status. `mise run setup:github` (alias `merge-queue`) creates
 that ruleset on GitHub, or updates it if one with that name exists, and sets
 the repository's `allow_auto_merge` and `delete_branch_on_merge` to true, so
-`gh pr merge <n> --auto` queues the PR once both names are green and its branch
-is deleted after the merge. It never reads or changes another ruleset: GitHub
+`mise run loop:land <n>` (or the approvals workflow) queues the PR once both
+names are green and its branch is deleted after the merge. It never reads or changes another ruleset: GitHub
 applies every active ruleset on a branch, so the repo's own rules on main keep
 applying alongside it. The task prints both settings' previous values and the
 `gh api -X PATCH` command that restores them. `mise run setup:github --revert`
@@ -228,6 +261,26 @@ Updating to v0.5.0, with mise on:
 
 A repo that edited `mise.toml`, its hooks or its CI resolves those files once:
 a custom check becomes a `check:<name>` task.
+
+Updating to v0.6.0 moves the pack to `^0.13.1`. With the loop on:
+
+- Adds `mise run loop:land <pr>`, and the approvals workflow turns on auto-merge
+  for a ready PR whose proofs hold; its job now needs `contents: write`.
+- The gates become the merge approval: `approved:merge` is needed only where a
+  `merge:` rule in `docs/agents/loop.md` § Approvals asks. A new project's seed
+  asks for it on CI, hook, task, pack and loop-file paths; an existing
+  `loop.md` has no rule, so add one, or `- merge: always` to keep a label on
+  every merge.
+- The verifier's verdict is a PR review; a verdict comment no longer counts.
+- The ruleset requires every review thread resolved: run
+  `mise run setup:github` to update it.
+- The approvals workflow can run with a GitHub App's token, so the merges it
+  makes start main's push workflows: set `APPROVALS_APP_CLIENT_ID` and
+  `APPROVALS_APP_PRIVATE_KEY` (Engineering loop). Without them it runs with
+  `GITHUB_TOKEN`, as before.
+- The approvals job also gets `actions: read`: the pack reads each check run's
+  workflow, which GitHub refuses without it ("Resource not accessible by
+  integration").
 
 ## Adopt an existing (pre-template) repo
 

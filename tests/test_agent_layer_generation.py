@@ -322,7 +322,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
             [
                 {
                     "git": "kzarzycki/agent-skills/engineering",
-                    "ref": "^0.12.0",
+                    "ref": "^0.13.1",
                 }
             ],
             yaml.safe_load(apm)["dependencies"]["apm"],
@@ -373,7 +373,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         manifest = (project / "apm.yml").read_text()
         answers = (project / ".copier-answers.yml").read_text()
         self.assertEqual(1, manifest.count("git: kzarzycki/agent-skills/engineering"))
-        self.assertIn("ref: ^0.12.0", manifest)
+        self.assertIn("ref: ^0.13.1", manifest)
         self.assertIn("include_engineering_workflow: true", answers)
         self.assertNotIn("engineering_capability_source", answers)
         self.assertNotIn("engineering_capability_ref", answers)
@@ -787,6 +787,10 @@ class AgentLayerGenerationTest(unittest.TestCase):
             'python3 .agents/skills/engineering-loop/scripts/approvals.py check "${usage_point}" ${usage_pr:-}',
             approvals_run[-1],
         )
+        self.assertEqual(
+            'python3 .agents/skills/engineering-loop/scripts/approvals.py land "${usage_pr}"',
+            tasks["loop:land"]["run"][-1],
+        )
         self.assertFalse((project / ".github/workflows/gate.yml").exists())
         approvals = yaml.safe_load((project / ".github/workflows/approvals.yml").read_text())
         [(job_name, job)] = approvals["jobs"].items()
@@ -794,11 +798,46 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertEqual("mise run ci:approvals", job["steps"][-1]["run"])
         self.assertEqual({"install": False}, job["steps"][-2]["with"])  # approvals.py needs no toolchain
         self.assertEqual("write", job["permissions"]["statuses"])  # posts loop:approvals
-        self.assertEqual("write", job["permissions"]["pull-requests"])  # removes approved:merge on a push
+        # The least that turns auto-merge on: write on contents and pull requests, read on the rest.
+        self.assertEqual(
+            {
+                "contents": "write",
+                "issues": "read",
+                "pull-requests": "write",
+                "checks": "read",
+                "actions": "read",
+                "statuses": "write",
+            },
+            job["permissions"],
+        )
+        self.assertEqual({}, approvals["permissions"])
+        # Auto-merge is pinned to the head the proofs covered, and only after a success, never on a request.
+        approvals_task = tasks["ci:approvals"]["run"]
+        self.assertIn('gh pr merge "$PR" --auto --squash --match-head-commit "$head"', approvals_task)
+        self.assertLess(approvals_task.index('post "$head" success "${first'), approvals_task.index("gh pr merge"))
+        self.assertLess(approvals_task.index("autoMergeRequest"), approvals_task.index("gh pr merge"))
         on = approvals[True]  # PyYAML reads `on` as True
         self.assertIn("labeled", on["pull_request"]["types"])
         self.assertIn("synchronize", on["pull_request"]["types"])
         self.assertIn("merge_group", on)
+        self.assertEqual({"types": ["submitted", "dismissed"]}, on["pull_request_review"])  # the verdict is a review
+        # A review event, like a PR event, never runs on a draft or for dependabot.
+        self.assertIn(
+            "((github.event_name == 'pull_request' || github.event_name == 'pull_request_review')"
+            " && !github.event.pull_request.draft && github.actor != 'dependabot[bot]')",
+            job["if"],
+        )
+        # The token is github.token unless the repo names a GitHub App, whose token gets this job's permissions.
+        app = next(step for step in job["steps"] if step.get("id") == "app")
+        self.assertEqual("${{ vars.APPROVALS_APP_CLIENT_ID != '' }}", app["if"])
+        self.assertEqual("${{ secrets.APPROVALS_APP_PRIVATE_KEY }}", app["with"]["private-key"])
+        self.assertEqual(
+            {name.removeprefix("permission-"): value for name, value in app["with"].items() if name.startswith("permission-")},
+            job["permissions"],
+        )
+        self.assertEqual("${{ steps.app.outputs.token || github.token }}", job["steps"][-1]["env"]["GH_TOKEN"])
+        self.assertIn("actions/variables/APPROVALS_APP_CLIENT_ID", tasks["setup:github"]["run"])
+        self.assertIn("actions/secrets/APPROVALS_APP_PRIVATE_KEY", tasks["setup:github"]["run"])
         ci_name = yaml.safe_load(workflow)["name"]
         self.assertEqual({"workflows": [ci_name], "types": ["completed"]}, on["workflow_run"])
         self.assertIn("context=loop:approvals", tasks["ci:approvals"]["run"])
@@ -818,8 +857,15 @@ class AgentLayerGenerationTest(unittest.TestCase):
                 hooks[name],
             )
         approvals_seed = (project / "docs/agents/loop.md").read_text()
-        self.assertIn("Every merge waits for the owner's `approved:merge` label", approvals_seed)
-        self.assertIn("where the point is\nspec or plan.", approvals_seed)
+        self.assertIn("The gates are the merge approval", approvals_seed)
+        self.assertIn("where the point is spec, plan or merge", approvals_seed)
+        self.assertIn("replacing it with `- merge: always` restores a label on every merge", approvals_seed)
+        # The one seeded rule, the paths axis asks a label for; the gate reads `- <point>: <condition>` lines.
+        self.assertEqual(
+            ["- merge: path .github/** or path .pre-commit-config.yaml or path mise.toml or path apm.yml"
+             " or path docs/agents/** or path CODEOWNERS"],
+            re.findall(r"^[ \t]*[-*] +(?:spec|plan|merge):.*$", approvals_seed, re.MULTILINE),
+        )
         for name, headings in (
             (
                 "loop.md",
@@ -860,7 +906,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         contract = {
             "check", "check:all", "check:lint", "check:unit", "check:secrets", "check:agents",
             "test:fast", "test:unit", "test:changed", "ci:parts", "ci:check", "ci:approvals",
-            "loop:approvals", "setup:dev", "setup:github", "agent:sync", "agent:claude", "agent:codex",
+            "loop:approvals", "loop:land", "setup:dev", "setup:github", "agent:sync", "agent:claude", "agent:codex",
         }
         aliases = {
             "check:lint": ["lint", "fmt"], "test:fast": "test", "setup:dev": "bootstrap",
@@ -916,6 +962,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
                 self.assertEqual("SQUASH", rules["merge_queue"]["merge_method"])
                 self.assertEqual("ALLGREEN", rules["merge_queue"]["grouping_strategy"])
                 self.assertEqual(["squash"], rules["pull_request"]["allowed_merge_methods"])
+                self.assertTrue(rules["pull_request"]["required_review_thread_resolution"])  # an open thread blocks the merge
                 self.assertEqual([], ruleset["bypass_actors"])
 
                 # Hooks: one local repo, no rev; each commit hook calls its own lint: task.
@@ -976,7 +1023,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
 
                 tasks = tomllib.loads((project / "mise.toml").read_text())["tasks"]
                 self.assertFalse((project / "docs/agents").exists())
-                self.assertEqual(set(), {"loop:approvals", "ci:approvals", "setup:github"} & set(tasks))
+                self.assertEqual(set(), {"loop:approvals", "loop:land", "ci:approvals", "setup:github"} & set(tasks))
                 self.assertFalse((project / ".github/workflows/approvals.yml").exists())
                 self.assertFalse((project / ".github/workflows/gate.yml").exists())
                 self.assertFalse((project / ".github/rulesets").exists())

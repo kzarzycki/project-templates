@@ -1,13 +1,21 @@
 # The loop's merge approvals: posts `mise run loop:approvals merge`'s result as the
 # `loop:approvals` commit status on the PR head, which main's ruleset requires: pending while
-# it waits for CI's `check` or the owner's approved:merge label, failure when a proof is
+# it waits for CI's `check` or the approved:merge label a merge: rule asks for, failure when a proof is
 # missing, success once every proof holds. It reruns when a label or the PR body changes and
-# when CI completes; a push removes approved:merge. The job itself is named `approvals`, so its
-# own check run never stands in for the status.
+# when CI completes; a push removes approved:merge. On success on a ready PR with no auto-merge
+# request, it turns auto-merge on, pinned to the head, so a PR made ready by hand lands with no
+# agent action; it never replaces a request `mise run loop:land` made. The job itself is named
+# `approvals`, so its own check run never stands in for the status.
+# It runs with the job's github.token unless the repo variable APPROVALS_APP_CLIENT_ID and the
+# secret APPROVALS_APP_PRIVATE_KEY name a GitHub App: then with that App's token, so a merge
+# this job makes starts main's push workflows, which one made with github.token does not.
 name: Approvals
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review, edited, labeled, unlabeled]
+  # The verifier's verdict is a review: a new or dismissed one updates the status.
+  pull_request_review:
+    types: [submitted, dismissed]
   # A green `check` updates the status without a new push. This runs main's copy of the
   # workflow and checks out main, never the PR's code.
   workflow_run: # zizmor: ignore[dangerous-triggers]
@@ -27,24 +35,38 @@ jobs:
     # A dependabot PR's own run has a read-only token; its status comes from the CI completion run.
     if: >-
       {% raw %}${{ github.event_name == 'merge_group'
-      || (github.event_name == 'pull_request' && !github.event.pull_request.draft && github.actor != 'dependabot[bot]')
+      || ((github.event_name == 'pull_request' || github.event_name == 'pull_request_review') && !github.event.pull_request.draft && github.actor != 'dependabot[bot]')
       || (github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request') }}{% endraw %}
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write # turns on auto-merge, or merges when nothing is pending
       issues: read
-      pull-requests: write # removes approved:merge on a push
+      pull-requests: write # removes approved:merge on a push; turns on auto-merge
       checks: read
+      actions: read # approvals.py reads each check run's workflow (checkSuite.workflowRun)
       statuses: write # posts loop:approvals
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # Optional: the App needs the same permissions as this job, on this repo.
+      - id: app
+        if: {% raw %}${{ vars.APPROVALS_APP_CLIENT_ID != '' }}{% endraw %}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: {% raw %}${{ vars.APPROVALS_APP_CLIENT_ID }}{% endraw %}
+          private-key: {% raw %}${{ secrets.APPROVALS_APP_PRIVATE_KEY }}{% endraw %}
+          permission-contents: write
+          permission-issues: read
+          permission-pull-requests: write
+          permission-checks: read
+          permission-actions: read
+          permission-statuses: write
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           install: false # approvals.py needs only python3 and gh, which the runner has
       - env:
-          GH_TOKEN: {% raw %}${{ github.token }}{% endraw %}
+          GH_TOKEN: {% raw %}${{ steps.app.outputs.token || github.token }}{% endraw %}
           EVENT: {% raw %}${{ github.event_name }}{% endraw %}
           ACTION: {% raw %}${{ github.event.action }}{% endraw %}
           PR: {% raw %}${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number }}{% endraw %}

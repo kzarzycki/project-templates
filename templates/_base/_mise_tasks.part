@@ -182,7 +182,7 @@ exit 1
 {% if loop_enabled %}
 [tasks."loop:approvals"]
 alias = "gate"
-description = "Checks the loop's proofs on GitHub: approved spec, verdict, Evidence, merge approval. merge exits 3 while it waits for check or the owner's approved:merge."
+description = "Checks the loop's proofs on GitHub: approved spec, verdict, Evidence, merge approval. merge exits 3 while it waits for check, or for the owner's approved:merge where a merge: rule asks."
 usage = '''
 arg "<point>" help="build or merge"
 arg "[pr]" help="the PR number; default: this branch's PR"
@@ -194,8 +194,19 @@ run = [
   'python3 .agents/skills/engineering-loop/scripts/approvals.py check "${usage_point}" ${usage_pr:-}',
 ]
 
+[tasks."loop:land"]
+description = "The one way an agent lands a PR: every merge proof, then ready and a squash merge pinned to the head, or auto-merge while required checks are pending. Exits 0 merged or auto-merge on, 1 on a missing proof, 3 while it waits."
+usage = '''
+arg "<pr>" help="the PR number"
+'''
+# ponytail: the path is the codex target's copy; without codex, point it at .claude/skills.
+run = [
+  'test -f .agents/skills/engineering-loop/scripts/approvals.py || { echo "loop:land: the engineering-loop skill is not installed; run mise run agent:sync and commit its output" >&2; exit 1; }',
+  'python3 .agents/skills/engineering-loop/scripts/approvals.py land "${usage_pr}"',
+]
+
 [tasks."ci:approvals"]
-description = "CI's approvals step: posts loop:approvals merge's result as the loop:approvals commit status on the PR head (pending while it waits); success on a merge-queue commit; a push removes approved:merge first."
+description = "CI's approvals step: posts loop:approvals merge's result as the loop:approvals commit status on the PR head (pending while it waits); success on a merge-queue commit; a push removes approved:merge first; on success turns on auto-merge at the head unless the PR has a request."
 # A job ends only as success or failure, and GitHub counts a skipped job as passed, so the
 # result is a commit status, which main's ruleset requires. The workflow sets EVENT, ACTION,
 # PR, QUEUE_HEAD and RUN_URL.
@@ -211,7 +222,7 @@ if [ "$EVENT" = merge_group ]; then
   exit 0
 fi
 [ -n "${PR:-}" ] || { echo "ci:approvals: no PR for this run; nothing to post"; exit 0; }
-pull="$(gh pr view "$PR" --json headRefOid,isDraft,author --jq '[.headRefOid, .isDraft, .author.login] | @tsv')"
+pull="$(gh pr view "$PR" --json headRefOid,isDraft,author,autoMergeRequest --jq '[.headRefOid, .isDraft, .author.login, .autoMergeRequest != null] | @tsv')"
 head="$(printf '%s' "$pull" | cut -f1)"
 if [ "$(printf '%s' "$pull" | cut -f2)" = true ]; then echo "ci:approvals: PR #$PR is a draft; nothing to post"; exit 0; fi
 if [ "$(printf '%s' "$pull" | cut -f3)" = "app/dependabot" ]; then
@@ -231,9 +242,18 @@ printf '%s\n' "$out"
 first="$(printf '%s\n' "$out" | sed -n 1p)"
 case "$code" in
   0) post "$head" success "${first:-every proof holds}" ;;
-  3) post "$head" pending "$first" ;;
+  3) post "$head" pending "$first"; exit 0 ;;
   *) post "$head" failure "${first:-loop:approvals exited $code}"; exit 1 ;;
 esac
+# Every proof holds on a ready PR (a draft returned above), so a PR made ready by hand lands with no agent
+# action. A request already there is left alone. The merge this makes starts main's push workflows only
+# when the workflow runs with a GitHub App's token (APPROVALS_APP_CLIENT_ID), not with github.token.
+# Pinned to the head the proofs covered; gh merges at once when nothing is pending.
+if [ "$(printf '%s' "$pull" | cut -f4)" = true ]; then echo "ci:approvals: PR #$PR already has auto-merge on; left as is"; exit 0; fi
+gh pr merge "$PR" --auto --squash --match-head-commit "$head" || {
+  echo "::error::ci:approvals: could not turn on auto-merge for PR #$PR at $head; loop:approvals is still success, so mise run loop:land $PR lands it"
+  exit 1
+}
 '''
 
 [tasks."setup:github"]
@@ -267,5 +287,17 @@ delete="$(gh api 'repos/{owner}/{repo}' --jq .delete_branch_on_merge)"
 gh api -X PATCH 'repos/{owner}/{repo}' -F allow_auto_merge=true -F delete_branch_on_merge=true >/dev/null
 echo "allow_auto_merge was $auto, delete_branch_on_merge was $delete, both now true; restore: gh api -X PATCH 'repos/{owner}/{repo}' -F allow_auto_merge=$auto -F delete_branch_on_merge=$delete"
 echo "revert the ruleset: mise run setup:github --revert"
+# The approvals workflow's token: a merge it makes starts main's push workflows only with an App's.
+if gh api 'repos/{owner}/{repo}/actions/variables/APPROVALS_APP_CLIENT_ID' >/dev/null 2>&1; then
+  if gh api 'repos/{owner}/{repo}/actions/secrets/APPROVALS_APP_PRIVATE_KEY' >/dev/null 2>&1; then
+    echo "approvals workflow: runs with the GitHub App APPROVALS_APP_CLIENT_ID names"
+  else
+    echo "approvals workflow: APPROVALS_APP_CLIENT_ID is set but the secret APPROVALS_APP_PRIVATE_KEY is not, so every run fails; set it"
+  fi
+else
+  echo "approvals workflow: runs with github.token, so a merge it makes starts no push workflow on main;" \
+    "to change that, set the repo variable APPROVALS_APP_CLIENT_ID and the secret APPROVALS_APP_PRIVATE_KEY for a GitHub App" \
+    "with Contents, Pull requests and Commit statuses write and Issues, Checks and Actions read, installed on this repo"
+fi
 '''
 {% endif -%}
