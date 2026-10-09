@@ -206,6 +206,13 @@ applying alongside it. The task prints both settings' previous values and the
 deletes the `loop-merge-queue` ruleset, found by name; when it is already gone,
 there is nothing to do. If GitHub rejects the ruleset, the task stops before it
 changes the settings.
+Last, it runs the pack's `labels.py`, the labels' one definition: renames in
+place first (`bug`, `enhancement`, `chore` and `documentation` to their `kind:`
+names, and § Renamed labels in `docs/agents/issue-tracker.md`), so every issue
+keeps its label, then creates the loop's labels (states, `kind:`, sizes) and an
+`area:` label for each component the tracker lists, and deletes an unlisted
+label only once nothing carries it. `mise run setup:github --dry-run` prints that
+plan and writes nothing to GitHub: no ruleset, settings or labels.
 
 A project without CI, for example a private repo with GitHub Actions off, puts the
 line `CI: none` in `docs/agents/loop.md`. The merge approval then stops looking for
@@ -296,6 +303,27 @@ Updating to v0.7.0 moves the pack to `^0.15.0`. With the loop on:
   using an App raises the App's Issues permission to write and accepts it on the
   installation first, or the token step fails and `loop:approvals` never posts.
 - An optional `cap: <n>` line in loop.md changes the verifier's pass cap.
+
+Updating to v0.8.0 moves the pack to `^0.16.0`. With the loop on:
+
+- `mise run setup:github` ends by syncing the labels with the pack's
+  `labels.py`, and takes `--dry-run`, which prints the label plan and writes
+  nothing.
+- `docs/agents/issue-tracker.md` lists components as `area:<name>` labels, a new
+  project's seeded with its leaf's parts plus `area:tooling` and `area:docs`,
+  and gets an optional § Renamed labels. An existing tracker keeps its lines:
+  write each component as a bullet with its name in backticks, a bare name
+  being read as `area:<name>`, and each extra category the same way as
+  `kind:<name>`.
+- Run the sync once: `mise run agent:sync` for the 0.16.0 pack, then
+  `mise run setup:github --dry-run`, read the plan, and `mise run setup:github`.
+  Renames happen in place, so issues keep their labels, and a label still on an
+  issue is never deleted.
+
+Without mise, CI's `uv sync` becomes `uv sync --locked`, so a stale `uv.lock`
+fails CI there too. A new project gets its `uv.lock` at generation; an existing
+repo without mise that has none (dbt) runs `uv lock` and commits it before
+updating.
 
 ## Adopt an existing (pre-template) repo
 

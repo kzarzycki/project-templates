@@ -14,7 +14,7 @@ jobs:
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           enable-cache: true
-      - run: uv sync
+      - run: uv sync --locked
       - run: uv run dbt deps
       # `dbt parse` validates the project graph without a warehouse connection,
       # so CI stays green on a fresh repo. Wire `dbt build` / `dbt test` below

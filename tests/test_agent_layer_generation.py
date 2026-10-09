@@ -322,7 +322,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
             [
                 {
                     "git": "kzarzycki/agent-skills/engineering",
-                    "ref": "^0.15.0",
+                    "ref": "^0.16.0",
                 }
             ],
             yaml.safe_load(apm)["dependencies"]["apm"],
@@ -373,7 +373,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         manifest = (project / "apm.yml").read_text()
         answers = (project / ".copier-answers.yml").read_text()
         self.assertEqual(1, manifest.count("git: kzarzycki/agent-skills/engineering"))
-        self.assertIn("ref: ^0.15.0", manifest)
+        self.assertIn("ref: ^0.16.0", manifest)
         self.assertIn("include_engineering_workflow: true", answers)
         self.assertNotIn("engineering_capability_source", answers)
         self.assertNotIn("engineering_capability_ref", answers)
@@ -844,6 +844,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertIn("issues/$PR/labels/approved:merge", tasks["ci:approvals"]["run"])
         self.assertEqual("merge-queue", tasks["setup:github"]["alias"])
         self.assertIn("-F allow_auto_merge=true -F delete_branch_on_merge=true", tasks["setup:github"]["run"])
+        self.assertIn("labels=.agents/skills/engineering-loop/scripts/labels.py", tasks["setup:github"]["run"])
         self.assertIn(".worktrees/", (project / ".gitignore").read_text().splitlines())
         hooks = {
             hook["id"]: hook
@@ -882,7 +883,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
             ),
             (
                 "issue-tracker.md",
-                ("Components", "Never on GitHub", "Extra labels", "Extra categories"),
+                ("Components", "Never on GitHub", "Extra labels", "Extra categories", "Renamed labels"),
             ),
             ("coding-standards.md", ("Domain facts",)),
         ):
@@ -944,6 +945,17 @@ class AgentLayerGenerationTest(unittest.TestCase):
                     jobs["part"]["steps"][-1]["env"]["BASE_REF"],
                 )
                 yaml.safe_load((project / ".github/check-paths.yml").read_text())  # paths-filter reads it
+
+                # The tracker in the format the pack's labels.py reads: each component an `area:` label, as
+                # approvals.py `items` parses `## Components` (the first backticked name of each list item).
+                tracker = (project / "docs/agents/issue-tracker.md").read_text()
+                components = re.search(r"^## Components\n(.*?)(?=^## )", tracker, re.DOTALL | re.MULTILINE).group(1)
+                names = re.findall(r"^[ \t]*[-*] [^`\n]*`([^`\n]+)`\**:?[ \t]*(.*)$", components, re.MULTILINE)
+                self.assertGreater(len(names), 2)  # the leaf's own parts, then tooling and docs
+                self.assertEqual([], [name for name, text in names if not name.startswith("area:") or not text])
+                for heading in ("Extra labels", "Extra categories", "Renamed labels"):  # their prompts list nothing
+                    section = re.search(rf"^## {heading}\n(.*?)(?=^## |\Z)", tracker, re.DOTALL | re.MULTILINE).group(1)
+                    self.assertNotRegex(section, r"(?m)^[ \t]*[-*] ")
 
                 # Every step that runs a command runs a mise task: the task is the check's one definition.
                 for workflow in (project / ".github/workflows").glob("*.yml"):
@@ -1071,6 +1083,18 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertIn("rev: v6.0.0", (project / ".pre-commit-config.yaml").read_text())
         self.assertIn("pipx run pre-commit run --all-files", workflow)
         self.assertIn("uv run pytest --cov", workflow)
+        # a stale uv.lock fails CI rather than being rewritten (#31)
+        for leaf in (project, render("data/dbt", include_mise=False)):
+            steps = [step["run"] for job in yaml.safe_load((leaf / ".github/workflows/ci.yml").read_text())["jobs"].values()
+                     for step in job["steps"] if step.get("run", "").startswith("uv sync")]
+            self.assertEqual(["uv sync --locked"], steps, leaf)
+
+    def test_post_gen_locks_a_uv_project_outside_the_python_leaves(self) -> None:
+        # dbt resolves no language, so post-gen's uv sync skips it; CI's `uv sync --locked` needs the lock
+        project = render("data/dbt", include_mise=False)
+        env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+        subprocess.run(["bash", str(ROOT / "_post_gen.sh"), "data/dbt", "python"], cwd=project, env=env, check=True, capture_output=True)
+        self.assertTrue((project / "uv.lock").exists())
 
     def test_apm_version_has_one_template_source(self) -> None:
         partial = (ROOT / "templates/_base/_mise_agent_tasks.part").read_text()
