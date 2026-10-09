@@ -322,7 +322,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
             [
                 {
                     "git": "kzarzycki/agent-skills/engineering",
-                    "ref": "^0.13.0",
+                    "ref": "^0.13.1",
                 }
             ],
             yaml.safe_load(apm)["dependencies"]["apm"],
@@ -373,7 +373,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         manifest = (project / "apm.yml").read_text()
         answers = (project / ".copier-answers.yml").read_text()
         self.assertEqual(1, manifest.count("git: kzarzycki/agent-skills/engineering"))
-        self.assertIn("ref: ^0.13.0", manifest)
+        self.assertIn("ref: ^0.13.1", manifest)
         self.assertIn("include_engineering_workflow: true", answers)
         self.assertNotIn("engineering_capability_source", answers)
         self.assertNotIn("engineering_capability_ref", answers)
@@ -814,7 +814,22 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertIn("synchronize", on["pull_request"]["types"])
         self.assertIn("merge_group", on)
         self.assertEqual({"types": ["submitted", "dismissed"]}, on["pull_request_review"])  # the verdict is a review
-        self.assertIn("github.event_name == 'pull_request_review'", job["if"])
+        # A review event, like a PR event, never runs on a draft or for dependabot.
+        self.assertIn(
+            "((github.event_name == 'pull_request' || github.event_name == 'pull_request_review')"
+            " && !github.event.pull_request.draft && github.actor != 'dependabot[bot]')",
+            job["if"],
+        )
+        # The token is github.token unless the repo names a GitHub App, whose token gets this job's permissions.
+        app = next(step for step in job["steps"] if step.get("id") == "app")
+        self.assertEqual("${{ vars.APPROVALS_APP_CLIENT_ID != '' }}", app["if"])
+        self.assertEqual("${{ secrets.APPROVALS_APP_PRIVATE_KEY }}", app["with"]["private-key"])
+        self.assertEqual(
+            {name.removeprefix("permission-"): value for name, value in app["with"].items() if name.startswith("permission-")},
+            job["permissions"],
+        )
+        self.assertEqual("${{ steps.app.outputs.token || github.token }}", job["steps"][-1]["env"]["GH_TOKEN"])
+        self.assertIn("actions/variables/APPROVALS_APP_CLIENT_ID", tasks["setup:github"]["run"])
         ci_name = yaml.safe_load(workflow)["name"]
         self.assertEqual({"workflows": [ci_name], "types": ["completed"]}, on["workflow_run"])
         self.assertIn("context=loop:approvals", tasks["ci:approvals"]["run"])

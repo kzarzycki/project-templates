@@ -166,8 +166,24 @@ block: it catches a forgotten step, not a deliberate one.
 squash-merges it pinned to its head, or turns auto-merge on while only required
 checks are pending. It exits 0 once the PR merged or auto-merge is on, 1 on a
 missing proof (the PR is left untouched) and 3 while it waits: run it again. It
-runs as you, so its merge starts main's push workflows, which a merge caused by
-the workflow's `GITHUB_TOKEN` does not.
+runs as you, so a merge it makes starts main's push workflows.
+
+A draft that `loop:land` marks ready is usually merged by the approvals workflow,
+since CI's completion reaches the workflow before `land` runs again. GitHub starts
+no workflow for an event the workflow's `GITHUB_TOKEN` causes, so by default that
+merge starts no push workflow on main (CI's push run, Pages, tags). To have it
+start them, give the workflow a GitHub App's token:
+
+1. Create a GitHub App with repository permissions Contents: write, Pull requests:
+   write, Commit statuses: write, Issues: read and Checks: read, and install it on
+   the repo.
+2. Set the repo variable `APPROVALS_APP_CLIENT_ID` to the App's client ID and the
+   secret `APPROVALS_APP_PRIVATE_KEY` to a private key it generated
+   (`gh variable set`, `gh secret set`).
+
+With the variable set, the workflow runs everything with the App's token; without
+it, with `GITHUB_TOKEN`, as before. `mise run setup:github` prints which one the
+repo uses.
 
 Where GitHub offers rulesets and merge queues, main lands through a queue.
 Generated CI skips draft PRs (marking one ready starts it) and runs on every push
@@ -246,7 +262,7 @@ Updating to v0.5.0, with mise on:
 A repo that edited `mise.toml`, its hooks or its CI resolves those files once:
 a custom check becomes a `check:<name>` task.
 
-Updating to v0.6.0 moves the pack to `^0.13.0`. With the loop on:
+Updating to v0.6.0 moves the pack to `^0.13.1`. With the loop on:
 
 - Adds `mise run loop:land <pr>`, and the approvals workflow turns on auto-merge
   for a ready PR whose proofs hold; its job now needs `contents: write`.
@@ -258,6 +274,10 @@ Updating to v0.6.0 moves the pack to `^0.13.0`. With the loop on:
 - The verifier's verdict is a PR review; a verdict comment no longer counts.
 - The ruleset requires every review thread resolved: run
   `mise run setup:github` to update it.
+- The approvals workflow can run with a GitHub App's token, so the merges it
+  makes start main's push workflows: set `APPROVALS_APP_CLIENT_ID` and
+  `APPROVALS_APP_PRIVATE_KEY` (Engineering loop). Without them it runs with
+  `GITHUB_TOKEN`, as before.
 
 ## Adopt an existing (pre-template) repo
 

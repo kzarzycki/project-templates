@@ -246,9 +246,9 @@ case "$code" in
   *) post "$head" failure "${first:-loop:approvals exited $code}"; exit 1 ;;
 esac
 # Every proof holds on a ready PR (a draft returned above), so a PR made ready by hand lands with no agent
-# action. A request already there is left alone: loop:land's runs as a person, so its merge starts the
-# post-merge workflows, which a merge caused by this job's github.token does not. Pinned to the head the
-# proofs covered; gh merges at once when nothing is pending.
+# action. A request already there is left alone. The merge this makes starts main's push workflows only
+# when the workflow runs with a GitHub App's token (APPROVALS_APP_CLIENT_ID), not with github.token.
+# Pinned to the head the proofs covered; gh merges at once when nothing is pending.
 if [ "$(printf '%s' "$pull" | cut -f4)" = true ]; then echo "ci:approvals: PR #$PR already has auto-merge on; left as is"; exit 0; fi
 gh pr merge "$PR" --auto --squash --match-head-commit "$head" || {
   echo "::error::ci:approvals: could not turn on auto-merge for PR #$PR at $head; loop:approvals is still success, so mise run loop:land $PR lands it"
@@ -287,5 +287,12 @@ delete="$(gh api 'repos/{owner}/{repo}' --jq .delete_branch_on_merge)"
 gh api -X PATCH 'repos/{owner}/{repo}' -F allow_auto_merge=true -F delete_branch_on_merge=true >/dev/null
 echo "allow_auto_merge was $auto, delete_branch_on_merge was $delete, both now true; restore: gh api -X PATCH 'repos/{owner}/{repo}' -F allow_auto_merge=$auto -F delete_branch_on_merge=$delete"
 echo "revert the ruleset: mise run setup:github --revert"
+# The approvals workflow's token: a merge it makes starts main's push workflows only with an App's.
+if gh api 'repos/{owner}/{repo}/actions/variables/APPROVALS_APP_CLIENT_ID' >/dev/null 2>&1; then
+  echo "approvals workflow: runs with the GitHub App APPROVALS_APP_CLIENT_ID names"
+else
+  echo "approvals workflow: runs with github.token, so a merge it makes starts no push workflow on main;" \
+    "to change that, set the repo variable APPROVALS_APP_CLIENT_ID and the secret APPROVALS_APP_PRIVATE_KEY (README, Merge approvals)"
+fi
 '''
 {% endif -%}
