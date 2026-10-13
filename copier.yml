@@ -73,6 +73,12 @@ engineering_loop:
   when: "{{ include_mise and include_agent_layer and include_engineering_workflow }}"
   help: Turn the engineering loop on (a line in AGENTS.md and the docs/agents/ files it reads)?
 
+merge_queue:
+  type: bool
+  default: true
+  when: "{{ include_mise and include_agent_layer and include_engineering_workflow and engineering_loop }}"
+  help: Land main through a merge queue? GitHub offers one only on organization-owned repos.
+
 include_fnox:
   type: bool
   default: true

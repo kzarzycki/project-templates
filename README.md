@@ -195,11 +195,15 @@ queue entry against the queue's base. With the loop on,
 `.github/rulesets/main.json` is the `loop-merge-queue` ruleset on main: changes
 only through a squashed PR with every review thread resolved, no bypass, and a merge queue (squash, all-green
 grouping) that requires exactly two names, CI's `check` job and the
-`loop:approvals` status. `mise run setup:github` (alias `merge-queue`) creates
+`loop:approvals` status. GitHub offers merge queues only on organization-owned
+repos, so a user-owned repo answers `merge_queue=false`: the ruleset then has no
+queue and keeps every other rule, and auto-merge lands the PR once both names
+are green. Its name stays `loop-merge-queue`, since `setup:github` finds its
+ruleset by that name. `mise run setup:github` (alias `merge-queue`) creates
 that ruleset on GitHub, or updates it if one with that name exists, and sets
 the repository's `allow_auto_merge` and `delete_branch_on_merge` to true, so
 `mise run loop:land <n>` (or the approvals workflow) queues the PR once both
-names are green and its branch is deleted after the merge. It never reads or changes another ruleset: GitHub
+names are green, or without a queue merges it, and its branch is deleted after the merge. It never reads or changes another ruleset: GitHub
 applies every active ruleset on a branch, so the repo's own rules on main keep
 applying alongside it. The task prints both settings' previous values and the
 `gh api -X PATCH` command that restores them. `mise run setup:github --revert`
@@ -326,6 +330,11 @@ Updating to v0.8.0 moves the pack to `^0.16.0`. With the loop on:
   Renames happen in place, so issues keep their labels, and a label still on an
   issue is never deleted.
 
+The next release asks `merge_queue` (default true) with the loop on. A
+user-owned repo, where GitHub rejected the ruleset's merge queue and
+`setup:github` stopped before any change, answers false and runs
+`mise run setup:github` again. With the default the ruleset is byte-identical.
+
 Updating to the next release asks `include_ci` (default true; with it true
 nothing changes). Answering false, with the loop on:
 
@@ -333,7 +342,7 @@ nothing changes). Answering false, with the loop on:
   `.github/check-paths.yml`, and `mise.toml` loses `ci:parts` and `ci:check`.
   An update doesn't delete the files an earlier version wrote: delete them by
   hand. Every other workflow is left as it is.
-- The approvals workflow reruns on a PR comment opening with
+- The approvals workflow reruns on a PR comment whose first line is
   `Local check passed` (the record `approvals.py local-ci` posts) instead of on
   CI's completion.
 - The ruleset requires only `loop:approvals`: run `mise run setup:github` to
