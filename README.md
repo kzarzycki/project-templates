@@ -214,14 +214,20 @@ keeps its label, then creates the loop's labels (states, `kind:`, sizes) and an
 label only once nothing carries it. `mise run setup:github --dry-run` prints that
 plan and writes nothing to GitHub: no ruleset, settings or labels.
 
-A project without CI, for example a private repo with GitHub Actions off, puts the
-line `CI: none` in `docs/agents/loop.md`. The merge approval then stops looking for
+A project without CI, for example a private repo with GitHub Actions off or one
+whose own workflows only release, answers `include_ci=false`. It then gets no CI
+workflow and no `.github/check-paths.yml`, and no `ci:parts` or `ci:check` task;
+no workflow but `approvals.yml` is written, so the repo's own workflows stay as
+they are. The ruleset requires only `loop:approvals`, and the seeded
+`docs/agents/loop.md` has the line `CI: none`. The merge approval then stops looking for
 a green `check`. Its proof instead is
 `python3 .agents/skills/engineering-loop/scripts/approvals.py local-ci <pr>`, run
 on a clean checkout at the PR's head commit. It runs `mise run check` there and,
 when the check passes without changing the tree, posts `Local check passed` with
 that head on the PR. So anything the project's CI enforced has to be in
 `mise run check` too, or it stops being enforced.
+The approvals workflow then reruns on that comment instead of on CI's completion,
+so `loop:approvals` turns green with no other event.
 
 ## Use it via Claude
 
@@ -319,6 +325,21 @@ Updating to v0.8.0 moves the pack to `^0.16.0`. With the loop on:
   `mise run setup:github --dry-run`, read the plan, and `mise run setup:github`.
   Renames happen in place, so issues keep their labels, and a label still on an
   issue is never deleted.
+
+Updating to the next release asks `include_ci` (default true; with it true
+nothing changes). Answering false, with the loop on:
+
+- Copier no longer writes `.github/workflows/ci.yml` or
+  `.github/check-paths.yml`, and `mise.toml` loses `ci:parts` and `ci:check`.
+  An update doesn't delete the files an earlier version wrote: delete them by
+  hand. Every other workflow is left as it is.
+- The approvals workflow reruns on a PR comment opening with
+  `Local check passed` (the record `approvals.py local-ci` posts) instead of on
+  CI's completion.
+- The ruleset requires only `loop:approvals`: run `mise run setup:github` to
+  update it.
+- An existing `docs/agents/loop.md` is the project's and keeps its lines: add
+  the line `CI: none` to it.
 
 Without mise, CI's `uv sync` becomes `uv sync --locked`, so a stale `uv.lock`
 fails CI there too. A new project gets its `uv.lock` at generation; an existing

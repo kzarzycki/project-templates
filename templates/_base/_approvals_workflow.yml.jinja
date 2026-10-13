@@ -1,8 +1,11 @@
 # The loop's merge approvals: posts `mise run loop:approvals merge`'s result as the
 # `loop:approvals` commit status on the PR head, which main's ruleset requires: pending while
-# it waits for CI's `check` or the owner's approved:merge on a high-risk PR, failure when a proof is
+{% if include_ci %}# it waits for CI's `check` or the owner's approved:merge on a high-risk PR, failure when a proof is
 # missing, success once every proof holds. It reruns when a label or the PR body changes and
-# when CI completes; a push removes approved:merge. On success on a ready PR with no auto-merge
+# when CI completes; a push removes approved:merge.{% else %}# it waits for the owner's approved:merge on a high-risk PR, failure when a proof is missing (with
+# loop.md `CI: none`, approvals.py local-ci's `Local check passed` record on the head), success once
+# every proof holds. It reruns when a label or the PR body changes and when local-ci posts its
+# record; a push removes approved:merge.{% endif %} On success on a ready PR with no auto-merge
 # request, it turns auto-merge on, pinned to the head, so a PR made ready by hand lands with no
 # agent action; it never replaces a request `mise run loop:land` made. The job itself is named
 # `approvals`, so its own check run never stands in for the status.
@@ -16,27 +19,38 @@ on:
   # The verifier's verdict is a review: a new or dismissed one updates the status.
   pull_request_review:
     types: [submitted, dismissed]
-  # A green `check` updates the status without a new push. This runs main's copy of the
+{% if include_ci %}  # A green `check` updates the status without a new push. This runs main's copy of the
   # workflow and checks out main, never the PR's code.
   workflow_run: # zizmor: ignore[dangerous-triggers]
     workflows: [CI]
     types: [completed]
-  # The queue's commit gets success: a PR is queued only once its status was green.
+{% else %}  # approvals.py local-ci's record, a PR comment, updates the status without a new push. This
+  # runs main's copy of the workflow and checks out main, never the PR's code.
+  issue_comment:
+    types: [created]
+{% endif %}  # The queue's commit gets success: a PR is queued only once its status was green.
   merge_group:
 
 permissions: {}
 
 concurrency:
-  group: {% raw %}approvals-${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number || github.sha }}{% endraw %}
-  cancel-in-progress: true
+{% if include_ci %}  group: {% raw %}approvals-${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number || github.sha }}{% endraw %}
+{% else %}  group: {% raw %}approvals-${{ github.event.pull_request.number || github.event.issue.number || github.sha }}{% endraw %}
+{% endif %}  cancel-in-progress: true
 
 jobs:
   approvals:
-    # A dependabot PR's own run has a read-only token; its status comes from the CI completion run.
+{% if include_ci %}    # A dependabot PR's own run has a read-only token; its status comes from the CI completion run.
     if: >-
       {% raw %}${{ github.event_name == 'merge_group'
       || ((github.event_name == 'pull_request' || github.event_name == 'pull_request_review') && !github.event.pull_request.draft && github.actor != 'dependabot[bot]')
-      || (github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request') }}{% endraw %}
+      || (github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request') }}{% endraw %}{% else %}    # A dependabot PR's own run has a read-only token; its status comes from a local-ci record on it.
+    # A comment counts only on a PR and when it opens with the record's first line; the gate reads
+    # the record itself.
+    if: >-
+      {% raw %}${{ github.event_name == 'merge_group'
+      || ((github.event_name == 'pull_request' || github.event_name == 'pull_request_review') && !github.event.pull_request.draft && github.actor != 'dependabot[bot]')
+      || (github.event_name == 'issue_comment' && github.event.issue.pull_request && startsWith(github.event.comment.body, 'Local check passed')) }}{% endraw %}{% endif %}
     runs-on: ubuntu-latest
     permissions:
       contents: write # turns on auto-merge, or merges when nothing is pending
@@ -69,7 +83,7 @@ jobs:
           GH_TOKEN: {% raw %}${{ steps.app.outputs.token || github.token }}{% endraw %}
           EVENT: {% raw %}${{ github.event_name }}{% endraw %}
           ACTION: {% raw %}${{ github.event.action }}{% endraw %}
-          PR: {% raw %}${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number }}{% endraw %}
+{% if include_ci %}          PR: {% raw %}${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number }}{% endraw %}{% else %}          PR: {% raw %}${{ github.event.pull_request.number || github.event.issue.number }}{% endraw %}{% endif %}
           QUEUE_HEAD: {% raw %}${{ github.event.merge_group.head_sha }}{% endraw %}
           RUN_URL: {% raw %}${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}{% endraw %}
           MISE_TASK_RUN_AUTO_INSTALL: "false"

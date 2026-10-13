@@ -19,7 +19,7 @@ MISE = shutil.which("mise")
 assert MISE is not None
 
 
-def render(project_type: str = "software/python", **answers: object) -> Path:
+def render(project_type: str = "software/python", existing: dict[str, bytes] | None = None, **answers: object) -> Path:
     scratch = Path(tempfile.mkdtemp(prefix="project-template-test-"))
     atexit.register(shutil.rmtree, scratch, True)
     template = scratch / "template"
@@ -40,6 +40,9 @@ def render(project_type: str = "software/python", **answers: object) -> Path:
         ),
     )
     destination = scratch / "project"
+    for name, content in (existing or {}).items():  # the repo's own files, there before the render
+        (destination / name).parent.mkdir(parents=True, exist_ok=True)
+        (destination / name).write_bytes(content)
     command = [
         "copier",
         "copy",
@@ -1044,6 +1047,53 @@ class AgentLayerGenerationTest(unittest.TestCase):
                     "engineering-loop",
                     (project / ".apm/instructions/project.instructions.md").read_text(),
                 )
+
+    def test_without_ci_only_approvals_is_written_and_merges_wait_for_it_alone(self) -> None:
+        ship = b"name: Ship\non: workflow_dispatch\njobs: {}\n"  # the repo's own workflow, not valid for any linter
+        project = render(existing={".github/workflows/ship.yml": ship}, include_ci=False)
+
+        self.assertEqual(ship, (project / ".github/workflows/ship.yml").read_bytes())
+        self.assertEqual(["approvals.yml", "ship.yml"], sorted(path.name for path in (project / ".github/workflows").iterdir()))
+        self.assertFalse((project / ".github/check-paths.yml").exists())
+        self.assertTrue((project / ".github/dependabot.yml").exists())  # not CI
+        tasks = tomllib.loads((project / "mise.toml").read_text())["tasks"]
+        self.assertEqual(set(), {"ci:parts", "ci:check"} & set(tasks))
+        self.assertIn("ci:approvals", tasks)
+
+        ruleset = json.loads((project / ".github/rulesets/main.json").read_text())
+        [checks] = [rule["parameters"] for rule in ruleset["rules"] if rule["type"] == "required_status_checks"]
+        self.assertEqual([{"context": "loop:approvals"}], checks["required_status_checks"])
+        # The pack's approvals.py reads this line as no CI (NO_CI) and then wants its local-ci record.
+        self.assertIn("CI: none", (project / "docs/agents/loop.md").read_text().splitlines())
+
+        # The approvals workflow reruns on local-ci's record, a PR comment, instead of on CI's completion.
+        text = (project / ".github/workflows/approvals.yml").read_text()
+        approvals = yaml.safe_load(text)
+        on = approvals[True]  # PyYAML reads `on` as True
+        self.assertNotIn("workflow_run", on)
+        self.assertEqual({"types": ["created"]}, on["issue_comment"])
+        job = approvals["jobs"]["approvals"]
+        self.assertIn(
+            "(github.event_name == 'issue_comment' && github.event.issue.pull_request"
+            " && startsWith(github.event.comment.body, 'Local check passed'))",
+            job["if"],
+        )
+        self.assertEqual("${{ github.event.pull_request.number || github.event.issue.number }}", job["steps"][-1]["env"]["PR"])
+        self.assertEqual(
+            "approvals-${{ github.event.pull_request.number || github.event.issue.number || github.sha }}",
+            approvals["concurrency"]["group"],
+        )
+        self.assertNotIn("workflow_run", text)
+
+        # The project's own workflow linters, at its pinned versions, pass the rendered workflow.
+        tools = tomllib.loads((project / "mise.toml").read_text())["tools"]
+        for linter in ("actionlint", "zizmor"):
+            with self.subTest(linter=linter):
+                result = subprocess.run(
+                    [MISE, "exec", f"{linter}@{tools[linter]}", "--", linter, ".github/workflows/approvals.yml"],
+                    cwd=project, capture_output=True, text=True,
+                )
+                self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
     def test_regeneration_keeps_filled_docs_agents_files(self) -> None:
         project = render()
