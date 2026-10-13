@@ -39,6 +39,13 @@ def fake_executable(directory: Path, name: str) -> None:
             '[ -n "${FAKE_APM_AUDIT_JSON:-}" ]; then\n'
             '  printf "%s" "$FAKE_APM_AUDIT_JSON"\n'
             "fi\n"
+            # A release deployed over an edited file, then the update fails or its caller dies.
+            'if [ "${1:-}" = "update" ] && '
+            '[ -n "${FAKE_APM_UPDATE_WRITES:-}" ]; then\n'
+            '  printf "new release\\n" > "$FAKE_APM_UPDATE_WRITES"\n'
+            '  if [ -n "${FAKE_APM_UPDATE_KILLS_CALLER:-}" ]; then kill -9 "$PPID"; fi\n'
+            '  exit "${FAKE_APM_UPDATE_EXIT:-0}"\n'
+            "fi\n"
         )
     path.write_text(script)
     path.chmod(0o755)
@@ -350,6 +357,61 @@ class AgentMiseTasksTest(unittest.TestCase):
 
         self.assertEqual(1, result.returncode, result.stderr)
         self.assertIn(f"{path} differs from the pack's copy", result.stderr)
+
+    def edited_skill(self) -> tuple[str, Path]:
+        path = ".claude/skills/wayfinder/SKILL.md"
+        self.drift(path)
+        skill = self.project / path
+        skill.parent.mkdir(parents=True)
+        skill.write_text("edited\n")
+        self.env["FAKE_APM_UPDATE_WRITES"] = str(skill)
+        return path, skill
+
+    def test_intake_refresh_puts_the_edits_back_when_the_update_fails_after_deploying(self) -> None:
+        self.use_vendored_project()
+        path, skill = self.edited_skill()
+        self.env["FAKE_APM_UPDATE_EXIT"] = "7"
+
+        result = self.run_task("agent:intake", "--refresh")
+
+        self.assertEqual(1, result.returncode, result.stderr)
+        self.assertIn("apm update failed; the edits are put back and the patches are saved", result.stderr)
+        self.assertEqual("edited\n", skill.read_text())
+        self.assertTrue((self.project / ".agent-intake" / f"{path}.patch").is_file())
+        self.assertFalse((self.project / ".agent-intake/saved.json").exists())
+
+    def test_intake_refresh_keeps_the_edits_on_disk_through_an_interrupted_update(self) -> None:
+        self.use_vendored_project()
+        path, skill = self.edited_skill()
+        saved = self.project / ".agent-intake/saved.json"
+
+        for retry in ((), ("--refresh",)):
+            with self.subTest(retry=retry):
+                skill.write_text("edited\n")
+                self.env["FAKE_APM_UPDATE_KILLS_CALLER"] = "1"
+
+                interrupted = self.run_task("agent:intake", "--refresh")
+
+                self.assertNotEqual(0, interrupted.returncode)
+                self.assertEqual("new release\n", skill.read_text())
+                self.assertTrue(saved.is_file())
+
+                del self.env["FAKE_APM_UPDATE_KILLS_CALLER"]
+                self.log.unlink()
+                refused = self.run_task("agent:sync")
+
+                self.assertEqual(1, refused.returncode, refused.stderr)
+                self.assertIn("interrupted 'agent:intake --refresh'", refused.stderr)
+                self.assertEqual([], self.commands())
+                self.assertTrue(saved.is_file())
+
+                retried = self.run_task("agent:intake", *retry)
+
+                self.assertEqual(1, retried.returncode, retried.stderr)
+                self.assertIn(f"put back the edits an interrupted --refresh saved: {path}", retried.stdout)
+                self.assertEqual("edited\n", skill.read_text())
+                self.assertTrue((self.project / ".agent-intake" / f"{path}.patch").is_file())
+                self.assertFalse(saved.exists())
 
     def test_check_unit_measures_changed_lines_against_the_commit_ci_passes(self) -> None:
         for name in ("uv",):

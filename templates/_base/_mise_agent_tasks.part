@@ -126,8 +126,10 @@ mode=intake
 if [ "${usage_refresh:-false}" = true ]; then mode=refresh; fi
 if [ "${usage_check:-false}" = true ]; then mode=check; fi
 python3 - "$mode" <<'PY'
+import base64
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -138,6 +140,9 @@ mode = sys.argv[1]
 INTAKE = Path(".agent-intake")
 # Each line is "<sha256 of the edited file>  <path>": the edits intake has taken in.
 LEDGER = INTAKE / "intaken"
+# The edited files' bytes (base64, null for a deleted file), on disk before apm update can
+# overwrite them. Its presence means a --refresh did not finish: the next intake puts them back.
+SAVED = INTAKE / "saved.json"
 
 
 def fail(message):
@@ -176,30 +181,71 @@ def patches():
     return sorted(patch.relative_to(INTAKE).as_posix().removesuffix(".patch") for patch in INTAKE.rglob("*.patch"))
 
 
+def save(paths):
+    INTAKE.mkdir(exist_ok=True)
+    encoded = {path: None if (data := content(Path(path))) is None else base64.b64encode(data).decode() for path in paths}
+    staged = INTAKE / "saved.json.tmp"
+    with staged.open("w") as file:
+        json.dump(encoded, file)
+        file.flush()
+        os.fsync(file.fileno())
+    os.replace(staged, SAVED)
+
+
+def saved():
+    if not SAVED.is_file():
+        return {}
+    return {path: None if data is None else base64.b64decode(data) for path, data in json.loads(SAVED.read_text()).items()}
+
+
+# Puts each saved edit back, then lets the saved copy go: the tree holds the edits again.
+def restore(edits):
+    for path, edited in edits.items():
+        target = Path(path)
+        if content(target) == edited:
+            continue
+        if edited is None:
+            target.unlink()
+        else:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(edited)
+    SAVED.unlink(missing_ok=True)
+
+
 def write_patches(paths):
-    shutil.rmtree(INTAKE, ignore_errors=True)
-    if not paths:
-        return
-    # The pack's copy: what an install would deploy, written to a scratch root so the tree keeps its edits.
-    pristine = Path(tempfile.mkdtemp(prefix="agent-intake-"))
-    try:
-        shutil.copy("apm.lock.yaml", pristine)
-        install = subprocess.run(["apm", "install", "--frozen", "--root", str(pristine)], capture_output=True, text=True)
-        if install.returncode != 0:
-            fail(f"could not install the pack's copy:\\n{install.stdout}{install.stderr}")
-        for path in paths:
-            patch = INTAKE / f"{path}.patch"
-            patch.parent.mkdir(parents=True, exist_ok=True)
-            old, new = pristine / path, Path(path)
-            diff = subprocess.run(
-                ["diff", "-u", "--label", f"a/{path}", "--label", f"b/{path}",
-                 str(old) if old.is_file() else "/dev/null", str(new) if new.is_file() else "/dev/null"],
-                capture_output=True,
-            )
-            patch.write_bytes(diff.stdout)
-    finally:
-        shutil.rmtree(pristine, ignore_errors=True)
-    LEDGER.write_text("".join(f"{digest(Path(path))}  {path}\\n" for path in paths))
+    diffs = {}
+    if paths:
+        # The pack's copy: what an install would deploy, written to a scratch root so the tree keeps its edits.
+        pristine = Path(tempfile.mkdtemp(prefix="agent-intake-"))
+        try:
+            shutil.copy("apm.lock.yaml", pristine)
+            install = subprocess.run(["apm", "install", "--frozen", "--root", str(pristine)], capture_output=True, text=True)
+            if install.returncode != 0:
+                fail(f"could not install the pack's copy:\\n{install.stdout}{install.stderr}")
+            for path in paths:
+                old, new = pristine / path, Path(path)
+                diff = subprocess.run(
+                    ["diff", "-u", "--label", f"a/{path}", "--label", f"b/{path}",
+                     str(old) if old.is_file() else "/dev/null", str(new) if new.is_file() else "/dev/null"],
+                    capture_output=True,
+                )
+                if diff.returncode not in (0, 1):
+                    fail(f"diff of {path} failed:\\n{diff.stderr.decode()}")
+                diffs[path] = diff.stdout
+        finally:
+            shutil.rmtree(pristine, ignore_errors=True)
+    # The old patches go only once every new one is in hand.
+    for path in patches():
+        (INTAKE / f"{path}.patch").unlink()
+    LEDGER.unlink(missing_ok=True)
+    for path, diff in diffs.items():
+        patch = INTAKE / f"{path}.patch"
+        patch.parent.mkdir(parents=True, exist_ok=True)
+        patch.write_bytes(diff)
+    if diffs:
+        LEDGER.write_text("".join(f"{digest(Path(path))}  {path}\\n" for path in diffs))
+    elif not SAVED.exists():
+        shutil.rmtree(INTAKE, ignore_errors=True)
 
 
 def report():
@@ -212,6 +258,9 @@ def report():
 
 
 if mode == "check":
+    if SAVED.is_file():
+        print(f"agent:sync: {SAVED} holds edits an interrupted 'agent:intake --refresh' saved", file=sys.stderr)
+        fail("run 'mise run agent:intake' to put them back, then port or drop each patch")
     seen = ledger()
     unseen = [path for path in drifted() if seen.get(path) != digest(Path(path))]
     for path in unseen:
@@ -222,21 +271,23 @@ if mode == "check":
         fail("run 'mise run agent:intake', then port or drop each patch")
     sys.exit(0)
 
+interrupted = saved()
+if interrupted:
+    restore(interrupted)
+    print(f"agent:intake: put back the edits an interrupted --refresh saved: {', '.join(interrupted)}")
 edits = drifted()
 write_patches(edits)
 if mode == "refresh":
-    saved = {path: content(Path(path)) for path in edits}
+    if edits:
+        save(edits)
     if subprocess.run(["apm", "update", "--yes"]).returncode != 0:
-        fail("apm update failed; the patches are saved and the edits are in place")
-    for path, edited in saved.items():
-        target = Path(path)
-        if content(target) == edited:
+        restore(saved())
+        fail("apm update failed; the edits are put back and the patches are saved")
+    edited = saved()
+    for path, data in edited.items():
+        if content(Path(path)) == data:
             print(f"resolved: the release carries the edit to {path}")
-        elif edited is None:
-            target.unlink(missing_ok=True)
-        else:
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(edited)
+    restore(edited)
     write_patches(drifted())
 report()
 PY
