@@ -159,8 +159,13 @@ scratch directory so the tree keeps its edits. Each patch ends one of two ways:
   copy. An edit made after intake ran needs intake again.
 
 `--refresh` writes each edited file's bytes to `.agent-intake/saved.json`
-before `apm update` runs. A failed update puts the edits back. After an
-interrupted one, `agent:sync` refuses and the next `agent:intake` puts them back.
+before `apm update` runs, and the hash of what the update deployed once it
+finishes. A failed update puts the edits back. After an interrupted one,
+`agent:sync` refuses and the next `agent:intake` puts back each edit whose file
+still holds what the update deployed. Any other file may hold a newer edit, so
+it is left as is, the saved edit goes to `.agent-intake/<path>.saved`, and
+intake exits 1 until you keep one: move the `.saved` file over the original (or
+port it into the pack first), or delete it to keep the current file.
 
 Copier does not install APM or fnox, contact a secret provider, compile coding
 agent configuration, or launch a coding agent. `mise install` installs the

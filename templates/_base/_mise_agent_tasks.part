@@ -140,8 +140,9 @@ mode = sys.argv[1]
 INTAKE = Path(".agent-intake")
 # Each line is "<sha256 of the edited file>  <path>": the edits intake has taken in.
 LEDGER = INTAKE / "intaken"
-# The edited files' bytes (base64, null for a deleted file), on disk before apm update can
-# overwrite them. Its presence means a --refresh did not finish: the next intake puts them back.
+# Per edited file: its bytes ("edit", base64, null for a deleted file), on disk before apm update can
+# overwrite them, and the hash of what the update deployed ("deployed", null until it finished).
+# Its presence means a --refresh did not finish: the next intake puts the edits back.
 SAVED = INTAKE / "saved.json"
 
 
@@ -181,9 +182,10 @@ def patches():
     return sorted(patch.relative_to(INTAKE).as_posix().removesuffix(".patch") for patch in INTAKE.rglob("*.patch"))
 
 
-def save(paths):
+def save(entries):
     INTAKE.mkdir(exist_ok=True)
-    encoded = {path: None if (data := content(Path(path))) is None else base64.b64encode(data).decode() for path in paths}
+    encoded = {path: {**entry, "edit": None if entry["edit"] is None else base64.b64encode(entry["edit"]).decode()}
+               for path, entry in entries.items()}
     staged = INTAKE / "saved.json.tmp"
     with staged.open("w") as file:
         json.dump(encoded, file)
@@ -195,21 +197,50 @@ def save(paths):
 def saved():
     if not SAVED.is_file():
         return {}
-    return {path: None if data is None else base64.b64decode(data) for path, data in json.loads(SAVED.read_text()).items()}
+    return {path: {**entry, "edit": None if entry["edit"] is None else base64.b64decode(entry["edit"])}
+            for path, entry in json.loads(SAVED.read_text()).items()}
 
 
-# Puts each saved edit back, then lets the saved copy go: the tree holds the edits again.
-def restore(edits):
-    for path, edited in edits.items():
-        target = Path(path)
-        if content(target) == edited:
-            continue
-        if edited is None:
-            target.unlink()
+def put(target, data):
+    if data is None:
+        target.unlink(missing_ok=True)
+    else:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+
+
+# Puts each saved edit back over the bytes the update deployed, and only over those: a file that
+# differs from them (or whose update never finished) may hold a newer edit, so both versions stay
+# on disk and saved.json stays until each is resolved.
+def recover():
+    entries = saved()
+    conflicts = []
+    for path, entry in entries.items():
+        target, kept = Path(path), INTAKE / f"{path}.saved"
+        if content(target) == entry["edit"]:
+            pass
+        elif entry["deployed"] is not None and digest(target) == entry["deployed"]:
+            put(target, entry["edit"])
+        elif entry.get("kept") and not kept.exists():
+            pass  # its saved copy was deleted: the file as it is now wins
         else:
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(edited)
+            if not entry.get("kept"):
+                put(kept, entry["edit"] or b"")
+                entry["kept"] = True
+            conflicts.append(path)
+            continue
+        kept.unlink(missing_ok=True)
+    if conflicts:
+        save({path: entries[path] for path in conflicts})
+        for path in conflicts:
+            saved_edit = (f"the interrupted run's edit deletes it ({INTAKE}/{path}.saved marks it)"
+                          if entries[path]["edit"] is None else f"the interrupted run's edit is {INTAKE}/{path}.saved")
+            print(f"agent:intake: {path} changed after an interrupted --refresh: the file keeps its current bytes; {saved_edit}",
+                  file=sys.stderr)
+        fail("keep one version of each: put the saved edit in place of the file (or port it into the pack first), "
+             "or delete the .saved file to keep the current one; then run 'mise run agent:intake' again")
     SAVED.unlink(missing_ok=True)
+    return list(entries)
 
 
 def write_patches(paths):
@@ -271,23 +302,31 @@ if mode == "check":
         fail("run 'mise run agent:intake', then port or drop each patch")
     sys.exit(0)
 
-interrupted = saved()
-if interrupted:
-    restore(interrupted)
-    print(f"agent:intake: put back the edits an interrupted --refresh saved: {', '.join(interrupted)}")
+if SAVED.is_file():
+    print(f"agent:intake: put back the edits an interrupted --refresh saved: {', '.join(recover())}")
 edits = drifted()
 write_patches(edits)
 if mode == "refresh":
     if edits:
-        save(edits)
-    if subprocess.run(["apm", "update", "--yes"]).returncode != 0:
-        restore(saved())
+        save({path: {"edit": content(Path(path)), "deployed": None} for path in edits})
+    try:
+        updated = subprocess.run(["apm", "update", "--yes"]).returncode == 0
+    except KeyboardInterrupt:
+        updated = False
+    entries = saved()
+    if not updated:
+        # This run's own update wrote the bytes on disk: put each edit back over them.
+        for path, entry in entries.items():
+            put(Path(path), entry["edit"])
+        SAVED.unlink(missing_ok=True)
         fail("apm update failed; the edits are put back and the patches are saved")
-    edited = saved()
-    for path, data in edited.items():
-        if content(Path(path)) == data:
+    for path, entry in entries.items():
+        entry["deployed"] = digest(Path(path))
+        if content(Path(path)) == entry["edit"]:
             print(f"resolved: the release carries the edit to {path}")
-    restore(edited)
+    if entries:
+        save(entries)
+        recover()
     write_patches(drifted())
 report()
 PY

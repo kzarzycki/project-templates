@@ -380,38 +380,87 @@ class AgentMiseTasksTest(unittest.TestCase):
         self.assertTrue((self.project / ".agent-intake" / f"{path}.patch").is_file())
         self.assertFalse((self.project / ".agent-intake/saved.json").exists())
 
+    def test_intake_refresh_puts_the_edits_back_over_the_release_it_deployed(self) -> None:
+        self.use_vendored_project()
+        path, skill = self.edited_skill()
+
+        result = self.run_task("agent:intake", "--refresh")
+
+        self.assertEqual(1, result.returncode, result.stderr)
+        self.assertEqual("edited\n", skill.read_text())
+        self.assertTrue((self.project / ".agent-intake" / f"{path}.patch").is_file())
+        self.assertFalse((self.project / ".agent-intake/saved.json").exists())
+
+    def interrupted_refresh(self) -> Path:
+        self.env["FAKE_APM_UPDATE_KILLS_CALLER"] = "1"
+        interrupted = self.run_task("agent:intake", "--refresh")
+        del self.env["FAKE_APM_UPDATE_KILLS_CALLER"]
+        saved = self.project / ".agent-intake/saved.json"
+        self.assertNotEqual(0, interrupted.returncode)
+        self.assertTrue(saved.is_file())
+        return saved
+
     def test_intake_refresh_keeps_the_edits_on_disk_through_an_interrupted_update(self) -> None:
         self.use_vendored_project()
         path, skill = self.edited_skill()
-        saved = self.project / ".agent-intake/saved.json"
+        kept = self.project / ".agent-intake" / f"{path}.saved"
+        saved = self.interrupted_refresh()
+        self.assertEqual("new release\n", skill.read_text())
 
+        self.log.unlink()
+        refused = self.run_task("agent:sync")
+
+        self.assertEqual(1, refused.returncode, refused.stderr)
+        self.assertIn("interrupted 'agent:intake --refresh'", refused.stderr)
+        self.assertEqual([], self.commands())
+        self.assertTrue(saved.is_file())
+
+        # The update never finished, so nothing shows the file still holds only what it deployed.
         for retry in ((), ("--refresh",)):
             with self.subTest(retry=retry):
-                skill.write_text("edited\n")
-                self.env["FAKE_APM_UPDATE_KILLS_CALLER"] = "1"
-
-                interrupted = self.run_task("agent:intake", "--refresh")
-
-                self.assertNotEqual(0, interrupted.returncode)
-                self.assertEqual("new release\n", skill.read_text())
-                self.assertTrue(saved.is_file())
-
-                del self.env["FAKE_APM_UPDATE_KILLS_CALLER"]
-                self.log.unlink()
-                refused = self.run_task("agent:sync")
-
-                self.assertEqual(1, refused.returncode, refused.stderr)
-                self.assertIn("interrupted 'agent:intake --refresh'", refused.stderr)
-                self.assertEqual([], self.commands())
-                self.assertTrue(saved.is_file())
+                self.log.unlink(missing_ok=True)
 
                 retried = self.run_task("agent:intake", *retry)
 
                 self.assertEqual(1, retried.returncode, retried.stderr)
-                self.assertIn(f"put back the edits an interrupted --refresh saved: {path}", retried.stdout)
-                self.assertEqual("edited\n", skill.read_text())
-                self.assertTrue((self.project / ".agent-intake" / f"{path}.patch").is_file())
-                self.assertFalse(saved.exists())
+                self.assertIn(f"{path} changed after an interrupted --refresh", retried.stderr)
+                self.assertIn(f".agent-intake/{path}.saved", retried.stderr)
+                self.assertEqual("new release\n", skill.read_text())
+                self.assertEqual("edited\n", kept.read_text())
+                self.assertTrue(saved.is_file())
+                self.assertEqual([], self.commands())
+
+        kept.replace(skill)  # keep the saved edit
+        resolved = self.run_task("agent:intake")
+
+        self.assertEqual(1, resolved.returncode, resolved.stderr)
+        self.assertEqual("edited\n", skill.read_text())
+        self.assertTrue((self.project / ".agent-intake" / f"{path}.patch").is_file())
+        self.assertFalse(saved.exists())
+
+    def test_intake_keeps_an_edit_made_after_an_interrupted_refresh_beside_the_saved_one(self) -> None:
+        self.use_vendored_project()
+        path, skill = self.edited_skill()
+        kept = self.project / ".agent-intake" / f"{path}.saved"
+        saved = self.interrupted_refresh()
+        skill.write_text("edited after the interruption\n")
+
+        retried = self.run_task("agent:intake")
+
+        self.assertEqual(1, retried.returncode, retried.stderr)
+        self.assertIn(f"{path} changed after an interrupted --refresh", retried.stderr)
+        self.assertEqual("edited after the interruption\n", skill.read_text())
+        self.assertEqual("edited\n", kept.read_text())
+        self.assertTrue(saved.is_file())
+        self.assertEqual(1, self.run_task("agent:sync").returncode)
+
+        kept.unlink()  # keep the newer edit
+        resolved = self.run_task("agent:intake")
+
+        self.assertEqual(1, resolved.returncode, resolved.stderr)
+        self.assertEqual("edited after the interruption\n", skill.read_text())
+        self.assertTrue((self.project / ".agent-intake" / f"{path}.patch").is_file())
+        self.assertFalse(saved.exists())
 
     def test_check_unit_measures_changed_lines_against_the_commit_ci_passes(self) -> None:
         for name in ("uv",):
