@@ -31,7 +31,7 @@
   part:
     needs: plan
     name: {% raw %}${{ matrix.part }}{% endraw %}
-    runs-on: ubuntu-latest
+    runs-on: {{ part_runner | default('ubuntu-latest') }}
     # ponytail: one timeout for every part, the longest's; a per-part limit would be a second definition of the part.
     timeout-minutes: 45
     env:

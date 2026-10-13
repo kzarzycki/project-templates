@@ -147,6 +147,7 @@ LEAVES = (
     ("ai/mcp", {"language": "python"}),
     ("ai/mcp", {"language": "node"}),
     ("infra/terraform", {}),
+    ("apple/xcode", {}),
 )
 
 
@@ -259,8 +260,11 @@ class AgentLayerGenerationTest(unittest.TestCase):
             "ai/skills",
             "ai/mcp",
             "infra/terraform",
+            "apple/xcode",
         ):
             self.assertIn(f"type: {project_type}", workflow)
+        self.assertIn("{ type: apple/xcode, os: macos-latest }", workflow)  # its gate needs Xcode
+        self.assertIn("runs-on: ${{ matrix.os || 'ubuntu-latest' }}", workflow)
         self.assertIn("{ type: ai/mcp, language: python }", workflow)
         self.assertIn("{ type: ai/mcp, language: node }", workflow)
         self.assertIn("include_agent_layer=true", workflow)
@@ -933,6 +937,10 @@ class AgentLayerGenerationTest(unittest.TestCase):
                 self.assertEqual("${{ github.event_name == 'pull_request' }}", ci["concurrency"]["cancel-in-progress"])
                 jobs = ci["jobs"]
                 self.assertEqual(["plan", "part", "check"], list(jobs))
+                # Only the parts run the project's checks; an Apple project's need Xcode.
+                runners = {"plan": "ubuntu-latest", "check": "ubuntu-latest",
+                           "part": "macos-latest" if project_type == "apple/xcode" else "ubuntu-latest"}
+                self.assertEqual(runners, {name: job["runs-on"] for name, job in jobs.items()})
                 self.assertEqual("${{ !github.event.pull_request.draft }}", jobs["plan"]["if"])
                 self.assertEqual("${{ always() && !github.event.pull_request.draft }}", jobs["check"]["if"])
                 self.assertEqual(["plan", "part"], jobs["check"]["needs"])
@@ -990,8 +998,12 @@ class AgentLayerGenerationTest(unittest.TestCase):
                         self.assertTrue(hook["id"].startswith("lint:"), hook["id"])
                         self.assertEqual(f"mise run {hook['id']} --", hook["entry"])
                         self.assertIn(hook["id"], tasks)
-                self.assertTrue(os.access(project / "scripts/files-or-repo", os.X_OK))
-                self.assertTrue(os.access(project / "scripts/check-symlinks.sh", os.X_OK))
+                # The tasks' helper scripts exist at the path they call, in the case they call it.
+                scripts = (project / tasks["lint:symlinks"]["run"]).parent
+                self.assertIn(scripts.name, {path.name for path in project.iterdir()})
+                self.assertTrue(os.access(scripts / "files-or-repo", os.X_OK))
+                self.assertTrue(os.access(scripts / "check-symlinks.sh", os.X_OK))
+                self.assertIn(f"run = '{scripts.name}/files-or-repo ", (project / "mise.toml").read_text())
 
     def test_without_a_merge_queue_the_ruleset_keeps_every_other_rule(self) -> None:
         # GitHub offers merge queues only on organization-owned repos; every leaf includes the one ruleset template.
@@ -1175,6 +1187,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
             ("ai/skills", {}),
             ("ai/mcp", {"language": "python"}),
             ("infra/terraform", {"include_example": False}),
+            ("apple/xcode", {}),
         )
         for project_type, extra in leaves:
             with self.subTest(project_type=project_type):
@@ -1189,6 +1202,60 @@ class AgentLayerGenerationTest(unittest.TestCase):
                 self.assertFalse((project / ".apm").exists())
                 self.assertFalse((project / ".agents-toolkit").exists())
                 self.assertNotIn("agent:sync", (project / "mise.toml").read_text())
+
+    def run_check_unit(self, project: Path) -> subprocess.CompletedProcess[str]:
+        scratch = Path(tempfile.mkdtemp(prefix="apple-gate-mise-"))
+        atexit.register(shutil.rmtree, scratch, True)
+        subprocess.run(["git", "init", "-q"], cwd=project, check=True)
+        env = {
+            **os.environ,
+            "MISE_CACHE_DIR": str(scratch / "cache"),
+            "MISE_DATA_DIR": str(scratch / "data"),
+            "MISE_STATE_DIR": str(scratch / "state"),
+            "MISE_OFFLINE": "true",
+            "MISE_TRUSTED_CONFIG_PATHS": str(project),
+        }
+        return subprocess.run([MISE, "run", "--skip-tools", "check:unit"], cwd=project, env=env,
+                              capture_output=True, text=True)
+
+    def test_apple_leaf_check_unit_runs_the_projects_gate_script(self) -> None:
+        project = render("apple/xcode", include_example=False, gate_script="Scripts/gate.sh")
+        self.assertEqual([], [name for name in ("Package.swift", "Sources", "Tests", "Scripts/gate.sh")
+                              if (project / name).exists()])
+        gate = project / "Scripts/gate.sh"
+        for code in (0, 1):
+            with self.subTest(gate_exit=code):
+                marker = project / f"gate-ran-{code}"
+                gate.write_text(f"#!/bin/sh\ntouch {marker.name}\nexit {code}\n")
+                gate.chmod(0o755)
+
+                result = self.run_check_unit(project)
+
+                self.assertTrue(marker.exists(), result.stdout + result.stderr)
+                self.assertEqual(code, result.returncode, result.stdout + result.stderr)
+
+    @unittest.skipUnless(shutil.which("xcrun"), "the starter's gate runs Xcode's swift test")
+    def test_apple_starter_passes_its_own_gate(self) -> None:
+        project = render("apple/xcode")
+        self.assertTrue(os.access(project / "Scripts/gate.sh", os.X_OK))
+
+        result = self.run_check_unit(project)
+
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertRegex(result.stdout + result.stderr, r"Test run with 1 test .*passed")
+
+    def test_gate_script_is_asked_only_for_the_apple_leaf(self) -> None:
+        self.assertNotIn("gate_script", (render("software/python") / ".copier-answers.yml").read_text())
+        project = render("apple/xcode", gate_script="tools/gate.sh")
+        self.assertIn("gate_script: tools/gate.sh", (project / ".copier-answers.yml").read_text())
+        self.assertEqual("./tools/gate.sh", tomllib.loads((project / "mise.toml").read_text())["tasks"]["test:fast"]["run"])
+        self.assertTrue(os.access(project / "tools/gate.sh", os.X_OK))
+        for unsafe in ("Scripts/merge gate.sh", "/abs/gate.sh", "Scripts/gate'.sh", "Scripts/gate.sh\n"):
+            with self.subTest(gate_script=unsafe), self.assertRaises(subprocess.CalledProcessError):
+                render("apple/xcode", gate_script=unsafe)
+        ignored = (project / ".gitignore").read_text().splitlines()
+        self.assertEqual([], [entry for entry in (".build/", "DerivedData/", "build/", "xcuserdata/", "*.xcuserstate")
+                              if entry not in ignored])
 
     def test_autofixing_hooks_skip_apm_managed_trees(self) -> None:
         # APM hash-tracks every file it deploys, so a hook that rewrites one

@@ -1,0 +1,13 @@
+# {{ project_name }}
+
+{{ description }}
+
+{% include "templates/_base/_claude_conventions.md.jinja" %}
+## Tooling (Apple: Xcode / SwiftPM)
+
+- `{{ gate_script }}` is the merge check: {% if include_mise %}`mise run check:unit` (and `test:fast`, `test:unit`, `test:changed`) runs it, so `mise run check` is the lints plus the gate{% else %}run it before every push; CI runs it on macOS{% endif %}.
+- Xcode is not a pinned tool: the gate script finds the toolchain it needs.
+{% if include_mise -%}
+- `mise install` pins XcodeGen, for a project that generates its `.xcodeproj` from a `project.yml` (`xcodegen generate`).
+{% endif -%}
+- CI runs the gate on a macOS runner.
