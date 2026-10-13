@@ -4,6 +4,14 @@ python = "3.14"
 {% endif -%}
 {% if include_agent_layer -%}
 {% set apm_version = "0.33.0" %}
+{% set vendored = agent_layer_mode == "vendored" -%}
+{# The files sync writes; in vendored mode the root CLAUDE.md and AGENTS.md are the project's. -#}
+{% set frozen_paths -%}
+{% if vendored %}apm.yml apm.lock.yaml .agents .claude .codex{% else %}\
+    apm.yml apm.lock.yaml .apm AGENTS.md CLAUDE.md \
+    ':(glob)**/AGENTS.md' ':(glob)**/CLAUDE.md' \
+    .agents .claude .codex .github/instructions{% endif %}
+{%- endset -%}
 "github:microsoft/apm" = "{{ apm_version }}"
 {% endif -%}
 {% if include_agent_layer and include_fnox -%}
@@ -54,11 +62,13 @@ if [ -z "$agent_targets" ]; then
   echo "error: apm.yml must activate at least one coding agent target" >&2
   exit 2
 fi
+{% if vendored -%}
+# The deployed skills are committed files anyone may edit: an install would silently revert an
+# edit, so sync refuses until agent:intake has taken each one in.
+mise run --skip-tools agent:intake -- --check
+{% endif -%}
 if [ "$mode" = frozen ]; then
-  frozen_changes="$(git status --porcelain=v1 --untracked-files=all -- \
-    apm.yml apm.lock.yaml .apm AGENTS.md CLAUDE.md \
-    ':(glob)**/AGENTS.md' ':(glob)**/CLAUDE.md' \
-    .agents .claude .codex .github/instructions)"
+  frozen_changes="$(git status --porcelain=v1 --untracked-files=all -- {{ frozen_paths }})"
   if [ -n "$frozen_changes" ]; then
     echo "error: frozen agent configuration changed:" >&2
     echo "$frozen_changes" >&2
@@ -74,8 +84,14 @@ case "$mode" in
     apm audit --ci --no-policy
     ;;
 esac
+{% if vendored -%}
+apm prune
+# Every edit was ported or dropped, and the install restored the dropped ones.
+rm -rf .agent-intake
+{% else -%}
 apm compile --clean
 apm compile --validate
+{% endif -%}
 apm audit --ci --no-policy
 # Add native-output validation for every implemented coding agent here.
 if [ -f .mcp.json ]; then python3 -m json.tool .mcp.json >/dev/null; fi
@@ -84,10 +100,7 @@ if [ -f .codex/config.toml ]; then python3 -c 'import tomllib; tomllib.load(open
 fnox check --all --non-interactive --if-missing error
 {% endif -%}
 if [ "$mode" = frozen ]; then
-  frozen_changes="$(git status --porcelain=v1 --untracked-files=all -- \
-    apm.yml apm.lock.yaml .apm AGENTS.md CLAUDE.md \
-    ':(glob)**/AGENTS.md' ':(glob)**/CLAUDE.md' \
-    .agents .claude .codex .github/instructions)"
+  frozen_changes="$(git status --porcelain=v1 --untracked-files=all -- {{ frozen_paths }})"
   if [ -n "$frozen_changes" ]; then
     echo "error: frozen agent configuration changed:" >&2
     echo "$frozen_changes" >&2
@@ -96,7 +109,139 @@ if [ "$mode" = frozen ]; then
   fi
 fi
 """
+{% if vendored -%}
 
+[tasks."agent:intake"]
+description = "Turns each local edit of a deployed skill file into a patch against the pack's copy, to port into the pack or drop."
+usage = """
+flag "--refresh" help="Take the newer compatible pack first; a patch the release already carries resolves itself"
+flag "--check" help="Write nothing: exit 1 while a drifted file has no intake or a patch is unresolved (agent:sync runs this)"
+"""
+# A patch is resolved by porting it into the pack and taking that release with --refresh, or by
+# deleting it: the next agent:sync then restores the pack's copy.
+run = """
+command -v apm >/dev/null || { echo "error: apm {{ apm_version }} is required; run 'mise install'" >&2; exit 127; }
+command -v python3 >/dev/null || { echo "error: python3 is required; run 'mise install'" >&2; exit 127; }
+mode=intake
+if [ "${usage_refresh:-false}" = true ]; then mode=refresh; fi
+if [ "${usage_check:-false}" = true ]; then mode=check; fi
+python3 - "$mode" <<'PY'
+import hashlib
+import json
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+mode = sys.argv[1]
+INTAKE = Path(".agent-intake")
+# Each line is "<sha256 of the edited file>  <path>": the edits intake has taken in.
+LEDGER = INTAKE / "intaken"
+
+
+def fail(message):
+    print(f"agent:intake: {message}", file=sys.stderr)
+    sys.exit(1)
+
+
+def drifted():
+    if not Path("apm.lock.yaml").is_file():
+        return []
+    audit = subprocess.run(["apm", "audit", "--ci", "--no-policy", "-f", "json"], capture_output=True, text=True)
+    try:
+        report = json.loads(audit.stdout)
+    except json.JSONDecodeError:
+        fail(f"apm audit gave no JSON report (exit {audit.returncode}):\\n{audit.stderr}")
+    return sorted({entry["path"] for entry in (report.get("drift") or {}).get("drift", [])})
+
+
+def content(path):
+    return path.read_bytes() if path.is_file() else None
+
+
+def digest(path):
+    data = content(path)
+    return "absent" if data is None else hashlib.sha256(data).hexdigest()
+
+
+def ledger():
+    lines = LEDGER.read_text().splitlines() if LEDGER.is_file() else []
+    return {path: sha for sha, path in (line.split("  ", 1) for line in lines if line)}
+
+
+def patches():
+    if not INTAKE.is_dir():
+        return []
+    return sorted(patch.relative_to(INTAKE).as_posix().removesuffix(".patch") for patch in INTAKE.rglob("*.patch"))
+
+
+def write_patches(paths):
+    shutil.rmtree(INTAKE, ignore_errors=True)
+    if not paths:
+        return
+    # The pack's copy: what an install would deploy, written to a scratch root so the tree keeps its edits.
+    pristine = Path(tempfile.mkdtemp(prefix="agent-intake-"))
+    try:
+        shutil.copy("apm.lock.yaml", pristine)
+        install = subprocess.run(["apm", "install", "--frozen", "--root", str(pristine)], capture_output=True, text=True)
+        if install.returncode != 0:
+            fail(f"could not install the pack's copy:\\n{install.stdout}{install.stderr}")
+        for path in paths:
+            patch = INTAKE / f"{path}.patch"
+            patch.parent.mkdir(parents=True, exist_ok=True)
+            old, new = pristine / path, Path(path)
+            diff = subprocess.run(
+                ["diff", "-u", "--label", f"a/{path}", "--label", f"b/{path}",
+                 str(old) if old.is_file() else "/dev/null", str(new) if new.is_file() else "/dev/null"],
+                capture_output=True,
+            )
+            patch.write_bytes(diff.stdout)
+    finally:
+        shutil.rmtree(pristine, ignore_errors=True)
+    LEDGER.write_text("".join(f"{digest(Path(path))}  {path}\\n" for path in paths))
+
+
+def report():
+    remaining = patches()
+    for path in remaining:
+        print(f"{INTAKE}/{path}.patch: port it into the pack, or delete it to drop the edit (the next agent:sync restores the pack's copy)")
+    if remaining:
+        sys.exit(1)
+    print("agent:intake: no unresolved patch")
+
+
+if mode == "check":
+    seen = ledger()
+    unseen = [path for path in drifted() if seen.get(path) != digest(Path(path))]
+    for path in unseen:
+        print(f"agent:sync: {path} differs from the pack's copy; an install would revert it", file=sys.stderr)
+    for path in patches():
+        print(f"agent:sync: {INTAKE}/{path}.patch is unresolved", file=sys.stderr)
+    if unseen or patches():
+        fail("run 'mise run agent:intake', then port or drop each patch")
+    sys.exit(0)
+
+edits = drifted()
+write_patches(edits)
+if mode == "refresh":
+    saved = {path: content(Path(path)) for path in edits}
+    if subprocess.run(["apm", "update", "--yes"]).returncode != 0:
+        fail("apm update failed; the patches are saved and the edits are in place")
+    for path, edited in saved.items():
+        target = Path(path)
+        if content(target) == edited:
+            print(f"resolved: the release carries the edit to {path}")
+        elif edited is None:
+            target.unlink(missing_ok=True)
+        else:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(edited)
+    write_patches(drifted())
+report()
+PY
+"""
+{% endif %}
 # Launcher tasks are coding-agent-specific. Add one only when the coding agent
 # has a stable CLI.
 [tasks."agent:claude"]

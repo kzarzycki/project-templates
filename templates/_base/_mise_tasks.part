@@ -1,9 +1,14 @@
 {% if include_agent_layer -%}
 [env]
+{% if agent_layer_mode == 'vendored' -%}
+# APM hash-tracks every file it deploys, so a fix there is drift that `mise run agent:sync` refuses
+# over: the fixing lint: tasks skip these trees. The secret scanners still read them.
+APM_MANAGED = '^(\.agents|\.claude|\.codex)/'
+{% else -%}
 # APM owns these trees and hash-tracks every file it deploys, so a fix there is drift that
 # fails `mise run check:agents`: the fixing lint: tasks skip them. The secret scanners still read them.
 APM_MANAGED = '^(\.agents|\.claude|\.codex|\.github/instructions)/|(^|/)AGENTS\.md$|/CLAUDE\.md$'
-
+{% endif %}
 {% endif -%}
 # The merge checks: every check: task but check:all is a part, and CI runs each as its own
 # job named after it (mise run ci:parts). Add a part here and CI runs it; give it a path
@@ -29,7 +34,7 @@ run = '''
 {% include "templates/_base/_diff_base.part" %}if git rev-parse -q --verify "$base^{commit}" >/dev/null; then range="$base..HEAD"; else range=HEAD; fi
 gitleaks git --log-opts="$range" --redact --no-banner
 '''
-{% if include_agent_layer %}
+{% if include_agent_layer and agent_layer_mode != 'vendored' %}
 [tasks."check:agents"]
 description = "Runs agent:sync --frozen: the committed agent config matches apm.yml."
 run = '''

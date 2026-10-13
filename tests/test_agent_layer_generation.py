@@ -137,6 +137,43 @@ def run_agent_sync(
     )
 
 
+def tag_fixture_release(fixture: Path, version: str) -> None:
+    subprocess.run(["git", "add", "-A"], cwd=fixture, check=True)
+    subprocess.run(
+        ["git", "-c", "user.name=Test", "-c", "user.email=test@example.com",
+         "commit", "--no-verify", "-qm", f"engineering {version}"],
+        cwd=fixture,
+        check=True,
+    )
+    subprocess.run(["git", "tag", f"engineering-v{version}"], cwd=fixture, check=True)
+
+
+def fixture_pack_env(project: Path) -> tuple[Path, dict[str, str]]:
+    """The offline fixture pack as a git repo tagged engineering-v0.2.0, and an env that resolves it."""
+    fixture = Path(tempfile.mkdtemp(prefix="engineering-fixture-"))
+    shutil.copytree(ROOT / "tests/fixtures/engineering", fixture, dirs_exist_ok=True)
+    subprocess.run(["git", "init", "-q"], cwd=fixture, check=True)
+    tag_fixture_release(fixture, "0.2.0")
+    env = isolated_agent_env(project)
+    git_config = Path(env["HOME"]) / "gitconfig"
+    git_config.write_text(
+        f'[url "file://{fixture}"]\n'
+        "  insteadOf = https://fixture.invalid/test/engineering.git\n"
+    )
+    env["GIT_CONFIG_GLOBAL"] = str(git_config)
+    return fixture, env
+
+
+def run_mise_task(project: Path, env: dict[str, str], task: str, *arguments: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [MISE, "run", "--skip-tools", task, "--", *arguments],
+        cwd=project,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+
 LEAVES = (
     ("software/python", {}),
     ("software/node", {}),
@@ -767,6 +804,174 @@ class AgentLayerGenerationTest(unittest.TestCase):
         )
         self.assertNotEqual(0, stale.returncode)
         self.assertIn("frozen agent configuration changed", stale.stderr)
+
+    def test_vendored_layer_takes_a_local_skill_edit_through_intake_offline(self) -> None:
+        project = render(
+            agent_layer_mode="vendored",
+            engineering_capability_source="https://fixture.invalid/test/engineering.git",
+            engineering_capability_ref="^0.2.0",
+            include_fnox=False,
+        )
+        fixture, env = fixture_pack_env(project)
+        root_files = {name: (project / name).read_bytes() for name in ("CLAUDE.md", "AGENTS.md")}
+        subprocess.run(["git", "init", "-q"], cwd=project, check=True)
+        commit_project(project, "render")
+
+        first = run_agent_sync(project, env)
+        self.assertEqual(0, first.returncode, first.stdout + first.stderr)
+        self.assertEqual(root_files, {name: (project / name).read_bytes() for name in root_files})
+        commit_project(project, "sync")
+
+        # 1. An edited skill file, committed: sync refuses and leaves the edit.
+        skill = project / ".claude/skills/wayfinder/SKILL.md"
+        edited = skill.read_text() + "\nLocal edit.\n"
+        skill.write_text(edited)
+        commit_project(project, "edit a skill")
+        refused = run_agent_sync(project, env)
+        self.assertEqual(1, refused.returncode, refused.stdout + refused.stderr)
+        self.assertIn(".claude/skills/wayfinder/SKILL.md", refused.stderr)
+        self.assertIn("mise run agent:intake", refused.stderr)
+        self.assertEqual(edited, skill.read_text())
+
+        # 2. Intake writes one patch, the plain diff of the pack's copy and the edit.
+        intake = run_mise_task(project, env, "agent:intake")
+        self.assertEqual(1, intake.returncode, intake.stdout + intake.stderr)
+        patches = sorted(path.relative_to(project).as_posix() for path in (project / ".agent-intake").rglob("*.patch"))
+        self.assertEqual([".agent-intake/.claude/skills/wayfinder/SKILL.md.patch"], patches)
+        self.assertIn(patches[0], intake.stdout)
+        pristine = project / "apm_modules/test/engineering/skills/wayfinder/SKILL.md"
+        plain = subprocess.run(["diff", "-u", str(pristine), str(skill)], capture_output=True, text=True).stdout
+
+        def hunks(diff: str) -> str:
+            return diff[diff.index("@@"):]
+
+        self.assertEqual(hunks(plain), hunks((project / patches[0]).read_text()))
+        self.assertEqual("", subprocess.run(
+            ["git", "status", "--porcelain=v1", "--untracked-files=all"],
+            cwd=project, check=True, capture_output=True, text=True,
+        ).stdout)  # the intake directory is ignored and the tree untouched
+        self.assertEqual(1, run_agent_sync(project, env).returncode)  # still unresolved
+
+        # 3. The pack ports the edit and releases it: refresh resolves the patch.
+        release = fixture / "skills/wayfinder/SKILL.md"
+        release.write_text(
+            "---\n"
+            "name: wayfinder\n"
+            "description: Orient in a repository by reading project evidence before acting.\n"
+            "---\n"
+            "\n"
+            "# Wayfinder\n"
+            "\n"
+            "Read the repository's instructions and representative project files before\n"
+            "proposing changes.\n"
+            "\n"
+            "Local edit.\n"
+        )
+        tag_fixture_release(fixture, "0.2.1")
+        refresh = run_mise_task(project, env, "agent:intake", "--refresh")
+        self.assertEqual(0, refresh.returncode, refresh.stdout + refresh.stderr)
+        self.assertIn("resolved", refresh.stdout)
+        self.assertFalse((project / patches[0]).exists())
+        self.assertIn("engineering-v0.2.1", (project / "apm.lock.yaml").read_text())
+        self.assertEqual(release.read_text(), skill.read_text())
+
+        synced = run_agent_sync(project, env)
+        self.assertEqual(0, synced.returncode, synced.stdout + synced.stderr)
+        commit_project(project, "take engineering 0.2.1")
+
+        # A dropped patch: delete it, and sync restores the pack's copy.
+        codex_skill = project / ".agents/skills/wayfinder/SKILL.md"
+        codex_skill.write_text(codex_skill.read_text() + "\nA dropped edit.\n")
+        commit_project(project, "edit the codex copy")
+        self.assertEqual(1, run_mise_task(project, env, "agent:intake").returncode)
+        (project / ".agent-intake/.agents/skills/wayfinder/SKILL.md.patch").unlink()
+        dropped = run_agent_sync(project, env)
+        self.assertEqual(0, dropped.returncode, dropped.stdout + dropped.stderr)
+        self.assertEqual(release.read_text(), codex_skill.read_text())
+        self.assertFalse((project / ".agent-intake").exists())
+        self.assertEqual(root_files, {name: (project / name).read_bytes() for name in root_files})
+        commit_project(project, "drop the codex edit")
+
+        again = run_agent_sync(project, env)
+        frozen = run_agent_sync(project, env, "--frozen")
+        self.assertEqual(0, again.returncode, again.stdout + again.stderr)
+        self.assertEqual(0, frozen.returncode, frozen.stdout + frozen.stderr)
+        self.assertEqual("", subprocess.run(
+            ["git", "status", "--porcelain=v1", "--untracked-files=all"],
+            cwd=project, check=True, capture_output=True, text=True,
+        ).stdout)
+
+    def test_vendored_render_keeps_hand_written_root_files_and_compiles_nothing(self) -> None:
+        for project_type, answers in LEAVES:
+            with self.subTest(project_type=project_type, **answers):
+                project = render(project_type, agent_layer_mode="vendored", **answers)
+
+                self.assertFalse((project / ".apm").exists())
+                tasks = tomllib.loads((project / "mise.toml").read_text())["tasks"]
+                self.assertNotIn("check:agents", tasks)
+                self.assertIn("agent:intake", tasks)
+                self.assertNotIn("apm compile", tasks["agent:sync"]["run"])
+                self.assertIn("apm prune", tasks["agent:sync"]["run"])
+                self.assertIn("`CLAUDE.md`", (project / "AGENTS.md").read_text())
+                self.assertIn(
+                    "Every change that lands as a PR runs the `engineering-loop` skill.",
+                    (project / "CLAUDE.md").read_text(),
+                )
+                self.assertIn(".agent-intake/", (project / ".gitignore").read_text().splitlines())
+                managed = re.compile(tomllib.loads((project / "mise.toml").read_text())["env"]["APM_MANAGED"])
+                for path in (".agents/skills/wayfinder/SKILL.md", ".claude/skills/wayfinder/SKILL.md", ".codex/config.toml"):
+                    self.assertRegex(path, managed)
+                for path in ("CLAUDE.md", "AGENTS.md", ".github/instructions/project.instructions.md"):
+                    self.assertNotRegex(path, managed)
+
+        no_loop = render(agent_layer_mode="vendored", engineering_loop=False)
+        self.assertNotIn("engineering-loop", (no_loop / "CLAUDE.md").read_text())
+        compiled = render()
+        self.assertFalse((compiled / "AGENTS.md").exists())  # apm compile writes it
+        self.assertNotIn(".agent-intake/", (compiled / ".gitignore").read_text())
+
+    def test_copier_update_leaves_a_vendored_projects_own_root_files_byte_identical(self) -> None:
+        scratch = Path(tempfile.mkdtemp(prefix="vendored-update-"))
+        atexit.register(shutil.rmtree, scratch, True)
+        template = scratch / "template"
+        shutil.copytree(ROOT, template, ignore=shutil.ignore_patterns(".git", "tmp", "apm_modules", "__pycache__", "_out"))
+        git = ["git", "-c", "user.name=Test", "-c", "user.email=test@example.com"]
+        subprocess.run(["git", "init", "-q"], cwd=template, check=True)
+        subprocess.run(["git", "add", "-A"], cwd=template, check=True)
+        subprocess.run([*git, "commit", "--no-verify", "-qm", "v1"], cwd=template, check=True)
+        subprocess.run(["git", "tag", "v1.0.0"], cwd=template, check=True)
+
+        # An existing repo with its own CLAUDE.md adopts the template.
+        project = scratch / "project"
+        project.mkdir()
+        own = {"CLAUDE.md": b"# Our project\n\nHand-written instructions.\n", "AGENTS.md": b"Read CLAUDE.md.\n"}
+        for name, data in own.items():
+            (project / name).write_bytes(data)
+        subprocess.run(["git", "init", "-q"], cwd=project, check=True)
+        subprocess.run(["git", "add", "-A"], cwd=project, check=True)
+        subprocess.run([*git, "commit", "--no-verify", "-qm", "own"], cwd=project, check=True)
+        subprocess.run(
+            ["copier", "copy", "--trust", "--defaults", "--skip-tasks", "--overwrite",
+             "--data", "project_name=agent-layer-test", "--data", "project_type=software/python",
+             "--data", "agent_layer_mode=vendored", str(template), str(project)],
+            check=True, capture_output=True, text=True,
+        )
+        self.assertEqual(own, {name: (project / name).read_bytes() for name in own})
+        subprocess.run(["git", "add", "-A"], cwd=project, check=True)
+        subprocess.run([*git, "commit", "--no-verify", "-qm", "adopt"], cwd=project, check=True)
+
+        conventions = template / "templates/_base/_claude_conventions.md.jinja"
+        conventions.write_text(conventions.read_text() + "- **New:** a template change.\n")
+        subprocess.run(["git", "add", "-A"], cwd=template, check=True)
+        subprocess.run([*git, "commit", "--no-verify", "-qm", "v2"], cwd=template, check=True)
+        subprocess.run(["git", "tag", "v2.0.0"], cwd=template, check=True)
+        subprocess.run(
+            ["copier", "update", "--trust", "--defaults", "--skip-tasks"],
+            cwd=project, check=True, capture_output=True, text=True,
+        )
+
+        self.assertIn("_commit: v2.0.0", (project / ".copier-answers.yml").read_text())
+        self.assertEqual(own, {name: (project / name).read_bytes() for name in own})
 
     def test_loop_render_seeds_approvals_ci_skeletons_and_loop_line(self) -> None:
         project = render()

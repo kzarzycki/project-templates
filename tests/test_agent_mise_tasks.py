@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -33,6 +34,10 @@ def fake_executable(directory: Path, name: str) -> None:
             'if [ "${1:-}" = "compile" ] && '
             '[ -n "${FAKE_APM_ORPHAN_PATH:-}" ]; then\n'
             '  rm -f "$FAKE_APM_ORPHAN_PATH"\n'
+            "fi\n"
+            'if [ "${1:-}" = "audit" ] && '
+            '[ -n "${FAKE_APM_AUDIT_JSON:-}" ]; then\n'
+            '  printf "%s" "$FAKE_APM_AUDIT_JSON"\n'
             "fi\n"
         )
     path.write_text(script)
@@ -260,6 +265,91 @@ class AgentMiseTasksTest(unittest.TestCase):
         locked = self.run_task("check:agents")
         self.assertEqual(0, locked.returncode, locked.stderr)
         self.assertEqual(f"{self.bin}/apm install --frozen --target claude,codex", self.commands()[0])
+
+    def use_vendored_project(self) -> None:
+        self.project = render(agent_layer_mode="vendored", include_fnox=False)
+        self.env["MISE_TRUSTED_CONFIG_PATHS"] = str(self.project)
+        # agent:sync runs agent:intake -- --check through mise.
+        (self.bin / "mise").symlink_to(MISE)
+
+    def drift(self, *paths: str) -> None:
+        (self.project / "apm.lock.yaml").touch()
+        self.env["FAKE_APM_AUDIT_JSON"] = json.dumps(
+            {"drift": {"drift": [{"path": path, "kind": "modified"} for path in paths]}}
+        )
+
+    def test_vendored_sync_installs_and_prunes_without_compiling(self) -> None:
+        self.use_vendored_project()
+
+        result = self.run_task("agent:sync")
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(
+            [
+                f"{self.bin}/apm install --target claude,codex",
+                f"{self.bin}/apm prune",
+                f"{self.bin}/apm audit --ci --no-policy",
+            ],
+            self.commands(),
+        )
+
+    def test_vendored_sync_refuses_over_a_drifted_file_naming_it_and_intake(self) -> None:
+        self.use_vendored_project()
+        self.drift(".claude/skills/wayfinder/SKILL.md")
+
+        for arguments in ((), ("--refresh",), ("--frozen",)):
+            with self.subTest(arguments=arguments):
+                self.log.unlink(missing_ok=True)
+
+                result = self.run_task("agent:sync", *arguments)
+
+                self.assertEqual(1, result.returncode, result.stderr)
+                self.assertIn(".claude/skills/wayfinder/SKILL.md differs from the pack's copy", result.stderr)
+                self.assertIn("mise run agent:intake", result.stderr)
+                self.assertEqual([f"{self.bin}/apm audit --ci --no-policy -f json"], self.commands())
+
+    def test_vendored_sync_refuses_while_a_patch_is_unresolved(self) -> None:
+        self.use_vendored_project()
+        path = ".claude/skills/wayfinder/SKILL.md"
+        self.drift(path)
+        skill = self.project / path
+        skill.parent.mkdir(parents=True)
+        skill.write_text("edited\n")
+        patch = self.project / ".agent-intake" / f"{path}.patch"
+        patch.parent.mkdir(parents=True)
+        patch.write_text("-pristine\n+edited\n")
+        digest = hashlib.sha256(b"edited\n").hexdigest()
+        (self.project / ".agent-intake/intaken").write_text(f"{digest}  {path}\n")
+
+        refused = self.run_task("agent:sync")
+
+        self.assertEqual(1, refused.returncode, refused.stderr)
+        self.assertIn(f".agent-intake/{path}.patch is unresolved", refused.stderr)
+        self.assertNotIn("differs from the pack's copy", refused.stderr)
+
+        patch.unlink()  # dropped: the install restores the pack's copy
+        self.log.unlink()
+        dropped = self.run_task("agent:sync")
+
+        self.assertEqual(0, dropped.returncode, dropped.stderr)
+        self.assertIn(f"{self.bin}/apm install --target claude,codex", self.commands())
+        self.assertFalse((self.project / ".agent-intake").exists())
+
+    def test_vendored_sync_refuses_an_edit_made_after_intake(self) -> None:
+        self.use_vendored_project()
+        path = ".claude/skills/wayfinder/SKILL.md"
+        self.drift(path)
+        skill = self.project / path
+        skill.parent.mkdir(parents=True)
+        skill.write_text("edited again\n")
+        (self.project / ".agent-intake").mkdir()
+        digest = hashlib.sha256(b"edited\n").hexdigest()
+        (self.project / ".agent-intake/intaken").write_text(f"{digest}  {path}\n")
+
+        result = self.run_task("agent:sync")
+
+        self.assertEqual(1, result.returncode, result.stderr)
+        self.assertIn(f"{path} differs from the pack's copy", result.stderr)
 
     def test_check_unit_measures_changed_lines_against_the_commit_ci_passes(self) -> None:
         for name in ("uv",):

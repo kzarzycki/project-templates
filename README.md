@@ -50,8 +50,8 @@ lives once, in `mise.toml` `[tools]` or the toolchain's lock file:
   (default `main`) once that branch exists. `test:fast` (alias `test`),
   `test:unit` and `test:changed` (the pre-push hook) run the tests alone.
 - `check:secrets` scans the branch's commits with gitleaks.
-- `check:agents`, with the agent layer on, runs `agent:sync -- --frozen` once
-  `apm.lock.yaml` is committed.
+- `check:agents`, with the compiled agent layer, runs `agent:sync -- --frozen`
+  once `apm.lock.yaml` is committed. The vendored layer has none.
 - `check` runs `check:lint` and `check:unit`; `check:all` runs every `check:`
   part.
 - `setup:dev` (alias `bootstrap`) installs the dependencies and the git hooks.
@@ -116,6 +116,47 @@ additions are project-owned. `include_fnox=true` adds an empty
 Native CLI credentials such as `gh auth login` remain in the CLI credential
 store.
 
+### Vendored agent layer
+
+`agent_layer_mode=vendored` is for a repo whose people own the root instructions
+and edit skills directly. Nobody there has to know APM: the skills and
+`CLAUDE.md` are ordinary committed files.
+
+- `CLAUDE.md` is hand-written, and `AGENTS.md` points Codex at it. Copier writes
+  both only when they are missing, so a project's own files survive `copy` and
+  `update`. There is no `.apm/instructions`, no `apm compile` and no
+  `check:agents`.
+- The pack's skills are committed under `.claude/skills/` and `.agents/skills/`;
+  only `apm_modules/` is ignored. `apm.lock.yaml` records each deployed file's
+  hash.
+- The skill list is the project's. `apm install <source>#<ref> --skill <name>`
+  writes the pin as `skills:` under the dependency in `apm.yml` (it also
+  rewrites the entry's `git:` to the short form); editing that list works too.
+  `agent:sync` installs from it, and the install removes a skill dropped from
+  it. `apm prune` removes a dropped package from `apm_modules/`.
+
+Anyone may edit a synced skill file and commit it. A plain `apm install` would
+silently put the pack's copy back, so `mise run agent:sync` refuses (exit 1)
+while a deployed file differs from the pack's copy, naming each file and
+`mise run agent:intake`. The APM maintainer then runs:
+
+```bash
+mise run agent:intake               # one patch per edited file, listed
+mise run agent:intake -- --refresh  # take the newer compatible pack first
+```
+
+`agent:intake` writes each edit as a patch from the pack's copy to the committed
+file under `.agent-intake/` (gitignored) and exits 1 while any patch is left.
+The pack's copy is what an install would deploy from the lock, installed into a
+scratch directory so the tree keeps its edits. Each patch ends one of two ways:
+
+- Port it into the pack and release it, then run `agent:intake -- --refresh`.
+  It takes the newer compatible pack; an edited file the release now matches
+  resolves itself and its patch goes. Any other edited file is put back and its
+  patch stays, now against the new release.
+- Drop it: delete the patch, and the next `agent:sync` restores the pack's
+  copy. An edit made after intake ran needs intake again.
+
 Copier does not install APM or fnox, contact a secret provider, compile coding
 agent configuration, or launch a coding agent. `mise install` installs the
 pinned tools after generation. Use `include_agent_layer=false` to omit the
@@ -128,8 +169,8 @@ committed to the repo.
 
 With the pack on, `engineering_loop=true` (the default) turns on the pack's
 `engineering-loop` skill: one line in `.apm/instructions/project.instructions.md`,
-which `agent:sync` compiles into `AGENTS.md`, says every change that lands as a
-PR runs it. Deleting that line turns the loop off. The loop reads this project's
+which `agent:sync` compiles into `AGENTS.md` (in `CLAUDE.md` with the vendored
+layer), says every change that lands as a PR runs it. Deleting that line turns the loop off. The loop reads this project's
 facts from three files, seeded with a heading and a short prompt per fact:
 
 - `docs/agents/loop.md`: owner, proof on a branch, acceptance references,
@@ -319,6 +360,17 @@ Updating to v0.8.0 moves the pack to `^0.16.0`. With the loop on:
   `mise run setup:github --dry-run`, read the plan, and `mise run setup:github`.
   Renames happen in place, so issues keep their labels, and a label still on an
   issue is never deleted.
+
+Updating to the next release moves APM to 0.33.0 and asks `agent_layer_mode`:
+
+- `compiled`, the default, keeps today's layer. Run `mise install`, then
+  `mise run agent:sync`, and commit what it changes.
+- `vendored` (Vendored agent layer) drops `check:agents` and the
+  `.apm/instructions` seed, adds `agent:intake` and gitignores `.agent-intake/`.
+  Copier keeps an existing `CLAUDE.md` and `AGENTS.md`, so make them the
+  hand-written ones. Delete `.apm/instructions` and the nested `AGENTS.md` and
+  `CLAUDE.md` files `apm compile` wrote, since nothing updates them any more,
+  then run `mise run agent:sync` and commit the result.
 
 Without mise, CI's `uv sync` becomes `uv sync --locked`, so a stale `uv.lock`
 fails CI there too. A new project gets its `uv.lock` at generation; an existing

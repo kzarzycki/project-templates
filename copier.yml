@@ -61,6 +61,15 @@ include_agent_layer:
   when: "{{ include_mise }}"
   help: Add project-owned coding agent configuration and mise tasks?
 
+agent_layer_mode:
+  type: str
+  default: compiled
+  when: "{{ include_mise and include_agent_layer }}"
+  help: How are the root agent instructions and the pack's skills kept?
+  choices:
+    "compiled: AGENTS.md compiled from .apm/instructions, checked by check:agents": compiled
+    "vendored: hand-written CLAUDE.md, committed skills, agent:intake for local edits": vendored
+
 include_engineering_workflow:
   type: bool
   default: true
@@ -140,7 +149,7 @@ _exclude:
   - "{% if license == 'none' %}LICENSE{% endif %}"
   - "{% if not include_mise %}mise.toml{% endif %}"
   - "{% if not (include_mise and include_agent_layer) %}apm.yml{% endif %}"
-  - "{% if not (include_mise and include_agent_layer) %}.apm{% endif %}"
+  - "{% if not (include_mise and include_agent_layer) or agent_layer_mode == 'vendored' %}.apm{% endif %}"
   - "{% if not (include_mise and include_agent_layer and include_fnox) %}fnox.toml{% endif %}"
   - "{% if not loop_enabled %}docs/agents{% endif %}"
   - "{% if not include_example %}main.tf{% endif %}"
@@ -156,6 +165,8 @@ _exclude:
 # template changes into one the project filled in.
 _skip_if_exists:
   - "docs/agents/*.md"
+  - "{% if agent_layer_mode == 'vendored' %}CLAUDE.md{% endif %}"
+  - "{% if agent_layer_mode == 'vendored' %}AGENTS.md{% endif %}"
 
 _tasks:
   - "bash '{{ _copier_conf.src_path }}/_post_gen.sh' '{{ project_type }}' '{{ language | default('', true) }}'"
