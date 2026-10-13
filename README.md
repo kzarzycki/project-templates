@@ -28,6 +28,7 @@ copier copy --trust gh:your-org/project-templates my-tool \
 | `software/node`     | Node / TypeScript (npm · biome · vitest)              |
 | `software/java`     | Java / JVM (Gradle · Spotless · JaCoCo)               |
 | `infra/terraform`   | Infrastructure (Terraform · TFLint)                    |
+| `apple/xcode`       | Apple app (Xcode · SwiftPM · its own gate script)     |
 | `data/dbt`          | dbt project (sqlfluff · dbt build/test)               |
 | `authoring/content` | docs, research, markdown (markdownlint · link-check)  |
 | `ai/skills`         | a Claude Code skills / plugin repo                    |
@@ -240,11 +241,15 @@ queue entry against the queue's base. With the loop on,
 `.github/rulesets/main.json` is the `loop-merge-queue` ruleset on main: changes
 only through a squashed PR with every review thread resolved, no bypass, and a merge queue (squash, all-green
 grouping) that requires exactly two names, CI's `check` job and the
-`loop:approvals` status. `mise run setup:github` (alias `merge-queue`) creates
+`loop:approvals` status. GitHub offers merge queues only on organization-owned
+repos, so a user-owned repo answers `merge_queue=false`: the ruleset then has no
+queue and keeps every other rule, and auto-merge lands the PR once both names
+are green. Its name stays `loop-merge-queue`, since `setup:github` finds its
+ruleset by that name. `mise run setup:github` (alias `merge-queue`) creates
 that ruleset on GitHub, or updates it if one with that name exists, and sets
 the repository's `allow_auto_merge` and `delete_branch_on_merge` to true, so
 `mise run loop:land <n>` (or the approvals workflow) queues the PR once both
-names are green and its branch is deleted after the merge. It never reads or changes another ruleset: GitHub
+names are green, or without a queue merges it, and its branch is deleted after the merge. It never reads or changes another ruleset: GitHub
 applies every active ruleset on a branch, so the repo's own rules on main keep
 applying alongside it. The task prints both settings' previous values and the
 `gh api -X PATCH` command that restores them. `mise run setup:github --revert`
@@ -376,10 +381,18 @@ Updating to the next release moves APM to 0.33.0 and asks `agent_layer_mode`:
   `CLAUDE.md` files `apm compile` wrote, since nothing updates them any more,
   then run `mise run agent:sync` and commit the result.
 
+The next release asks `merge_queue` (default true) with the loop on. A
+user-owned repo, where GitHub rejected the ruleset's merge queue and
+`setup:github` stopped before any change, answers false and runs
+`mise run setup:github` again. With the default the ruleset is byte-identical.
+
 Without mise, CI's `uv sync` becomes `uv sync --locked`, so a stale `uv.lock`
 fails CI there too. A new project gets its `uv.lock` at generation; an existing
 repo without mise that has none (dbt) runs `uv lock` and commits it before
 updating.
+
+Updating to the next release adds the `apple/xcode` project type and its
+`gate_script` question; other project types render as before.
 
 ## Adopt an existing (pre-template) repo
 
@@ -393,6 +406,10 @@ copier copy --trust --data project_type=software/python --data include_example=f
 git add -p && git commit          # keep what you want from the prompted merge
 ```
 
+An Xcode repo adopts with `--data project_type=apple/xcode --data
+gate_script=Scripts/gate.sh --data include_example=false`, naming its own gate
+script: `mise run check` then runs it.
+
 Governance files (hooks, CI, `.editorconfig`, ADR, CODEOWNERS) land clean;
 toolchain config (`pyproject.toml`, `build.gradle`) is hand-merged once.
 
@@ -404,6 +421,7 @@ templates/
   _lang/{python,node,java}/   language toolchains — included by coded leaves
   software/{python,node,java}/
   infra/terraform/
+  apple/xcode/
   data/dbt/
   authoring/content/
   ai/{skills,mcp}/

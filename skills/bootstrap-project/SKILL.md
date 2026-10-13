@@ -40,6 +40,7 @@ script.
    | `software/node`     | Node / TypeScript (npm · biome · vitest)        |
    | `software/java`     | Java / JVM (Gradle · Spotless · JaCoCo)         |
    | `infra/terraform`   | Infrastructure (Terraform · TFLint)             |
+   | `apple/xcode`       | Apple app (Xcode · SwiftPM · its gate script)   |
    | `data/dbt`          | dbt project (sqlfluff · dbt build/test)         |
    | `authoring/content` | docs, research, markdown (markdownlint · links) |
    | `ai/skills`         | a Claude Code skills / plugin repo              |
@@ -59,7 +60,9 @@ script.
    sensibly — see the root `copier.yml` for the full question set. Pass an
    optional only when the user clearly wants it (e.g. "Apache licensed" →
    `license=Apache-2.0`). Author/email are resolved automatically from
-   `git config`.
+   `git config`. For `apple/xcode`, `gate_script` (default `Scripts/gate.sh`)
+   names the script that is the project's merge check; adopting an existing
+   repo, pass its gate's path and `include_example=false`.
 4. **Run the wrapper** (never re-implement scaffolding, never re-run `_tasks`):
 
    ```bash

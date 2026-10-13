@@ -24,6 +24,7 @@ class BootstrapLocalSourceTest(unittest.TestCase):
             "ai/skills",
             "ai/mcp",
             "infra/terraform",
+            "apple/xcode",
         )
 
         for project_type in project_types:
@@ -32,6 +33,8 @@ class BootstrapLocalSourceTest(unittest.TestCase):
             self.assertIn(project_type, wrapper)
         self.assertIn("terraform_version", skill)
         self.assertIn("terraform_version", wrapper)
+        self.assertIn("gate_script", skill)
+        self.assertIn("gate_script", wrapper)
 
     def test_local_source_uses_current_head(self) -> None:
         scratch = Path(tempfile.mkdtemp(prefix="bootstrap-source-test-"))

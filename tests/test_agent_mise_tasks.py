@@ -560,6 +560,19 @@ class AgentMiseTasksTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual({"5": self.applied()}, json.loads(state.read_text())["rulesets"])
 
+    def test_setup_github_updates_its_ruleset_by_name_without_a_merge_queue(self) -> None:
+        self.project = render(merge_queue=False)
+        self.env["MISE_TRUSTED_CONFIG_PATHS"] = str(self.project)
+        state = self.fake_github({"5": {"name": "loop-merge-queue", "rules": [{"type": "merge_queue"}]}},
+                                 allow_auto_merge=True)
+
+        result = self.run_task("setup:github")
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        [applied] = json.loads(state.read_text())["rulesets"].values()
+        self.assertEqual(self.applied(), applied)
+        self.assertNotIn("merge_queue", [rule["type"] for rule in applied["rules"]])
+
     def test_setup_github_leaves_another_main_ruleset_untouched(self) -> None:
         main = {"name": "main", "rules": [{"type": "pull_request",
                                            "parameters": {"required_approving_review_count": 2}}]}

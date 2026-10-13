@@ -1,0 +1,32 @@
+{#- Apple repos keep their scripts in Scripts/, next to the gate script: a lowercase scripts/
+    would be the same directory on a case-insensitive Mac. #}
+{% set scripts_dir = "Scripts" -%}
+[tools]
+# The leaf's projects generate their .xcodeproj with XcodeGen. Xcode is not a mise tool:
+# the gate script finds it.
+xcodegen = "2.46.0"
+{% include "templates/_base/_mise_tools.part" -%}
+{% include "templates/_base/_mise_agent_tasks.part" %}
+{% include "templates/_base/_mise_tasks.part" %}
+
+[tasks."test:fast"]
+alias = "test"
+description = "Runs the gate script ({{ gate_script }}): the project's own merge check."
+run = "./{{ gate_script }}"
+
+[tasks."test:unit"]
+description = "Runs test:fast: this project has one test tier, its gate script."
+depends = ["test:fast"]
+
+[tasks."test:changed"]
+description = "Runs test:fast: this project has no per-change test selection."
+depends = ["test:fast"]
+
+[tasks."check:unit"]
+description = "Runs test:unit: the gate script owns the tests and any coverage."
+depends = ["test:unit"]
+
+[tasks."setup:dev"]
+alias = "bootstrap"
+description = "Installs the git hooks on a fresh checkout."
+run = "pre-commit install --install-hooks"
