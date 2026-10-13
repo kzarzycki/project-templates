@@ -19,7 +19,32 @@ MISE = shutil.which("mise")
 assert MISE is not None
 
 
-def render(project_type: str = "software/python", **answers: object) -> Path:
+def evaluate(expression: str, github: dict) -> object:
+    """A GitHub Actions expression (`${{ }}` optional) over a `github` context, for the operators and
+    functions the rendered workflows use. Like Actions, && and || return an operand and startsWith ignores
+    case; unlike Actions, == compares strings by case."""
+    functions = {
+        "ctx": lambda path: _lookup(github, path),
+        "startsWith": lambda text, prefix: str(text or "").lower().startswith(str(prefix).lower()),
+        "fromJSON": json.loads,
+        "format": lambda pattern, *args: pattern.format(*args),
+    }
+    parts = re.split(r"('(?:[^']|'')*')", expression.strip().removeprefix("${{").removesuffix("}}"))
+    parts[1::2] = ["r" + literal for literal in parts[1::2]]  # Actions strings have no backslash escapes
+    for index in range(0, len(parts), 2):  # outside string literals
+        code = re.sub(r"\bgithub(?:\.\w+)+", lambda match: f"ctx({match.group()!r})", parts[index])
+        parts[index] = code.replace("&&", " and ").replace("||", " or ").replace("!=", "\0").replace("!", " not ").replace("\0", "!=")
+    return eval("(" + "".join(parts) + ")", {"__builtins__": {}}, functions)
+
+
+def _lookup(github: dict, path: str) -> object:
+    value: object = github
+    for key in path.split(".")[1:]:
+        value = value.get(key) if isinstance(value, dict) else None
+    return value
+
+
+def render(project_type: str = "software/python", existing: dict[str, bytes] | None = None, **answers: object) -> Path:
     scratch = Path(tempfile.mkdtemp(prefix="project-template-test-"))
     atexit.register(shutil.rmtree, scratch, True)
     template = scratch / "template"
@@ -40,6 +65,9 @@ def render(project_type: str = "software/python", **answers: object) -> Path:
         ),
     )
     destination = scratch / "project"
+    for name, content in (existing or {}).items():  # the repo's own files, there before the render
+        (destination / name).parent.mkdir(parents=True, exist_ok=True)
+        (destination / name).write_bytes(content)
     command = [
         "copier",
         "copy",
@@ -1273,6 +1301,72 @@ class AgentLayerGenerationTest(unittest.TestCase):
                     "engineering-loop",
                     (project / ".apm/instructions/project.instructions.md").read_text(),
                 )
+
+    def test_without_ci_only_approvals_is_written_and_merges_wait_for_it_alone(self) -> None:
+        ship = b"name: Ship\non: workflow_dispatch\njobs: {}\n"  # the repo's own workflow, not valid for any linter
+        project = render(existing={".github/workflows/ship.yml": ship}, include_ci=False)
+
+        self.assertEqual(ship, (project / ".github/workflows/ship.yml").read_bytes())
+        self.assertEqual(["approvals.yml", "ship.yml"], sorted(path.name for path in (project / ".github/workflows").iterdir()))
+        self.assertFalse((project / ".github/check-paths.yml").exists())
+        self.assertTrue((project / ".github/dependabot.yml").exists())  # not CI
+        tasks = tomllib.loads((project / "mise.toml").read_text())["tasks"]
+        self.assertEqual(set(), {"ci:parts", "ci:check"} & set(tasks))
+        self.assertIn("ci:approvals", tasks)
+
+        ruleset = json.loads((project / ".github/rulesets/main.json").read_text())
+        [checks] = [rule["parameters"] for rule in ruleset["rules"] if rule["type"] == "required_status_checks"]
+        self.assertEqual([{"context": "loop:approvals"}], checks["required_status_checks"])
+        # The pack's approvals.py reads this line as no CI (NO_CI) and then wants its local-ci record.
+        self.assertIn("CI: none", (project / "docs/agents/loop.md").read_text().splitlines())
+
+        # The approvals workflow reruns on local-ci's record, a PR comment, instead of on CI's completion.
+        text = (project / ".github/workflows/approvals.yml").read_text()
+        approvals = yaml.safe_load(text)
+        on = approvals[True]  # PyYAML reads `on` as True
+        self.assertNotIn("workflow_run", on)
+        self.assertEqual({"types": ["created"]}, on["issue_comment"])
+        job = approvals["jobs"]["approvals"]
+        # The job runs on a PR comment whose first line is local-ci's record, and on no other comment.
+        for body, runs in [
+            ("Local check passed\nHead: abc\nCommand: mise run check:all\n", True),
+            ("Local check passed\r\nHead: abc", True),
+            ("Local check passed", True),
+            ("Local check passedXYZ\nHead: abc", False),
+            ("Thanks, checking this now", False),
+        ]:
+            with self.subTest(body=body):
+                comment = {"event_name": "issue_comment", "event": {"issue": {"number": 17, "pull_request": {"url": "x"}}, "comment": {"body": body}}}
+                self.assertEqual(runs, bool(evaluate(job["if"], comment)))
+        issue = {"event_name": "issue_comment", "event": {"issue": {"number": 17}, "comment": {"body": "Local check passed"}}}
+        self.assertFalse(evaluate(job["if"], issue))
+        self.assertEqual("${{ github.event.pull_request.number || github.event.issue.number }}", job["steps"][-1]["env"]["PR"])
+        # A run the job skips never cancels one that posts the status: only runs that post share a PR's group.
+        pr = {"number": 17, "draft": False}
+        events = {
+            "local-ci record": ({"event_name": "issue_comment", "event": {"issue": {"number": 17, "pull_request": {"url": "x"}}, "comment": {"body": "Local check passed\nHead: abc"}}}, True),
+            "label": ({"event_name": "pull_request", "actor": "owner", "event": {"pull_request": pr}}, True),
+            "review": ({"event_name": "pull_request_review", "actor": "verifier", "event": {"pull_request": pr}}, True),
+            "other comment": ({"event_name": "issue_comment", "event": {"issue": {"number": 17, "pull_request": {"url": "x"}}, "comment": {"body": "Thanks, checking this now"}}}, False),
+            "draft label": ({"event_name": "pull_request", "actor": "owner", "event": {"pull_request": {"number": 17, "draft": True}}}, False),
+            "dependabot label": ({"event_name": "pull_request", "actor": "dependabot[bot]", "event": {"pull_request": pr}}, False),
+        }
+        for name, (github, runs) in events.items():
+            with self.subTest(event=name):
+                self.assertEqual(runs, bool(evaluate(job["if"], github)))
+                group = evaluate(approvals["concurrency"]["group"], {**github, "run_id": name})
+                self.assertEqual("approvals-17" if runs else f"approvals-skipped-{name}", group)
+        self.assertNotIn("workflow_run", text)
+
+        # The project's own workflow linters, at its pinned versions, pass the rendered workflow.
+        tools = tomllib.loads((project / "mise.toml").read_text())["tools"]
+        for linter in ("actionlint", "zizmor"):
+            with self.subTest(linter=linter):
+                result = subprocess.run(
+                    [MISE, "exec", f"{linter}@{tools[linter]}", "--", linter, ".github/workflows/approvals.yml"],
+                    cwd=project, capture_output=True, text=True,
+                )
+                self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
     def test_regeneration_keeps_filled_docs_agents_files(self) -> None:
         project = render()

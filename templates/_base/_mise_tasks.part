@@ -11,10 +11,12 @@ APM_MANAGED = '^(\.agents|\.claude|\.codex)/'
 APM_MANAGED = '^(\.agents|\.claude|\.codex|\.github/instructions)/|(^|/)AGENTS\.md$|/CLAUDE\.md$'
 {% endif %}
 {% endif -%}
-# The merge checks: every check: task but check:all is a part, and CI runs each as its own
+{% if include_ci %}# The merge checks: every check: task but check:all is a part, and CI runs each as its own
 # job named after it (mise run ci:parts). Add a part here and CI runs it; give it a path
 # filter in .github/check-paths.yml.
-[tasks.check]
+{% else %}# The merge checks: every check: task but check:all is a part. With no CI (loop.md `CI: none`),
+# the merge proof is approvals.py local-ci, which runs them on a clean checkout of the head.
+{% endif %}[tasks.check]
 description = "Runs check:lint and check:unit: the fast set to run before every push."
 depends = ["check:lint", "check:unit"]
 
@@ -140,7 +142,7 @@ run = '{{ scripts_dir }}/files-or-repo --only "^\.github/(workflows/[^/]+|depend
 [tasks."lint:symlinks"]
 description = "Fails on a broken or absolute symlink."
 run = "{{ scripts_dir }}/check-symlinks.sh"
-
+{% if include_ci %}
 [tasks."ci:parts"]
 description = "Prints the check: parts this change needs, for CI's matrix."
 # A part with a key in .github/check-paths.yml runs only when its filter matched: CHANGES is the
@@ -185,6 +187,7 @@ for part in $failed; do
 done
 exit 1
 '''
+{% endif -%}
 {% if loop_enabled %}
 [tasks."loop:approvals"]
 alias = "gate"
@@ -271,9 +274,10 @@ flag "--dry-run" help="Print what labels.py would change; write nothing to GitHu
 '''
 # The task owns only the ruleset named loop-merge-queue and never reads or changes another one:
 # GitHub layers every active ruleset on a branch, so the repo's own rules keep applying.
-# The ruleset requires CI's `check` job and the `loop:approvals` status by name: rename one, update
+{% if include_ci %}# The ruleset requires CI's `check` job and the `loop:approvals` status by name: rename one, update
 # the ruleset, rerun this.
-run = '''
+{% else %}# The ruleset requires the `loop:approvals` status by name: rename it, update the ruleset, rerun this.
+{% endif %}run = '''
 command -v gh >/dev/null || { echo "error: gh is required; install the GitHub CLI and run 'gh auth login'" >&2; exit 127; }
 # The labels are the pack's: labels.py is their one definition, read from docs/agents/issue-tracker.md.
 # ponytail: the path is the codex target's copy; without codex, point it at .claude/skills.

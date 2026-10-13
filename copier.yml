@@ -128,6 +128,11 @@ include_example:
   default: true
   help: Include the starter code and its smoke test? Turn off when adopting into an existing repo.
 
+include_ci:
+  type: bool
+  default: true
+  help: "Add the CI workflow? Turn it off when the merge proof is a local run (loop.md CI: none); the repo's own workflows stay as they are."
+
 # ---- Computed (not asked) ----
 module_name:
   type: str
@@ -167,6 +172,8 @@ _exclude:
   - "{% if not (include_mise and include_agent_layer) or agent_layer_mode == 'vendored' %}.apm{% endif %}"
   - "{% if not (include_mise and include_agent_layer and include_fnox) %}fnox.toml{% endif %}"
   - "{% if not loop_enabled %}docs/agents{% endif %}"
+  - "{% if not include_ci %}.github/workflows/ci.yml{% endif %}"
+  - "{% if not include_ci %}.github/check-paths.yml{% endif %}"
   - "{% if not include_example %}main.tf{% endif %}"
   - "{% if not include_example %}versions.tf{% endif %}"
   - "{% if not include_example %}src{% endif %}"
