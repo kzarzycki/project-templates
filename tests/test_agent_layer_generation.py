@@ -1238,6 +1238,9 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertIn("gate_script: tools/gate.sh", (project / ".copier-answers.yml").read_text())
         self.assertEqual("./tools/gate.sh", tomllib.loads((project / "mise.toml").read_text())["tasks"]["test:fast"]["run"])
         self.assertTrue(os.access(project / "tools/gate.sh", os.X_OK))
+        for unsafe in ("Scripts/merge gate.sh", "/abs/gate.sh", "Scripts/gate'.sh"):
+            with self.subTest(gate_script=unsafe), self.assertRaises(subprocess.CalledProcessError):
+                render("apple/xcode", gate_script=unsafe)
         ignored = (project / ".gitignore").read_text().splitlines()
         self.assertEqual([], [entry for entry in (".build/", "DerivedData/", "build/", "xcuserdata/", "*.xcuserstate")
                               if entry not in ignored])
