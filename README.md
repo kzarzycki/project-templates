@@ -203,7 +203,7 @@ ruleset by that name. `mise run setup:github` (alias `merge-queue`) creates
 that ruleset on GitHub, or updates it if one with that name exists, and sets
 the repository's `allow_auto_merge` and `delete_branch_on_merge` to true, so
 `mise run loop:land <n>` (or the approvals workflow) queues the PR once both
-names are green and its branch is deleted after the merge. It never reads or changes another ruleset: GitHub
+names are green, or without a queue merges it, and its branch is deleted after the merge. It never reads or changes another ruleset: GitHub
 applies every active ruleset on a branch, so the repo's own rules on main keep
 applying alongside it. The task prints both settings' previous values and the
 `gh api -X PATCH` command that restores them. `mise run setup:github --revert`
