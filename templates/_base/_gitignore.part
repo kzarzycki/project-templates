@@ -5,6 +5,10 @@
 
 # Coding-agent generated/cache state
 apm_modules/
+{% if agent_layer_mode == 'vendored' -%}
+# agent:intake's patches: the maintainer ports or drops each one.
+.agent-intake/
+{% endif -%}
 fnox.local.toml
 # Local session memory — holds a pid and a write lock, not shared state.
 .memsearch/
