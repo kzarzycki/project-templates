@@ -106,7 +106,7 @@ gate_script:
   when: "{{ project_type == 'apple/xcode' }}"
   help: The script that is the project's merge check (a path from the repo root); `mise run check` runs it
   # The path goes unquoted into mise.toml and CI's shell, so it is limited to characters neither reads.
-  validator: "{% if not (gate_script | regex_search('^[A-Za-z0-9._-][A-Za-z0-9._/-]*$')) %}a relative path of letters, digits, '.', '_', '-' and '/' only{% endif %}"
+  validator: "{% if not (gate_script | regex_search('^[A-Za-z0-9._-][A-Za-z0-9._/-]*\\Z')) %}a relative path of letters, digits, '.', '_', '-' and '/' only{% endif %}"
 
 include_example:
   type: bool
