@@ -19,6 +19,31 @@ MISE = shutil.which("mise")
 assert MISE is not None
 
 
+def evaluate(expression: str, github: dict) -> object:
+    """A GitHub Actions expression (`${{ }}` optional) over a `github` context, for the operators and
+    functions the rendered workflows use. Like Actions, && and || return an operand and startsWith ignores
+    case; unlike Actions, == compares strings by case."""
+    functions = {
+        "ctx": lambda path: _lookup(github, path),
+        "startsWith": lambda text, prefix: str(text or "").lower().startswith(str(prefix).lower()),
+        "fromJSON": json.loads,
+        "format": lambda pattern, *args: pattern.format(*args),
+    }
+    parts = re.split(r"('(?:[^']|'')*')", expression.strip().removeprefix("${{").removesuffix("}}"))
+    parts[1::2] = ["r" + literal for literal in parts[1::2]]  # Actions strings have no backslash escapes
+    for index in range(0, len(parts), 2):  # outside string literals
+        code = re.sub(r"\bgithub(?:\.\w+)+", lambda match: f"ctx({match.group()!r})", parts[index])
+        parts[index] = code.replace("&&", " and ").replace("||", " or ").replace("!=", "\0").replace("!", " not ").replace("\0", "!=")
+    return eval("(" + "".join(parts) + ")", {"__builtins__": {}}, functions)
+
+
+def _lookup(github: dict, path: str) -> object:
+    value: object = github
+    for key in path.split(".")[1:]:
+        value = value.get(key) if isinstance(value, dict) else None
+    return value
+
+
 def render(project_type: str = "software/python", existing: dict[str, bytes] | None = None, **answers: object) -> Path:
     scratch = Path(tempfile.mkdtemp(prefix="project-template-test-"))
     atexit.register(shutil.rmtree, scratch, True)
@@ -1073,11 +1098,19 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertNotIn("workflow_run", on)
         self.assertEqual({"types": ["created"]}, on["issue_comment"])
         job = approvals["jobs"]["approvals"]
-        self.assertIn(
-            "(github.event_name == 'issue_comment' && github.event.issue.pull_request"
-            " && startsWith(github.event.comment.body, 'Local check passed'))",
-            job["if"],
-        )
+        # The job runs on a PR comment whose first line is local-ci's record, and on no other comment.
+        for body, runs in [
+            ("Local check passed\nHead: abc\nCommand: mise run check:all\n", True),
+            ("Local check passed\r\nHead: abc", True),
+            ("Local check passed", True),
+            ("Local check passedXYZ\nHead: abc", False),
+            ("Thanks, checking this now", False),
+        ]:
+            with self.subTest(body=body):
+                comment = {"event_name": "issue_comment", "event": {"issue": {"number": 17, "pull_request": {"url": "x"}}, "comment": {"body": body}}}
+                self.assertEqual(runs, bool(evaluate(job["if"], comment)))
+        issue = {"event_name": "issue_comment", "event": {"issue": {"number": 17}, "comment": {"body": "Local check passed"}}}
+        self.assertFalse(evaluate(job["if"], issue))
         self.assertEqual("${{ github.event.pull_request.number || github.event.issue.number }}", job["steps"][-1]["env"]["PR"])
         self.assertEqual(
             "approvals-${{ github.event.pull_request.number || github.event.issue.number || github.sha }}",

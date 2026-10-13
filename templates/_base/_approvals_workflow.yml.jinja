@@ -45,12 +45,12 @@ jobs:
       {% raw %}${{ github.event_name == 'merge_group'
       || ((github.event_name == 'pull_request' || github.event_name == 'pull_request_review') && !github.event.pull_request.draft && github.actor != 'dependabot[bot]')
       || (github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request') }}{% endraw %}{% else %}    # A dependabot PR's own run has a read-only token; its status comes from a local-ci record on it.
-    # A comment counts only on a PR and when it opens with the record's first line; the gate reads
-    # the record itself.
+    # A comment counts only on a PR and when its first line is the record's; the gate reads the
+    # record itself.
     if: >-
       {% raw %}${{ github.event_name == 'merge_group'
       || ((github.event_name == 'pull_request' || github.event_name == 'pull_request_review') && !github.event.pull_request.draft && github.actor != 'dependabot[bot]')
-      || (github.event_name == 'issue_comment' && github.event.issue.pull_request && startsWith(github.event.comment.body, 'Local check passed')) }}{% endraw %}{% endif %}
+      || (github.event_name == 'issue_comment' && github.event.issue.pull_request && (github.event.comment.body == 'Local check passed' || startsWith(github.event.comment.body, fromJSON('"Local check passed\n"')) || startsWith(github.event.comment.body, fromJSON('"Local check passed\r\n"')))) }}{% endraw %}{% endif %}
     runs-on: ubuntu-latest
     permissions:
       contents: write # turns on auto-merge, or merges when nothing is pending
