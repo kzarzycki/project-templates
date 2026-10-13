@@ -222,10 +222,10 @@ they are. The ruleset requires only `loop:approvals`, and the seeded
 `docs/agents/loop.md` has the line `CI: none`. The merge approval then stops looking for
 a green `check`. Its proof instead is
 `python3 .agents/skills/engineering-loop/scripts/approvals.py local-ci <pr>`, run
-on a clean checkout at the PR's head commit. It runs `mise run check` there and,
+on a clean checkout at the PR's head commit. It runs `mise run check:all` there and,
 when the check passes without changing the tree, posts `Local check passed` with
 that head on the PR. So anything the project's CI enforced has to be in
-`mise run check` too, or it stops being enforced.
+`mise run check:all` too, or it stops being enforced.
 The approvals workflow then reruns on that comment instead of on CI's completion,
 so `loop:approvals` turns green with no other event.
 
