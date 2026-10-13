@@ -44,7 +44,9 @@ owners go in branch protection and `CODEOWNERS`, which the loop obeys.
 - spec: auto unless risk
 - merge: auto unless risk
 - risk: path .github/** or path .pre-commit-config.yaml or path mise.toml or path apm.yml or path docs/agents/** or path CODEOWNERS
-
+{% if not include_ci %}
+CI: none
+{% endif %}
 ## In use
 
 Who and what uses this project, and so how a finding is judged: by what a user
