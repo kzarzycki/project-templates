@@ -165,7 +165,9 @@ finishes. A failed update puts the edits back. After an interrupted one,
 still holds what the update deployed. Any other file may hold a newer edit, so
 it is left as is, the saved edit goes to `.agent-intake/<path>.saved`, and
 intake exits 1 until you keep one: move the `.saved` file over the original (or
-port it into the pack first), or delete it to keep the current file.
+port it into the pack first), or delete it to keep the current file. A saved
+deletion is an empty `.saved` marker: delete both the file and the marker to
+keep the deletion.
 
 Copier does not install APM or fnox, contact a secret provider, compile coding
 agent configuration, or launch a coding agent. `mise install` installs the

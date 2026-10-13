@@ -462,6 +462,27 @@ class AgentMiseTasksTest(unittest.TestCase):
         self.assertTrue((self.project / ".agent-intake" / f"{path}.patch").is_file())
         self.assertFalse(saved.exists())
 
+    def test_intake_names_how_to_keep_a_saved_deletion_after_an_interrupted_refresh(self) -> None:
+        self.use_vendored_project()
+        path, skill = self.edited_skill()
+        skill.unlink()  # the edit is a deletion
+        kept = self.project / ".agent-intake" / f"{path}.saved"
+        saved = self.interrupted_refresh()
+
+        retried = self.run_task("agent:intake")
+
+        self.assertEqual(1, retried.returncode, retried.stderr)
+        self.assertIn(f"to keep the deletion, delete both {path} and the marker", retried.stderr)
+        self.assertEqual("new release\n", skill.read_text())
+        self.assertEqual(b"", kept.read_bytes())
+
+        skill.unlink()  # keep the deletion, as the message says
+        kept.unlink()
+        self.run_task("agent:intake")
+
+        self.assertFalse(skill.exists())
+        self.assertFalse(saved.exists())
+
     def test_check_unit_measures_changed_lines_against_the_commit_ci_passes(self) -> None:
         for name in ("uv",):
             fake_executable(self.bin, name)

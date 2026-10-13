@@ -233,7 +233,8 @@ def recover():
     if conflicts:
         save({path: entries[path] for path in conflicts})
         for path in conflicts:
-            saved_edit = (f"the interrupted run's edit deletes it ({INTAKE}/{path}.saved marks it)"
+            saved_edit = (f"the interrupted run's edit deletes it ({INTAKE}/{path}.saved marks it): to keep the deletion, "
+                          f"delete both {path} and the marker"
                           if entries[path]["edit"] is None else f"the interrupted run's edit is {INTAKE}/{path}.saved")
             print(f"agent:intake: {path} changed after an interrupted --refresh: the file keeps its current bytes; {saved_edit}",
                   file=sys.stderr)
