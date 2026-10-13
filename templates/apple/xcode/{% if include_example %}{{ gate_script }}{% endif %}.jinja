@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# The merge check: `mise run check:unit` runs it. Add the app's build and test steps here.
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+# xcrun runs Xcode's toolchain (xcode-select -p, or DEVELOPER_DIR), not another swift on PATH.
+xcrun swift test

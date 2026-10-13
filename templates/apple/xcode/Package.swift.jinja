@@ -1,0 +1,10 @@
+// swift-tools-version: 6.0
+import PackageDescription
+
+let package = Package(
+    name: "{{ module_name }}",
+    targets: [
+        .target(name: "{{ module_name }}"),
+        .testTarget(name: "{{ module_name }}_tests", dependencies: ["{{ module_name }}"]),
+    ]
+)

@@ -1,3 +1,4 @@
+{% set scripts_dir = scripts_dir | default("scripts") -%}
 {% if include_agent_layer -%}
 [env]
 # APM owns these trees and hash-tracks every file it deploys, so a fix there is drift that
@@ -45,36 +46,36 @@ fi
 '''
 {% endif %}
 # Each lint: task is one linter's one definition: given files (the git hook passes the staged
-# ones) it lints those, given none the whole repo. scripts/files-or-repo picks the files.
+# ones) it lints those, given none the whole repo. {{ scripts_dir }}/files-or-repo picks the files.
 [tasks."lint:eof"]
 description = "Ends each text file with exactly one newline; fixes in place."
-run = 'scripts/files-or-repo --text --skip "${APM_MANAGED:-}" end-of-file-fixer --'
+run = '{{ scripts_dir }}/files-or-repo --text --skip "${APM_MANAGED:-}" end-of-file-fixer --'
 
 [tasks."lint:whitespace"]
 description = "Strips trailing whitespace; fixes in place."
-run = 'scripts/files-or-repo --text --skip "${APM_MANAGED:-}" trailing-whitespace-fixer --'
+run = '{{ scripts_dir }}/files-or-repo --text --skip "${APM_MANAGED:-}" trailing-whitespace-fixer --'
 
 [tasks."lint:yaml"]
 description = "Fails on a YAML file that doesn't parse."
-run = 'scripts/files-or-repo --only "\.ya?ml$" check-yaml --'
+run = '{{ scripts_dir }}/files-or-repo --only "\.ya?ml$" check-yaml --'
 
 [tasks."lint:toml"]
 description = "Fails on a TOML file that doesn't parse."
-run = 'scripts/files-or-repo --only "\.toml$" check-toml --'
+run = '{{ scripts_dir }}/files-or-repo --only "\.toml$" check-toml --'
 
 [tasks."lint:json"]
 description = "Fails on a JSON file that doesn't parse."
-run = 'scripts/files-or-repo --only "\.json$" check-json --'
+run = '{{ scripts_dir }}/files-or-repo --only "\.json$" check-json --'
 
 [tasks."lint:merge-conflict"]
 description = "Fails on a leftover conflict marker."
 # --assume-in-merge: outside a merge the hook checks nothing, and CI is never inside one.
-run = 'scripts/files-or-repo --text check-merge-conflict --assume-in-merge --'
+run = '{{ scripts_dir }}/files-or-repo --text check-merge-conflict --assume-in-merge --'
 
 [tasks."lint:large-files"]
 description = "Fails on a file over the size limit (1 MiB)."
 # --enforce-all: without it only staged files count, and CI has none.
-run = 'scripts/files-or-repo check-added-large-files --maxkb=1024 --enforce-all --'
+run = '{{ scripts_dir }}/files-or-repo check-added-large-files --maxkb=1024 --enforce-all --'
 
 [tasks."lint:env"]
 description = "Fails when .env is tracked."
@@ -104,7 +105,7 @@ description = "Fails on a secret not in the baseline."
 # apm.lock.yaml (resolved SHAs and content hashes) and .copier-answers.yml (the template's ref
 # and source) read as high-entropy strings and are generated, so they can't carry an inline
 # allowlist pragma. lint:gitleaks still scans both.
-run = 'scripts/files-or-repo --text --skip "^(apm\.lock\.yaml|\.copier-answers\.yml)$" detect-secrets-hook --'
+run = '{{ scripts_dir }}/files-or-repo --text --skip "^(apm\.lock\.yaml|\.copier-answers\.yml)$" detect-secrets-hook --'
 
 [tasks."lint:commit-msg"]
 description = "Fails on a commit message that isn't a Conventional Commit; given none, checks the branch's commits since base."
@@ -127,15 +128,15 @@ messages
 
 [tasks."lint:actionlint"]
 description = "Checks the GitHub workflows."
-run = 'scripts/files-or-repo --only "^\.github/workflows/[^/]+\.ya?ml$" actionlint --'
+run = '{{ scripts_dir }}/files-or-repo --only "^\.github/workflows/[^/]+\.ya?ml$" actionlint --'
 
 [tasks."lint:zizmor"]
 description = "Checks the workflows for security mistakes."
-run = 'scripts/files-or-repo --only "^\.github/(workflows/[^/]+|dependabot)\.ya?ml$" zizmor --'
+run = '{{ scripts_dir }}/files-or-repo --only "^\.github/(workflows/[^/]+|dependabot)\.ya?ml$" zizmor --'
 
 [tasks."lint:symlinks"]
 description = "Fails on a broken or absolute symlink."
-run = "scripts/check-symlinks.sh"
+run = "{{ scripts_dir }}/check-symlinks.sh"
 {% if include_ci %}
 [tasks."ci:parts"]
 description = "Prints the check: parts this change needs, for CI's matrix."

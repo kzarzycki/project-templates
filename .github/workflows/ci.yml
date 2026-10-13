@@ -50,7 +50,8 @@ jobs:
         run: mise run lint
 
   generate:
-    runs-on: ubuntu-latest
+    # apple/xcode's check:all runs its gate script (swift test), which needs Xcode: macOS.
+    runs-on: ${{ matrix.os || 'ubuntu-latest' }}
     strategy:
       matrix:
         include:
@@ -63,6 +64,7 @@ jobs:
           - { type: ai/mcp, language: python }
           - { type: ai/mcp, language: node }
           - { type: infra/terraform }
+          - { type: apple/xcode, os: macos-latest }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

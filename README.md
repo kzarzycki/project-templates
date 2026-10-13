@@ -28,6 +28,7 @@ copier copy --trust gh:your-org/project-templates my-tool \
 | `software/node`     | Node / TypeScript (npm · biome · vitest)              |
 | `software/java`     | Java / JVM (Gradle · Spotless · JaCoCo)               |
 | `infra/terraform`   | Infrastructure (Terraform · TFLint)                    |
+| `apple/xcode`       | Apple app (Xcode · SwiftPM · its own gate script)     |
 | `data/dbt`          | dbt project (sqlfluff · dbt build/test)               |
 | `authoring/content` | docs, research, markdown (markdownlint · link-check)  |
 | `ai/skills`         | a Claude Code skills / plugin repo                    |
@@ -355,6 +356,9 @@ fails CI there too. A new project gets its `uv.lock` at generation; an existing
 repo without mise that has none (dbt) runs `uv lock` and commits it before
 updating.
 
+Updating to the next release adds the `apple/xcode` project type and its
+`gate_script` question; other project types render as before.
+
 ## Adopt an existing (pre-template) repo
 
 A repo that predates the template can be brought under management — `copier copy`
@@ -367,6 +371,10 @@ copier copy --trust --data project_type=software/python --data include_example=f
 git add -p && git commit          # keep what you want from the prompted merge
 ```
 
+An Xcode repo adopts with `--data project_type=apple/xcode --data
+gate_script=Scripts/gate.sh --data include_example=false`, naming its own gate
+script: `mise run check` then runs it.
+
 Governance files (hooks, CI, `.editorconfig`, ADR, CODEOWNERS) land clean;
 toolchain config (`pyproject.toml`, `build.gradle`) is hand-merged once.
 
@@ -378,6 +386,7 @@ templates/
   _lang/{python,node,java}/   language toolchains — included by coded leaves
   software/{python,node,java}/
   infra/terraform/
+  apple/xcode/
   data/dbt/
   authoring/content/
   ai/{skills,mcp}/

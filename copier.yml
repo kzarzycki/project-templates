@@ -21,6 +21,7 @@ project_type:
     Claude Code skills:         ai/skills
     MCP server:                 ai/mcp
     Infrastructure (Terraform): infra/terraform
+    Apple app (Xcode / SwiftPM): apple/xcode
 
 # ---- Shown only for parametric leaves (ai/mcp can sit on either toolchain) ----
 language:
@@ -105,6 +106,14 @@ terraform_version:
   default: "1.15.8"
   when: "{{ project_type == 'infra/terraform' }}"
 
+gate_script:
+  type: str
+  default: Scripts/gate.sh
+  when: "{{ project_type == 'apple/xcode' }}"
+  help: The script that is the project's merge check (a path from the repo root); `mise run check` runs it
+  # The path goes unquoted into mise.toml and CI's shell, so it is limited to characters neither reads.
+  validator: "{% if not (gate_script | regex_search('^[A-Za-z0-9._-][A-Za-z0-9._/-]*\\Z')) %}a relative path of letters, digits, '.', '_', '-' and '/' only{% endif %}"
+
 include_example:
   type: bool
   default: true
@@ -164,6 +173,9 @@ _exclude:
   - "{% if not include_example %}models/example{% endif %}"
   - "{% if not include_example %}scripts/smoke_server.py{% endif %}"
   - "{% if not include_example %}scripts/smoke-server.mjs{% endif %}"
+  - "{% if not include_example %}Package.swift{% endif %}"
+  - "{% if not include_example %}Sources{% endif %}"
+  - "{% if not include_example %}Tests{% endif %}"
 
 # Seeds the project owns once written: an update creates a missing one but never merges
 # template changes into one the project filled in.

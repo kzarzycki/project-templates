@@ -52,6 +52,6 @@
     hooks:
       - id: check-symlinks
         name: reject dangling symlinks
-        entry: scripts/check-symlinks.sh
+        entry: {{ scripts_dir | default("scripts") }}/check-symlinks.sh
         language: script
         types: [symlink]
