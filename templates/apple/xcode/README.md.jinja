@@ -1,0 +1,26 @@
+# {{ project_name }}
+
+{{ description }}
+
+## Setup
+
+Needs Xcode (the full app, not only the Command Line Tools).
+
+{% if include_mise -%}
+```bash
+mise install                  # XcodeGen + the lint tools, pinned
+mise run setup:dev            # install the git hooks
+mise run check                # the lints + {{ gate_script }}, as CI runs them
+```
+{% else -%}
+```bash
+uv tool install pre-commit    # if not already installed
+pre-commit install            # enable git hooks
+./{{ gate_script }}  # the merge check
+```
+{% endif %}
+`{{ gate_script }}` is the project's merge check: add the app's build and test steps there.
+
+## License
+
+{% if license == 'none' %}Unlicensed — all rights reserved.{% else %}{{ license }} © {{ year }} {{ author }}{% endif %}

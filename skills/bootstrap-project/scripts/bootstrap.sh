@@ -8,9 +8,10 @@
 #     [--language python|node] [terraform_version=VERSION] [key=value ...]
 #
 # project_type: software/python | software/node | software/java | data/dbt
-#             | authoring/content | ai/skills | ai/mcp | infra/terraform
+#             | authoring/content | ai/skills | ai/mcp | infra/terraform | apple/xcode
 # --language (python|node) applies only to ai/mcp (it picks the toolchain).
-# terraform_version=VERSION applies only to infra/terraform.
+# terraform_version=VERSION applies only to infra/terraform; gate_script=PATH (default
+# Scripts/gate.sh) only to apple/xcode.
 set -euo pipefail
 
 # Template source. Defaults to the published repo (a `gh:` URL so copier records
@@ -32,7 +33,7 @@ while [ $# -gt 0 ]; do
 done
 
 [ -n "$name" ] || { echo "error: --name is required" >&2; exit 2; }
-[ -n "$type" ] || { echo "error: --type is required (software/python|software/node|software/java|data/dbt|authoring/content|ai/skills|ai/mcp|infra/terraform)" >&2; exit 2; }
+[ -n "$type" ] || { echo "error: --type is required (software/python|software/node|software/java|data/dbt|authoring/content|ai/skills|ai/mcp|infra/terraform|apple/xcode)" >&2; exit 2; }
 [ -n "$dest" ] || dest="$name"
 
 author="$(git config user.name 2>/dev/null || echo 'Your Name')"
