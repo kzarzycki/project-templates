@@ -993,6 +993,18 @@ class AgentLayerGenerationTest(unittest.TestCase):
                 self.assertTrue(os.access(project / "scripts/files-or-repo", os.X_OK))
                 self.assertTrue(os.access(project / "scripts/check-symlinks.sh", os.X_OK))
 
+    def test_without_a_merge_queue_the_ruleset_keeps_every_other_rule(self) -> None:
+        # GitHub offers merge queues only on organization-owned repos; every leaf includes the one ruleset template.
+        queued = json.loads((render() / ".github/rulesets/main.json").read_text())
+        ruleset = json.loads((render(merge_queue=False) / ".github/rulesets/main.json").read_text())
+
+        self.assertEqual("loop-merge-queue", ruleset["name"])  # setup:github finds its ruleset by this name
+        self.assertEqual(
+            {**queued, "rules": [rule for rule in queued["rules"] if rule["type"] != "merge_queue"]}, ruleset
+        )
+        self.assertEqual(["deletion", "non_fast_forward", "pull_request", "required_status_checks"],
+                         [rule["type"] for rule in ruleset["rules"]])
+
     def test_node_coverage_gate_compares_against_the_commit_ci_passes(self) -> None:
         project = render("software/node")
         subprocess.run(["git", "init", "-q"], cwd=project, check=True)

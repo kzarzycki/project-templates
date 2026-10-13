@@ -195,7 +195,11 @@ queue entry against the queue's base. With the loop on,
 `.github/rulesets/main.json` is the `loop-merge-queue` ruleset on main: changes
 only through a squashed PR with every review thread resolved, no bypass, and a merge queue (squash, all-green
 grouping) that requires exactly two names, CI's `check` job and the
-`loop:approvals` status. `mise run setup:github` (alias `merge-queue`) creates
+`loop:approvals` status. GitHub offers merge queues only on organization-owned
+repos, so a user-owned repo answers `merge_queue=false`: the ruleset then has no
+queue and keeps every other rule, and auto-merge lands the PR once both names
+are green. Its name stays `loop-merge-queue`, since `setup:github` finds its
+ruleset by that name. `mise run setup:github` (alias `merge-queue`) creates
 that ruleset on GitHub, or updates it if one with that name exists, and sets
 the repository's `allow_auto_merge` and `delete_branch_on_merge` to true, so
 `mise run loop:land <n>` (or the approvals workflow) queues the PR once both
@@ -319,6 +323,11 @@ Updating to v0.8.0 moves the pack to `^0.16.0`. With the loop on:
   `mise run setup:github --dry-run`, read the plan, and `mise run setup:github`.
   Renames happen in place, so issues keep their labels, and a label still on an
   issue is never deleted.
+
+The next release asks `merge_queue` (default true) with the loop on. A
+user-owned repo, where GitHub rejected the ruleset's merge queue and
+`setup:github` stopped before any change, answers false and runs
+`mise run setup:github` again. With the default the ruleset is byte-identical.
 
 Without mise, CI's `uv sync` becomes `uv sync --locked`, so a stale `uv.lock`
 fails CI there too. A new project gets its `uv.lock` at generation; an existing
