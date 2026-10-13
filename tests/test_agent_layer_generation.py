@@ -283,7 +283,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertIn("verify:", workflow)
         for command in (
             "PyYAML==6.0.3",
-            "github:microsoft/apm@0.30.0",
+            "github:microsoft/apm@0.33.0",
             "python3 -m unittest",
             "tests.test_agent_layer_generation",
             "tests.test_agent_mise_tasks",
@@ -330,7 +330,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertIn("mcp: []", apm)
 
         mise = tomllib.loads((project / "mise.toml").read_text())
-        self.assertEqual("0.30.0", mise["tools"].get("github:microsoft/apm"))
+        self.assertEqual("0.33.0", mise["tools"].get("github:microsoft/apm"))
         self.assertEqual("1.30.0", mise["tools"]["fnox"])
         self.assertEqual(
             {"agent:sync": "agent-sync", "agent:claude": "agent-claude", "agent:codex": "agent-codex"},
@@ -349,7 +349,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, rendered)
         for remediation in (
-            "error: apm 0.30.0 is required; run 'mise install'",
+            "error: apm 0.33.0 is required; run 'mise install'",
             "error: fnox 1.30.0 is required; run 'mise install'",
             "error: python3 is required; run 'mise install'",
             "error: claude is required; install Claude Code and add 'claude' to PATH",
@@ -1099,8 +1099,8 @@ class AgentLayerGenerationTest(unittest.TestCase):
     def test_apm_version_has_one_template_source(self) -> None:
         partial = (ROOT / "templates/_base/_mise_agent_tasks.part").read_text()
 
-        self.assertIn('{% set apm_version = "0.30.0" %}', partial)
-        self.assertEqual(1, partial.count("0.30.0"))
+        self.assertIn('{% set apm_version = "0.33.0" %}', partial)
+        self.assertEqual(1, partial.count("0.33.0"))
 
     def test_disabled_layer_leaves_no_agent_framework(self) -> None:
         project = render(include_mise=True, include_agent_layer=False)
