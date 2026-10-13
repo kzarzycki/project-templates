@@ -1112,10 +1112,21 @@ class AgentLayerGenerationTest(unittest.TestCase):
         issue = {"event_name": "issue_comment", "event": {"issue": {"number": 17}, "comment": {"body": "Local check passed"}}}
         self.assertFalse(evaluate(job["if"], issue))
         self.assertEqual("${{ github.event.pull_request.number || github.event.issue.number }}", job["steps"][-1]["env"]["PR"])
-        self.assertEqual(
-            "approvals-${{ github.event.pull_request.number || github.event.issue.number || github.sha }}",
-            approvals["concurrency"]["group"],
-        )
+        # A run the job skips never cancels one that posts the status: only runs that post share a PR's group.
+        pr = {"number": 17, "draft": False}
+        events = {
+            "local-ci record": ({"event_name": "issue_comment", "event": {"issue": {"number": 17, "pull_request": {"url": "x"}}, "comment": {"body": "Local check passed\nHead: abc"}}}, True),
+            "label": ({"event_name": "pull_request", "actor": "owner", "event": {"pull_request": pr}}, True),
+            "review": ({"event_name": "pull_request_review", "actor": "verifier", "event": {"pull_request": pr}}, True),
+            "other comment": ({"event_name": "issue_comment", "event": {"issue": {"number": 17, "pull_request": {"url": "x"}}, "comment": {"body": "Thanks, checking this now"}}}, False),
+            "draft label": ({"event_name": "pull_request", "actor": "owner", "event": {"pull_request": {"number": 17, "draft": True}}}, False),
+            "dependabot label": ({"event_name": "pull_request", "actor": "dependabot[bot]", "event": {"pull_request": pr}}, False),
+        }
+        for name, (github, runs) in events.items():
+            with self.subTest(event=name):
+                self.assertEqual(runs, bool(evaluate(job["if"], github)))
+                group = evaluate(approvals["concurrency"]["group"], {**github, "run_id": name})
+                self.assertEqual("approvals-17" if runs else f"approvals-skipped-{name}", group)
         self.assertNotIn("workflow_run", text)
 
         # The project's own workflow linters, at its pinned versions, pass the rendered workflow.

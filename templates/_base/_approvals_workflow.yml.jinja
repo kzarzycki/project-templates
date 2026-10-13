@@ -33,9 +33,15 @@ on:
 
 permissions: {}
 
-concurrency:
+{% if not include_ci %}{# The job's condition; the concurrency group reads it too. #}{% set runs %}{% raw %}github.event_name == 'merge_group'
+      || ((github.event_name == 'pull_request' || github.event_name == 'pull_request_review') && !github.event.pull_request.draft && github.actor != 'dependabot[bot]')
+      || (github.event_name == 'issue_comment' && github.event.issue.pull_request && (github.event.comment.body == 'Local check passed' || startsWith(github.event.comment.body, fromJSON('"Local check passed\n"')) || startsWith(github.event.comment.body, fromJSON('"Local check passed\r\n"')))){% endraw %}{% endset %}{% endif %}concurrency:
 {% if include_ci %}  group: {% raw %}approvals-${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number || github.sha }}{% endraw %}
-{% else %}  group: {% raw %}approvals-${{ github.event.pull_request.number || github.event.issue.number || github.sha }}{% endraw %}
+{% else %}  # An event the job skips gets a group of its own, so it never cancels a run that posts the status.
+  group: >-
+      {{ '${{ (' }}{{ runs }}{% raw %})
+      && format('approvals-{0}', github.event.pull_request.number || github.event.issue.number || github.sha)
+      || format('approvals-skipped-{0}', github.run_id) }}{% endraw %}
 {% endif %}  cancel-in-progress: true
 
 jobs:
@@ -48,9 +54,7 @@ jobs:
     # A comment counts only on a PR and when its first line is the record's; the gate reads the
     # record itself.
     if: >-
-      {% raw %}${{ github.event_name == 'merge_group'
-      || ((github.event_name == 'pull_request' || github.event_name == 'pull_request_review') && !github.event.pull_request.draft && github.actor != 'dependabot[bot]')
-      || (github.event_name == 'issue_comment' && github.event.issue.pull_request && (github.event.comment.body == 'Local check passed' || startsWith(github.event.comment.body, fromJSON('"Local check passed\n"')) || startsWith(github.event.comment.body, fromJSON('"Local check passed\r\n"')))) }}{% endraw %}{% endif %}
+      {{ '${{ ' }}{{ runs }}{{ ' }}' }}{% endif %}
     runs-on: ubuntu-latest
     permissions:
       contents: write # turns on auto-merge, or merges when nothing is pending
