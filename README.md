@@ -157,11 +157,18 @@ scratch directory so the tree keeps its edits. Each patch ends one of two ways:
 - Port it into the pack and release it, then run `agent:intake -- --refresh`.
   It takes the newer compatible pack; an edited file the release now matches
   resolves itself and its patch goes. Any other edited file is put back and its
-  patch stays, now against the new release. That holds for a file the release
-  removes: its patch is against `/dev/null` (a deletion you made resolves), and
-  dropping the patch lets the next `agent:sync` remove the file.
+  patch stays, now against the new release. That holds for a file or a whole
+  skill the release removes: its patch is against `/dev/null`, and a deletion
+  you made resolves.
 - Drop it: delete the patch, and the next `agent:sync` restores the pack's
-  copy. An edit made after intake ran needs intake again.
+  copy. A file the pack no longer ships is removed instead, with its skill
+  directory once empty. APM itself keeps an edited file it no longer deploys.
+  Sync removes the file only while it still holds the bytes intake took in, so
+  an edit made after intake ran makes sync refuse and name the file; run intake
+  again.
+
+`.agent-intake/` goes once a sync succeeds, audit included, so a failed sync
+keeps it.
 
 A minor pack bump goes the same way: edit the ref in `apm.yml` (a caret on 0.x,
 `^0.17.0`, excludes 0.18.0), then run `mise run agent:intake -- --refresh`.

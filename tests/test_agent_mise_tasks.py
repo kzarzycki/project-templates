@@ -35,6 +35,7 @@ def fake_executable(directory: Path, name: str) -> None:
             '[ -n "${FAKE_APM_ORPHAN_PATH:-}" ]; then\n'
             '  rm -f "$FAKE_APM_ORPHAN_PATH"\n'
             "fi\n"
+            'if [ "${1:-}" = "audit" ]; then exit "${FAKE_APM_AUDIT_EXIT:-0}"; fi\n'
             # A release deployed over an edited file, then the update fails or its caller dies.
             'if [ "${1:-}" = "update" ] && '
             '[ -n "${FAKE_APM_UPDATE_WRITES:-}" ]; then\n'
@@ -386,6 +387,45 @@ class AgentMiseTasksTest(unittest.TestCase):
 
         self.assertEqual(1, result.returncode, result.stderr)
         self.assertIn("apm.lock.yaml: cannot read the deployed file hash line", result.stderr)
+
+    def dropped_edit(self, edit: bytes, on_disk: bytes) -> Path:
+        """A dropped edit to a file the pack no longer ships: the ledger holds it, no patch, the lock omits it."""
+        path = ".claude/skills/wayfinder/reference.md"
+        self.drift()
+        skill = self.project / path
+        skill.parent.mkdir(parents=True)
+        skill.write_bytes(on_disk)
+        (self.project / ".agent-intake").mkdir()
+        (self.project / ".agent-intake/intaken").write_text(f"{hashlib.sha256(edit).hexdigest()}  {path}\n")
+        return skill
+
+    def test_vendored_sync_refuses_to_remove_a_dropped_file_edited_again(self) -> None:
+        self.use_vendored_project()
+        skill = self.dropped_edit(b"edited\n", b"edited again\n")
+
+        result = self.run_task("agent:sync")
+
+        self.assertEqual(1, result.returncode, result.stderr)
+        self.assertIn(".claude/skills/wayfinder/reference.md changed after intake took in its dropped edit", result.stderr)
+        self.assertEqual(b"edited again\n", skill.read_bytes())
+        self.assertNotIn(f"{self.bin}/apm install --target claude,codex", self.commands())
+
+    def test_vendored_sync_keeps_the_intake_state_until_its_audit_passes(self) -> None:
+        self.use_vendored_project()
+        skill = self.dropped_edit(b"edited\n", b"edited\n")
+        self.env["FAKE_APM_AUDIT_EXIT"] = "1"
+
+        failed = self.run_task("agent:sync")
+
+        self.assertEqual(1, failed.returncode, failed.stderr)
+        self.assertFalse(skill.parent.exists())
+        self.assertTrue((self.project / ".agent-intake/intaken").is_file())
+
+        del self.env["FAKE_APM_AUDIT_EXIT"]
+        synced = self.run_task("agent:sync")
+
+        self.assertEqual(0, synced.returncode, synced.stderr)
+        self.assertFalse((self.project / ".agent-intake").exists())
 
     def edited_skill(self) -> tuple[str, Path]:
         path = ".claude/skills/wayfinder/SKILL.md"

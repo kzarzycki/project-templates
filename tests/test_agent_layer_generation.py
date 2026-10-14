@@ -1042,6 +1042,74 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertFalse(edited.exists())
         self.assertFalse((project / ".agent-intake").exists())
 
+    def skill_the_release_removes(self) -> tuple[Path, dict[str, str], Path, str]:
+        """An edited skill, taken in, that the next minor replaces with another skill; refreshed onto it."""
+        project = render(
+            agent_layer_mode="vendored",
+            engineering_capability_source="https://fixture.invalid/test/engineering.git",
+            engineering_capability_ref="^0.2.0",
+            include_fnox=False,
+        )
+        fixture, env = fixture_pack_env(project)
+        subprocess.run(["git", "init", "-q"], cwd=project, check=True)
+        commit_project(project, "render")
+        first = run_agent_sync(project, env)
+        self.assertEqual(0, first.returncode, first.stdout + first.stderr)
+        commit_project(project, "sync")
+        skill = project / ".claude/skills/wayfinder/SKILL.md"
+        skill.write_text(skill.read_text() + "\nA local edit.\n")
+        commit_project(project, "edit wayfinder")
+        self.assertEqual(1, run_mise_task(project, env, "agent:intake").returncode)
+
+        shutil.copytree(fixture / "skills/wayfinder", fixture / "skills/other")
+        shutil.rmtree(fixture / "skills/wayfinder")
+        tag_fixture_release(fixture, "0.3.0")
+        manifest = project / "apm.yml"
+        manifest.write_text(manifest.read_text().replace("^0.2.0", "^0.3.0"))
+        commit_project(project, "take engineering 0.3")
+        refresh = run_mise_task(project, env, "agent:intake", "--refresh")
+        self.assertEqual(1, refresh.returncode, refresh.stdout + refresh.stderr)
+        self.assertTrue(skill.is_file())
+        patch = project / ".agent-intake/.claude/skills/wayfinder/SKILL.md.patch"
+        self.assertTrue(patch.is_file())
+        patch.unlink()  # drop the edit
+        return project, env, skill, refresh.stdout
+
+    def test_vendored_sync_removes_a_dropped_edit_to_a_skill_the_release_removes(self) -> None:
+        project, env, skill, refreshed = self.skill_the_release_removes()
+
+        dropped = run_agent_sync(project, env)
+
+        self.assertEqual(0, dropped.returncode, dropped.stdout + dropped.stderr)
+        self.assertIn("removed .claude/skills/wayfinder/SKILL.md", dropped.stdout)
+        self.assertFalse(skill.parent.exists())
+        self.assertNotIn("wayfinder", (project / "apm.lock.yaml").read_text())
+        self.assertTrue((project / ".claude/skills/other/SKILL.md").is_file())
+        self.assertFalse((project / ".agent-intake").exists())
+        commit_project(project, "drop the wayfinder edit")
+        frozen = run_agent_sync(project, env, "--frozen")
+        self.assertEqual(0, frozen.returncode, frozen.stdout + frozen.stderr)
+        self.assertNotIn("resolved:", refreshed)  # APM kept the edited file; the release does not carry it
+
+    def test_vendored_sync_keeps_a_newer_edit_to_a_skill_the_release_removes(self) -> None:
+        project, env, skill, _ = self.skill_the_release_removes()
+        newer = skill.read_text() + "\nA newer edit.\n"
+        skill.write_text(newer)
+
+        refused = run_agent_sync(project, env)
+
+        self.assertEqual(1, refused.returncode, refused.stdout + refused.stderr)
+        self.assertIn(".claude/skills/wayfinder/SKILL.md", refused.stderr)
+        self.assertEqual(newer, skill.read_text())
+        self.assertTrue((project / ".agent-intake/intaken").is_file())
+
+        # Intake takes the newer edit in; dropping it removes the skill.
+        self.assertEqual(1, run_mise_task(project, env, "agent:intake").returncode)
+        (project / ".agent-intake/.claude/skills/wayfinder/SKILL.md.patch").unlink()
+        dropped = run_agent_sync(project, env)
+        self.assertEqual(0, dropped.returncode, dropped.stdout + dropped.stderr)
+        self.assertFalse(skill.parent.exists())
+
     def test_vendored_render_keeps_hand_written_root_files_and_compiles_nothing(self) -> None:
         for project_type, answers in LEAVES:
             with self.subTest(project_type=project_type, **answers):
