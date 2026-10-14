@@ -267,7 +267,7 @@ gh pr merge "$PR" --auto --squash --match-head-commit "$head" || {
 
 [tasks."setup:github"]
 alias = "merge-queue"
-description = "Writes GitHub settings (the ruleset, auto-merge, head branch deletion), then syncs the labels with the pack's labels.py, from the repo's files; runs no checks. --dry-run prints the label plan and writes nothing; --revert deletes the ruleset."
+description = "Writes GitHub settings (the ruleset, auto-merge, head branch deletion; on a plan without rulesets, squash-only merges and head branch deletion), then syncs the labels with the pack's labels.py, from the repo's files; runs no checks. --dry-run prints the label plan and writes nothing; --revert deletes the ruleset."
 usage = '''
 flag "--revert" help="Delete the loop-merge-queue ruleset; the repository settings are restored with the command apply printed"
 flag "--dry-run" help="Print what labels.py would change; write nothing to GitHub (no ruleset, settings or labels)"
@@ -292,25 +292,42 @@ elif [ "${usage_dry_run:-false}" = true ]; then
   echo "dry run: the ruleset and repository settings are left as they are"
   exec python3 "$labels" --dry-run
 fi
-id="$(gh api --paginate 'repos/{owner}/{repo}/rulesets' --jq '.[] | select(.source_type == "Repository" and .name == "loop-merge-queue") | .id')"
-if [ "${usage_revert:-false}" = true ]; then
-  if [ -z "$id" ]; then echo "no loop-merge-queue ruleset: nothing to revert"; exit 0; fi
-  # A 404 means another run deleted it first: the revert is done either way.
-  out="$(gh api -X DELETE "repos/{owner}/{repo}/rulesets/$id" 2>&1)" || case "$out" in *"HTTP 404"*) ;; *) echo "$out" >&2; exit 1 ;; esac
-  echo "deleted ruleset loop-merge-queue ($id)"
-  exit 0
+# A private repo on GitHub Free has no rulesets and no auto-merge: GitHub answers the rules read with this 403,
+# the probe the pack's land uses. Any other error stops the task.
+free=false
+if ! probe="$(gh api 'repos/{owner}/{repo}/rules/branches/main' 2>&1 >/dev/null)"; then
+  case "$probe" in *"Upgrade to GitHub Pro"*"(HTTP 403)"*) free=true ;; *) echo "$probe" >&2; exit 1 ;; esac
 fi
-if [ -n "$id" ]; then
-  gh api -X PUT "repos/{owner}/{repo}/rulesets/$id" --input .github/rulesets/main.json --jq '"updated ruleset loop-merge-queue (\(.id))"'
+if [ "$free" = true ] && [ "${usage_revert:-false}" = true ]; then echo "no rulesets on this plan: nothing to revert"; exit 0; fi
+if [ "$free" = true ]; then
+  # Squash-only merges and head branch deletion are what Free allows; the ruleset and auto-merge are skipped.
+  set -- $(gh api 'repos/{owner}/{repo}' --jq '.allow_merge_commit, .allow_rebase_merge, .allow_squash_merge, .delete_branch_on_merge')
+  gh api -X PATCH 'repos/{owner}/{repo}' -F allow_merge_commit=false -F allow_rebase_merge=false \
+    -F allow_squash_merge=true -F delete_branch_on_merge=true >/dev/null
+  echo "allow_merge_commit was $1, allow_rebase_merge was $2, allow_squash_merge was $3, delete_branch_on_merge was $4;" \
+    "restore: gh api -X PATCH 'repos/{owner}/{repo}' -F allow_merge_commit=$1 -F allow_rebase_merge=$2 -F allow_squash_merge=$3 -F delete_branch_on_merge=$4"
+  echo "GitHub enforces nothing on main here (this plan has no rulesets or auto-merge): no ruleset applied, mise run loop:land is the only gate"
 else
-  gh api -X POST 'repos/{owner}/{repo}/rulesets' --input .github/rulesets/main.json --jq '"created ruleset loop-merge-queue (\(.id))"'
+  id="$(gh api --paginate 'repos/{owner}/{repo}/rulesets' --jq '.[] | select(.source_type == "Repository" and .name == "loop-merge-queue") | .id')"
+  if [ "${usage_revert:-false}" = true ]; then
+    if [ -z "$id" ]; then echo "no loop-merge-queue ruleset: nothing to revert"; exit 0; fi
+    # A 404 means another run deleted it first: the revert is done either way.
+    out="$(gh api -X DELETE "repos/{owner}/{repo}/rulesets/$id" 2>&1)" || case "$out" in *"HTTP 404"*) ;; *) echo "$out" >&2; exit 1 ;; esac
+    echo "deleted ruleset loop-merge-queue ($id)"
+    exit 0
+  fi
+  if [ -n "$id" ]; then
+    gh api -X PUT "repos/{owner}/{repo}/rulesets/$id" --input .github/rulesets/main.json --jq '"updated ruleset loop-merge-queue (\(.id))"'
+  else
+    gh api -X POST 'repos/{owner}/{repo}/rulesets' --input .github/rulesets/main.json --jq '"created ruleset loop-merge-queue (\(.id))"'
+  fi
+  # Auto-merge lets a ready PR merge once its checks pass; GitHub deletes the merged head branch.
+  auto="$(gh api 'repos/{owner}/{repo}' --jq .allow_auto_merge)"
+  delete="$(gh api 'repos/{owner}/{repo}' --jq .delete_branch_on_merge)"
+  gh api -X PATCH 'repos/{owner}/{repo}' -F allow_auto_merge=true -F delete_branch_on_merge=true >/dev/null
+  echo "allow_auto_merge was $auto, delete_branch_on_merge was $delete, both now true; restore: gh api -X PATCH 'repos/{owner}/{repo}' -F allow_auto_merge=$auto -F delete_branch_on_merge=$delete"
+  echo "revert the ruleset: mise run setup:github --revert"
 fi
-# Auto-merge lets a ready PR merge once its checks pass; GitHub deletes the merged head branch.
-auto="$(gh api 'repos/{owner}/{repo}' --jq .allow_auto_merge)"
-delete="$(gh api 'repos/{owner}/{repo}' --jq .delete_branch_on_merge)"
-gh api -X PATCH 'repos/{owner}/{repo}' -F allow_auto_merge=true -F delete_branch_on_merge=true >/dev/null
-echo "allow_auto_merge was $auto, delete_branch_on_merge was $delete, both now true; restore: gh api -X PATCH 'repos/{owner}/{repo}' -F allow_auto_merge=$auto -F delete_branch_on_merge=$delete"
-echo "revert the ruleset: mise run setup:github --revert"
 # The approvals workflow's token: a merge it makes starts main's push workflows only with an App's.
 if gh api 'repos/{owner}/{repo}/actions/variables/APPROVALS_APP_CLIENT_ID' >/dev/null 2>&1; then
   if gh api 'repos/{owner}/{repo}/actions/secrets/APPROVALS_APP_PRIVATE_KEY' >/dev/null 2>&1; then
