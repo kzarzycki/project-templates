@@ -214,7 +214,10 @@ was green. On success on a ready PR that has no auto-merge request yet, it turns
 auto-merge on with the repo's `GITHUB_TOKEN`, pinned to the head
 (`--match-head-commit`), so a PR made ready by hand lands with no agent action;
 the job needs `contents: write` and `pull-requests: write` for that, and `actions: read` to read each check run's workflow (without it GitHub refuses the merge check's query). It never
-replaces an existing request. GitHub's free plan has no protection for private repos, so there the
+replaces an existing request, and it turns nothing on when the repo's `allow_auto_merge`
+is not `true` or can't be read: there, with no required check pending, `gh pr merge --auto`
+would merge at once with `GITHUB_TOKEN`, so no push workflow would run on main. The job
+stops at the status and `mise run loop:land <pr>` merges. GitHub's free plan has no protection for private repos, so there the
 status is only a mark (pending while it waits, red on a missing proof), not a
 block: it catches a forgotten step, not a deliberate one.
 
