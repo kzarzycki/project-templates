@@ -391,7 +391,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
             [
                 {
                     "git": "kzarzycki/agent-skills/engineering",
-                    "ref": "^0.16.0",
+                    "ref": "^0.18.0",
                 }
             ],
             yaml.safe_load(apm)["dependencies"]["apm"],
@@ -442,7 +442,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         manifest = (project / "apm.yml").read_text()
         answers = (project / ".copier-answers.yml").read_text()
         self.assertEqual(1, manifest.count("git: kzarzycki/agent-skills/engineering"))
-        self.assertIn("ref: ^0.16.0", manifest)
+        self.assertIn("ref: ^0.18.0", manifest)
         self.assertIn("include_engineering_workflow: true", answers)
         self.assertNotIn("engineering_capability_source", answers)
         self.assertNotIn("engineering_capability_ref", answers)
@@ -946,7 +946,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
                 self.assertIn("apm prune", tasks["agent:sync"]["run"])
                 self.assertIn("`CLAUDE.md`", (project / "AGENTS.md").read_text())
                 self.assertIn(
-                    "Every change that lands as a PR runs the `engineering-loop` skill.",
+                    "Every change that lands as a PR runs the `engineering-loop` skill, unless your personal instructions say `Engineering loop: off`",
                     (project / "CLAUDE.md").read_text(),
                 )
                 self.assertIn(".agent-intake/", (project / ".gitignore").read_text().splitlines())
@@ -1101,7 +1101,17 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertEqual(
             ["- spec: auto unless risk", "- merge: auto unless risk", "- risk: path .github/** or path .pre-commit-config.yaml or path mise.toml or path apm.yml"
              " or path docs/agents/** or path CODEOWNERS"],
-            re.findall(r"^[ \t]*[-*] +(?:spec|plan|merge|risk):.*$", approvals_seed, re.MULTILINE),
+            re.findall(r"^[ \t]*[-*] +(?:spec|plan|merge|risk|bot|signoff):.*$", approvals_seed, re.MULTILINE),
+        )
+        # The new lines are documented, not switched on: no opt-out line as the pack's gate reads it.
+        self.assertNotRegex(approvals_seed, re.compile(r"^[ \t]*(?:[-*][ \t]+)?`?Opt-out:[ \t]*allowed`?[ \t]*$", re.MULTILINE))
+        for line in ("`spec: auto`", "`signoff: <condition>`", "`Opt-out: allowed`", "`Engineering loop: off`"):
+            self.assertIn(line, approvals_seed)
+        # § Board maps each loop column to the board column of its own name, as the pack's board.py reads it.
+        loop_columns = ["Intent", "Needs owner", "Ready", "Build", "Verify", "Sign-off", "Done"]
+        self.assertEqual(
+            [(column, column) for column in loop_columns],
+            re.findall(r"^- `([^`]+)` is `([^`]+)`", (project / "docs/agents/issue-tracker.md").read_text(), re.MULTILINE),
         )
         for name, headings in (
             (
@@ -1120,7 +1130,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
             ),
             (
                 "issue-tracker.md",
-                ("Components", "Never on GitHub", "Extra labels", "Extra categories", "Renamed labels"),
+                ("Components", "Never on GitHub", "Extra labels", "Extra categories", "Renamed labels", "Board"),
             ),
             ("coding-standards.md", ("Domain facts",)),
         ):
@@ -1135,7 +1145,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
                 re.findall(r"^## .*", text, re.MULTILINE),
             )
         self.assertIn(
-            "Every change that lands as a PR runs the `engineering-loop` skill.",
+            "Every change that lands as a PR runs the `engineering-loop` skill, unless your personal instructions say `Engineering loop: off`",
             (project / ".apm/instructions/project.instructions.md").read_text(),
         )
 
