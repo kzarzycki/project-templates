@@ -301,7 +301,9 @@ fi
 if [ "$free" = true ] && [ "${usage_revert:-false}" = true ]; then echo "no rulesets on this plan: nothing to revert"; exit 0; fi
 if [ "$free" = true ]; then
   # Squash-only merges and head branch deletion are what Free allows; the ruleset and auto-merge are skipped.
-  set -- $(gh api 'repos/{owner}/{repo}' --jq '.allow_merge_commit, .allow_rebase_merge, .allow_squash_merge, .delete_branch_on_merge')
+  # A standalone assignment, so a failed read stops the task before the PATCH loses the previous values.
+  settings="$(gh api 'repos/{owner}/{repo}' --jq '.allow_merge_commit, .allow_rebase_merge, .allow_squash_merge, .delete_branch_on_merge')"
+  set -- $settings
   gh api -X PATCH 'repos/{owner}/{repo}' -F allow_merge_commit=false -F allow_rebase_merge=false \
     -F allow_squash_merge=true -F delete_branch_on_merge=true >/dev/null
   echo "allow_merge_commit was $1, allow_rebase_merge was $2, allow_squash_merge was $3, delete_branch_on_merge was $4;" \

@@ -555,6 +555,8 @@ class AgentMiseTasksTest(unittest.TestCase):
             "    if data['delete_404']:\n"
             "        sys.exit('gh: Not Found (HTTP 404)')\n"
             "    del rulesets[path.rsplit('/', 1)[1]]\n"
+            "elif method == 'GET' and data.get('settings_read_fails'):\n"
+            "    sys.exit('gh: Bad Gateway (HTTP 502)')\n"
             "elif method == 'PATCH':\n"
             "    data.update({key: value == 'true' for key, value in fields.items()})\n"
             "else:\n"
@@ -655,6 +657,19 @@ class AgentMiseTasksTest(unittest.TestCase):
         revert = self.run_task("setup:github", "--revert")
         self.assertEqual(0, revert.returncode, revert.stderr)
         self.assertIn("nothing to revert", revert.stdout)
+
+    def test_setup_github_on_a_plan_without_rulesets_stops_when_the_settings_read_fails(self) -> None:
+        settings = {"allow_merge_commit": True, "allow_rebase_merge": True, "allow_squash_merge": False,
+                    "delete_branch_on_merge": False}
+        state = self.fake_github(rules="free", settings_read_fails=True, **settings)
+
+        result = self.run_task("setup:github")
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("HTTP 502", result.stderr)
+        self.assertNotIn("restore: ", result.stdout)
+        self.assertEqual(settings, {key: json.loads(state.read_text())[key] for key in settings})
+        self.assertEqual([], self.commands())
 
     def test_setup_github_stops_on_any_other_rules_read_error_before_a_write(self) -> None:
         state = self.fake_github(rules="denied", allow_merge_commit=True)
