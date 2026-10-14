@@ -307,8 +307,8 @@ migration layer for legacy coding-agent configuration.
 
 Until a release newer than v0.8.0 is tagged, reaching anything after v0.8.0 —
 the `apple/xcode` project type and every change from 92bf097 on — needs
-`copier update --trust --vcs-ref main` (or a commit SHA). A plain
-`copier update` targets the newest tag, v0.8.0:
+`--vcs-ref main` (or a commit SHA) on `copier update`. Without it, Copier
+targets the newest tag, v0.8.0:
 
 - A project at v0.8.0 stays there.
 - A project generated from a later commit records a version like
