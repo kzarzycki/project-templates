@@ -335,6 +335,17 @@ replace old coding agent files that conflict with the new scaffold.
 Review the resulting diff before accepting it. The template does not include a
 migration layer for legacy coding-agent configuration.
 
+Until a release newer than v0.8.0 is tagged, reaching anything after v0.8.0,
+the `apple/xcode` project type included, needs `--vcs-ref main` (or a commit
+SHA) on `copier update`. Without it, Copier
+targets the newest tag, v0.8.0:
+
+- A project at v0.8.0 stays there.
+- A project generated from a later commit records a version like
+  `0.8.0.post4.dev0+92bf097`, newer than v0.8.0. Copier refuses the downgrade
+  and exits 1 ("You are downgrading from 0.8.0.post4.dev0+92bf097 to 0.8.0.
+  Downgrades are not supported.").
+
 Updating to v0.4.0 asks `engineering_loop`, adds `mise run check` and the CI
 gate that calls it, and, with the loop on, the loop line and the `docs/agents/`
 skeletons, the `gate` task, its pre-push hook and its workflow.
@@ -475,6 +486,13 @@ it adds what it wants by hand:
 - With the vendored layer, `CLAUDE.md` is the project's too: add the opt-out
   clause to its loop line by hand. The compiled layer's
   `.apm/instructions/project.instructions.md` gets it from the update.
+
+Updating to the next release sets `indent_size = 4` for `*.swift` in
+`.editorconfig`, since Xcode honours the file and would otherwise indent Swift
+by 2. An `apple/xcode` project's `.pre-commit-config.yaml` loses its trailing
+blank line, which failed its own `lint:eof`. Copier keeps a deleted file
+deleted on update, so a project that deleted either file to work around this
+copies it back from a fresh render.
 
 ## Adopt an existing (pre-template) repo
 

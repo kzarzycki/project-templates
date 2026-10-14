@@ -1743,6 +1743,30 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertEqual([], [entry for entry in (".build/", "DerivedData/", "build/", "xcuserdata/", "*.xcuserstate")
                               if entry not in ignored])
 
+    def test_every_leaf_renders_a_hook_config_that_passes_its_own_eof_lint(self) -> None:
+        for project_type, answers in LEAVES:
+            for include_mise in (True, False):
+                with self.subTest(project_type=project_type, include_mise=include_mise, **answers):
+                    text = (render(project_type, include_mise=include_mise, **answers) / ".pre-commit-config.yaml").read_text()
+                    self.assertTrue(text.endswith("\n") and not text.endswith("\n\n"), repr(text[-40:]))
+
+    def test_swift_keeps_four_space_indentation_in_every_leaf(self) -> None:
+        # Xcode honours .editorconfig, so a 2-space default would reflow every Swift edit.
+        def indent_size(editorconfig: str, name: str) -> str:
+            size = ""
+            sections = re.split(r"^\[(.+)\]$", editorconfig, flags=re.M)
+            for glob, body in zip(sections[1::2], sections[2::2]):
+                pattern = re.escape(glob).replace(r"\*", "[^/]*").replace(r"\{", "(").replace(r"\}", ")").replace(",", "|")
+                if re.fullmatch(pattern, name) and (match := re.search(r"^indent_size = (\S+)", body, re.M)):
+                    size = match.group(1)
+            return size
+
+        for project_type, answers in LEAVES:
+            with self.subTest(project_type=project_type, **answers):
+                editorconfig = (render(project_type, **answers) / ".editorconfig").read_text()
+                self.assertEqual("4", indent_size(editorconfig, "App.swift"))
+                self.assertEqual("2", indent_size(editorconfig, "ci.yml"))
+
     def test_autofixing_hooks_skip_apm_managed_trees(self) -> None:
         # APM hash-tracks every file it deploys, so a hook that rewrites one
         # produces drift that only surfaces later as a --frozen failure.

@@ -5,9 +5,9 @@ default_install_hook_types: [pre-commit, commit-msg, pre-push]
 # A hook runs at the pre-commit stage unless it names its stage.
 default_stages: [pre-commit]
 repos:
-{% include "templates/_base/_precommit_hooks.yml.jinja" %}
+{% include "templates/_base/_precommit_hooks.yml.jinja" -%}
 {% else -%}
 # Run locally: pre-commit run --all-files   ·   Update pins: pre-commit autoupdate
 repos:
-{% include "templates/_base/_precommit.yml.jinja" %}
+{% include "templates/_base/_precommit.yml.jinja" -%}
 {% endif -%}
