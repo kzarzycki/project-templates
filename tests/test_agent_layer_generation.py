@@ -933,6 +933,60 @@ class AgentLayerGenerationTest(unittest.TestCase):
             cwd=project, check=True, capture_output=True, text=True,
         ).stdout)
 
+    def test_vendored_intake_sees_the_edits_once_apm_yml_ref_is_ahead_of_the_lock(self) -> None:
+        project = render(
+            agent_layer_mode="vendored",
+            engineering_capability_source="https://fixture.invalid/test/engineering.git",
+            engineering_capability_ref="^0.2.0",
+            include_fnox=False,
+        )
+        fixture, env = fixture_pack_env(project)
+        subprocess.run(["git", "init", "-q"], cwd=project, check=True)
+        commit_project(project, "render")
+        first = run_agent_sync(project, env)
+        self.assertEqual(0, first.returncode, first.stdout + first.stderr)
+        commit_project(project, "sync")
+
+        # The pack's next minor carries one copy's edit and not the other's.
+        release = fixture / "skills/wayfinder/SKILL.md"
+        release.write_text(release.read_text() + "\nA line the pack released.\n")
+        tag_fixture_release(fixture, "0.3.0")
+        kept, carried = project / ".claude/skills/wayfinder/SKILL.md", project / ".agents/skills/wayfinder/SKILL.md"
+        edit = kept.read_text() + "\nA local edit the pack never took.\n"
+        kept.write_text(edit)
+        carried.write_text(release.read_text())
+        commit_project(project, "edit both skill copies")
+
+        # ^0.2.0 excludes 0.3.0, so the bump edits the ref first; a fresh clone has no install cache.
+        manifest = project / "apm.yml"
+        manifest.write_text(manifest.read_text().replace("^0.2.0", "^0.3.0"))
+        commit_project(project, "take engineering 0.3")
+        shutil.rmtree(project / "apm_modules")
+        audit = subprocess.run(["apm", "audit", "--ci", "--no-policy", "-f", "json"],
+                               cwd=project, env=env, capture_output=True, text=True)
+        self.assertEqual([], json.loads(audit.stdout)["drift"]["drift"])  # apm's own drift check cannot run here
+
+        refused = run_agent_sync(project, env)
+        self.assertEqual(1, refused.returncode, refused.stdout + refused.stderr)
+        for path in (".claude/skills/wayfinder/SKILL.md", ".agents/skills/wayfinder/SKILL.md"):
+            self.assertIn(f"{path} differs from the pack's copy", refused.stderr)
+        intake = run_mise_task(project, env, "agent:intake")
+        self.assertEqual(1, intake.returncode, intake.stdout + intake.stderr)
+        self.assertIn("mise run agent:intake -- --refresh", intake.stderr)
+        self.assertEqual(edit, kept.read_text())
+
+        refresh = run_mise_task(project, env, "agent:intake", "--refresh")
+        self.assertEqual(1, refresh.returncode, refresh.stdout + refresh.stderr)
+        self.assertIn("engineering-v0.3.0", (project / "apm.lock.yaml").read_text())
+        self.assertIn("resolved: the release carries the edit to .agents/skills/wayfinder/SKILL.md", refresh.stdout)
+        self.assertEqual(release.read_text(), carried.read_text())
+        self.assertEqual(edit, kept.read_text())
+        patches = sorted(path.relative_to(project).as_posix() for path in (project / ".agent-intake").rglob("*.patch"))
+        self.assertEqual([".agent-intake/.claude/skills/wayfinder/SKILL.md.patch"], patches)
+        against_release = subprocess.run(["diff", "-u", str(release), str(kept)], capture_output=True, text=True).stdout
+        patch = (project / patches[0]).read_text()
+        self.assertEqual(against_release[against_release.index("@@"):], patch[patch.index("@@"):])
+
     def test_vendored_render_keeps_hand_written_root_files_and_compiles_nothing(self) -> None:
         for project_type, answers in LEAVES:
             with self.subTest(project_type=project_type, **answers):

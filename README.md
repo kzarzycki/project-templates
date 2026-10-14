@@ -139,7 +139,10 @@ and edit skills directly. Nobody there has to know APM: the skills and
 Anyone may edit a synced skill file and commit it. A plain `apm install` would
 silently put the pack's copy back, so `mise run agent:sync` refuses (exit 1)
 while a deployed file differs from the pack's copy, naming each file and
-`mise run agent:intake`. The APM maintainer then runs:
+`mise run agent:intake`. An edit is a file whose sha256 differs from the hash
+`apm.lock.yaml` records, so it shows whatever `apm.yml` says, and a lock that
+records no hash for a deployed file makes both tasks fail rather than pass. The
+APM maintainer then runs:
 
 ```bash
 mise run agent:intake               # one patch per edited file, listed
@@ -157,6 +160,11 @@ scratch directory so the tree keeps its edits. Each patch ends one of two ways:
   patch stays, now against the new release.
 - Drop it: delete the patch, and the next `agent:sync` restores the pack's
   copy. An edit made after intake ran needs intake again.
+
+A minor pack bump goes the same way: edit the ref in `apm.yml` (a caret on 0.x,
+`^0.17.0`, excludes 0.18.0), then run `mise run agent:intake -- --refresh`.
+Plain `agent:intake` cannot install the old release once the ref is ahead of
+the lock and says so.
 
 `--refresh` writes each edited file's bytes to `.agent-intake/saved.json`
 before `apm update` runs, and the hash of what the update deployed once it

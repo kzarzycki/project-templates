@@ -130,6 +130,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -151,15 +152,40 @@ def fail(message):
     sys.exit(1)
 
 
+def scalar(text):
+    if text[:1] == "'":
+        return text[1:-1].replace("''", "'")
+    return json.loads(text) if text[:1] == '"' else text
+
+
+# An edit is a deployed file whose bytes no longer match the sha256 apm.lock.yaml records for it. The
+# lock alone settles it: apm audit replays the install from apm.yml, so a ref edited ahead of the lock
+# (every pack minor bump) stops its drift check, and the edits would read as none.
+# ponytail: reads the lock's plain YAML lines; a hash line in any other form fails, parse YAML if APM writes one.
 def drifted():
     if not Path("apm.lock.yaml").is_file():
         return []
-    audit = subprocess.run(["apm", "audit", "--ci", "--no-policy", "-f", "json"], capture_output=True, text=True)
-    try:
-        report = json.loads(audit.stdout)
-    except json.JSONDecodeError:
-        fail(f"apm audit gave no JSON report (exit {audit.returncode}):\\n{audit.stderr}")
-    return sorted({entry["path"] for entry in (report.get("drift") or {}).get("drift", [])})
+    deployed, hashes, section = set(), {}, None
+    for line in Path("apm.lock.yaml").read_text().splitlines():
+        stripped = line.lstrip(" ")
+        indent = len(line) - len(stripped)
+        if stripped in ("deployed_files:", "deployed_file_hashes:"):
+            section, depth = stripped[:-1], indent
+        elif section == "deployed_files" and indent >= depth and stripped.startswith("- "):
+            deployed.add(scalar(stripped[2:]))
+        elif section == "deployed_file_hashes" and indent > depth:
+            match = re.fullmatch(r"(.+): sha256:([0-9a-f]{64})", stripped)
+            if match is None:
+                fail(f"apm.lock.yaml: cannot read the deployed file hash line {stripped!r}")
+            hashes[scalar(match.group(1))] = match.group(2)
+        else:
+            section = None
+    # A deployed directory has no hash of its own; a deployed file without one hides its edits.
+    unhashed = sorted(path for path in deployed - hashes.keys() if not any(file.startswith(f"{path}/") for file in hashes))
+    if unhashed:
+        fail(f"apm.lock.yaml records no hash for {', '.join(unhashed)}, so an edit to it cannot be told from the "
+             "pack's copy; a lock apm {{ apm_version }} writes records one")
+    return sorted(path for path, sha in hashes.items() if digest(Path(path)) != sha)
 
 
 def content(path):
@@ -253,7 +279,8 @@ def write_patches(paths):
             shutil.copy("apm.lock.yaml", pristine)
             install = subprocess.run(["apm", "install", "--frozen", "--root", str(pristine)], capture_output=True, text=True)
             if install.returncode != 0:
-                fail(f"could not install the pack's copy:\\n{install.stdout}{install.stderr}")
+                fail(f"could not install the pack's copy:\\n{install.stdout}{install.stderr}"
+                     "a ref in apm.yml edited ahead of apm.lock.yaml takes 'mise run agent:intake -- --refresh'")
             for path in paths:
                 old, new = pristine / path, Path(path)
                 diff = subprocess.run(
@@ -306,8 +333,9 @@ if mode == "check":
 if SAVED.is_file():
     print(f"agent:intake: put back the edits an interrupted --refresh saved: {', '.join(recover())}")
 edits = drifted()
-write_patches(edits)
 if mode == "refresh":
+    # The patches are written once, against the release the update takes: the pack's copy of the
+    # locked release cannot be installed once apm.yml's ref is ahead of the lock.
     if edits:
         save({path: {"edit": content(Path(path)), "deployed": None} for path in edits})
     try:
@@ -320,7 +348,7 @@ if mode == "refresh":
         for path, entry in entries.items():
             put(Path(path), entry["edit"])
         SAVED.unlink(missing_ok=True)
-        fail("apm update failed; the edits are put back and the patches are saved")
+        fail("apm update failed; the edits are put back")
     for path, entry in entries.items():
         entry["deployed"] = digest(Path(path))
         if content(Path(path)) == entry["edit"]:
@@ -329,6 +357,8 @@ if mode == "refresh":
         save(entries)
         recover()
     write_patches(drifted())
+else:
+    write_patches(edits)
 report()
 PY
 """
