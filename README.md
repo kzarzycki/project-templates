@@ -284,7 +284,14 @@ applying alongside it. The task prints both settings' previous values and the
 `gh api -X PATCH` command that restores them. `mise run setup:github --revert`
 deletes the `loop-merge-queue` ruleset, found by name; when it is already gone,
 there is nothing to do. If GitHub rejects the ruleset, the task stops before it
-changes the settings.
+changes the settings. A private repo on GitHub Free has no rulesets and no
+auto-merge: the task first reads the rules on main, and when GitHub answers that
+read with its 403 naming the plan (the probe `land` uses), it skips the ruleset
+and auto-merge, sets squash-only merges (`allow_merge_commit` and
+`allow_rebase_merge` false, `allow_squash_merge` true) and
+`delete_branch_on_merge`, prints their restore command and that GitHub enforces
+nothing on main, so `loop:land`'s proofs are the only gate. Any other error on
+that read stops the task before a write.
 Last, it runs the pack's `labels.py`, the labels' one definition: renames in
 place first (`bug`, `enhancement`, `chore` and `documentation` to their `kind:`
 names, and § Renamed labels in `docs/agents/issue-tracker.md`), so every issue
@@ -420,6 +427,10 @@ The next release asks `merge_queue` (default true) with the loop on. A
 user-owned repo, where GitHub rejected the ruleset's merge queue and
 `setup:github` stopped before any change, answers false and runs
 `mise run setup:github` again. With the default the ruleset is byte-identical.
+
+On the next release, a private repo on GitHub Free, where `setup:github` stopped
+at the ruleset's 403, runs `mise run setup:github` again: it now sets
+squash-only merges and head branch deletion and syncs the labels.
 
 Updating to the next release asks `include_ci` (default true; with it true
 nothing changes). Answering false, with the loop on:

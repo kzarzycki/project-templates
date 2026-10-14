@@ -656,6 +656,9 @@ class AgentMiseTasksTest(unittest.TestCase):
             "    sys.exit({'404': 'gh: Label does not exist (HTTP 404)', '403': 'gh: Resource not accessible by integration (HTTP 403)'}.get(data.get('label_delete')))\n"
             "elif '/statuses/' in path:\n"
             "    data['statuses'].append({'sha': path.rsplit('/', 1)[1], **fields})\n"
+            "elif '/rules/branches/' in path:\n"
+            "    sys.exit({'free': 'gh: Upgrade to GitHub Pro or make this repository public to enable this feature. (HTTP 403)',\n"
+            "              'denied': 'gh: Resource not accessible by integration (HTTP 403)'}.get(data.get('rules')))\n"
             "elif '/actions/runs/' in path:\n"
             "    print(''.join(f'{name}\\n' for name in data['failed_jobs']), end='')\n"
             "elif path.endswith('/rulesets') and method == 'GET':\n"
@@ -669,10 +672,12 @@ class AgentMiseTasksTest(unittest.TestCase):
             "    if data['delete_404']:\n"
             "        sys.exit('gh: Not Found (HTTP 404)')\n"
             "    del rulesets[path.rsplit('/', 1)[1]]\n"
+            "elif method == 'GET' and data.get('settings_read_fails'):\n"
+            "    sys.exit('gh: Bad Gateway (HTTP 502)')\n"
             "elif method == 'PATCH':\n"
             "    data.update({key: value == 'true' for key, value in fields.items()})\n"
             "else:\n"
-            "    print(str(data[args[args.index('--jq') + 1].lstrip('.')]).lower())\n"
+            "    print('\\n'.join(str(data[key.strip().lstrip('.')]).lower() for key in args[args.index('--jq') + 1].split(',')))\n"
             "state.write_text(json.dumps(data))\n"
         )
         gh.chmod(0o755)
@@ -705,6 +710,7 @@ class AgentMiseTasksTest(unittest.TestCase):
             "gh api -X PATCH 'repos/{owner}/{repo}' -F allow_auto_merge=false -F delete_branch_on_merge=false", restore
         )
         self.assertIn("revert the ruleset: mise run setup:github --revert", result.stdout)
+        self.assertNotIn("enforces nothing", result.stdout)
         subprocess.run(["sh", "-c", restore], env=self.env, check=True)
         github = json.loads(state.read_text())
         self.assertFalse(github["allow_auto_merge"])
@@ -738,6 +744,60 @@ class AgentMiseTasksTest(unittest.TestCase):
         self.assertEqual(1, missing.returncode)
         self.assertIn("run mise run agent:sync", missing.stderr)
         self.assertEqual({}, json.loads(state.read_text())["rulesets"])
+
+    def test_setup_github_on_a_plan_without_rulesets_sets_squash_only_and_skips_ruleset_and_auto_merge(self) -> None:
+        settings = {"allow_merge_commit": True, "allow_rebase_merge": True, "allow_squash_merge": False,
+                    "delete_branch_on_merge": False}
+        state = self.fake_github(rules="free", **settings)
+
+        result = self.run_task("setup:github")
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        github = json.loads(state.read_text())
+        self.assertEqual(({}, False), (github["rulesets"], github["allow_auto_merge"]))
+        self.assertEqual({"allow_merge_commit": False, "allow_rebase_merge": False, "allow_squash_merge": True,
+                          "delete_branch_on_merge": True}, {key: github[key] for key in settings})
+        self.assertIn("GitHub enforces nothing on main", result.stdout)
+        self.assertNotIn("revert the ruleset", result.stdout)
+        self.assertEqual(["labels.py"], self.commands())
+        [restore] = [line.split("restore: ", 1)[1] for line in result.stdout.splitlines() if "restore: " in line]
+        subprocess.run(["sh", "-c", restore], env=self.env, check=True)
+        github = json.loads(state.read_text())
+        self.assertEqual(settings, {key: github[key] for key in settings})
+
+        # --dry-run writes nothing on this path either; --revert has no ruleset to delete
+        self.log.unlink()
+        dry = self.run_task("setup:github", "--dry-run")
+        self.assertEqual(0, dry.returncode, dry.stderr)
+        self.assertEqual(["labels.py --dry-run"], self.commands())
+        self.assertEqual(settings, {key: json.loads(state.read_text())[key] for key in settings})
+        revert = self.run_task("setup:github", "--revert")
+        self.assertEqual(0, revert.returncode, revert.stderr)
+        self.assertIn("nothing to revert", revert.stdout)
+
+    def test_setup_github_on_a_plan_without_rulesets_stops_when_the_settings_read_fails(self) -> None:
+        settings = {"allow_merge_commit": True, "allow_rebase_merge": True, "allow_squash_merge": False,
+                    "delete_branch_on_merge": False}
+        state = self.fake_github(rules="free", settings_read_fails=True, **settings)
+
+        result = self.run_task("setup:github")
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("HTTP 502", result.stderr)
+        self.assertNotIn("restore: ", result.stdout)
+        self.assertEqual(settings, {key: json.loads(state.read_text())[key] for key in settings})
+        self.assertEqual([], self.commands())
+
+    def test_setup_github_stops_on_any_other_rules_read_error_before_a_write(self) -> None:
+        state = self.fake_github(rules="denied", allow_merge_commit=True)
+
+        result = self.run_task("setup:github")
+
+        self.assertEqual(1, result.returncode)
+        self.assertIn("Resource not accessible by integration (HTTP 403)", result.stderr)
+        github = json.loads(state.read_text())
+        self.assertEqual(({}, False, True), (github["rulesets"], github["allow_auto_merge"], github["allow_merge_commit"]))
+        self.assertEqual([], self.commands())
 
     def test_setup_github_updates_its_ruleset_found_by_name(self) -> None:
         state = self.fake_github({"5": {"name": "loop-merge-queue", "rules": []}}, allow_auto_merge=True)
