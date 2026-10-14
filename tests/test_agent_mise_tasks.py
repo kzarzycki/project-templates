@@ -277,11 +277,13 @@ class AgentMiseTasksTest(unittest.TestCase):
         (self.bin / "mise").symlink_to(MISE)
 
     def drift(self, *paths: str) -> None:
-        """A lock whose recorded hash of each path is the pack's copy, so the file on disk differs from it."""
+        """A lock whose recorded hash of each path is the pack's copy, so the file on disk differs from it.
+
+        Like APM's, it lists each file's directory too."""
         pristine = hashlib.sha256(b"pristine\n").hexdigest()
         (self.project / "apm.lock.yaml").write_text(
             "dependencies:\n- repo_url: test/engineering\n  deployed_files:\n"
-            + "".join(f"  - {path}\n" for path in paths)
+            + "".join(f"  - {path}\n" for path in sorted({str(Path(path).parent) for path in paths} | set(paths)))
             + "  deployed_file_hashes:\n"
             + "".join(f"    {path}: sha256:{pristine}\n" for path in paths)
         )
@@ -373,7 +375,7 @@ class AgentMiseTasksTest(unittest.TestCase):
                 result = self.run_task(task, *arguments)
 
                 self.assertEqual(1, result.returncode, result.stderr)
-                self.assertIn(f"apm.lock.yaml records no hash for {path}", result.stderr)
+                self.assertIn(f"apm.lock.yaml records no hash for .claude/skills/wayfinder, {path},", result.stderr)
                 self.assertNotIn("no unresolved patch", result.stdout)
                 self.assertEqual([], self.commands())
 
@@ -389,9 +391,14 @@ class AgentMiseTasksTest(unittest.TestCase):
         self.assertIn("apm.lock.yaml: cannot read the deployed file hash line", result.stderr)
 
     def dropped_edit(self, edit: bytes, on_disk: bytes) -> Path:
-        """A dropped edit to a file the pack no longer ships: the ledger holds it, no patch, the lock omits it."""
+        """A dropped edit to a file the pack no longer ships: the ledger holds it, no patch, the lock omits it.
+
+        The lock deploys one other skill, untouched, so .claude/skills is a skill root."""
         path = ".claude/skills/wayfinder/reference.md"
-        self.drift()
+        other = ".claude/skills/other/SKILL.md"
+        self.drift(other)
+        (self.project / other).parent.mkdir(parents=True)
+        (self.project / other).write_text("pristine\n")
         skill = self.project / path
         skill.parent.mkdir(parents=True)
         skill.write_bytes(on_disk)
@@ -426,6 +433,47 @@ class AgentMiseTasksTest(unittest.TestCase):
 
         self.assertEqual(0, synced.returncode, synced.stderr)
         self.assertFalse((self.project / ".agent-intake").exists())
+
+    def test_vendored_sync_removes_nothing_for_a_ledger_path_outside_the_deployed_skills(self) -> None:
+        self.use_vendored_project()
+        dropped = self.dropped_edit(b"keep\n", b"keep\n")  # a valid removal, held back by the bad one
+        outside = Path(tempfile.mkdtemp(prefix="agent-intake-outside-"))
+        skills = self.project / ".claude/skills"
+        intaken = self.project / ".agent-intake/intaken"
+        valid = intaken.read_text()
+        cases = {
+            "unrelated path": "notes.txt",
+            "traversal": ".claude/skills/../../notes.txt",
+            "symlinked parent directory": ".claude/skills/old/notes.txt",
+            "file symlink": ".claude/skills/linked/ref.md",
+            "absolute path": str(outside / "abs.txt"),
+        }
+        for case, path in cases.items():
+            with self.subTest(case=case):
+                kept = (dropped, self.project / "notes.txt", outside / "notes.txt", outside / "abs.txt")
+                for file in kept:
+                    file.parent.mkdir(parents=True, exist_ok=True)
+                    file.write_bytes(b"keep\n")
+                if not os.path.lexists(skills / "old"):
+                    (skills / "old").symlink_to(outside, target_is_directory=True)
+                (skills / "linked").mkdir(exist_ok=True)
+                if not os.path.lexists(skills / "linked/ref.md"):
+                    (skills / "linked/ref.md").symlink_to(self.project / "notes.txt")
+                intaken.parent.mkdir(exist_ok=True)
+                intaken.write_text(valid + f"{hashlib.sha256(b'keep\n').hexdigest()}  {path}\n")
+                self.log.unlink(missing_ok=True)
+
+                result = self.run_task("agent:sync")
+
+                self.assertEqual(1, result.returncode, result.stderr)
+                self.assertIn(f"agent:sync: {path} is in .agent-intake/intaken but is not a file inside a deployed skill",
+                              result.stderr)
+                self.assertNotIn("removed", result.stdout)
+                self.assertTrue(os.path.lexists(self.project / path))
+                for file in kept:
+                    self.assertEqual(b"keep\n", file.read_bytes())
+                self.assertTrue(intaken.is_file())
+                self.assertEqual([], [command for command in self.commands() if " install " in f"{command} "])
 
     def edited_skill(self) -> tuple[str, Path]:
         path = ".claude/skills/wayfinder/SKILL.md"

@@ -165,7 +165,10 @@ scratch directory so the tree keeps its edits. Each patch ends one of two ways:
   directory once empty. APM itself keeps an edited file it no longer deploys.
   Sync removes the file only while it still holds the bytes intake took in, so
   an edit made after intake ran makes sync refuse and name the file; run intake
-  again.
+  again. It removes only a file inside a skill directory the lock deploys
+  (`.claude/skills/<skill>/`, `.agents/skills/<skill>/`), reached through no
+  symlink. Any other path in `.agent-intake/intaken` makes sync refuse, name it
+  and remove nothing.
 
 `.agent-intake/` goes once a sync succeeds, audit included, so a failed sync
 keeps it.

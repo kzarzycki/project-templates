@@ -162,13 +162,11 @@ def scalar(text):
     return json.loads(text) if text[:1] == '"' else text
 
 
-# An edit is a deployed file whose bytes no longer match the sha256 apm.lock.yaml records for it. The
-# lock alone settles it: apm audit replays the install from apm.yml, so a ref edited ahead of the lock
-# (every pack minor bump) stops its drift check, and the edits would read as none.
+# The lock's deployed directories and the sha256 it records for each deployed file.
 # ponytail: reads the lock's plain YAML lines; a hash line in any other form fails, parse YAML if APM writes one.
-def drifted():
+def locked():
     if not Path("apm.lock.yaml").is_file():
-        return []
+        return set(), {}
     deployed, hashes, section = set(), {}, None
     for line in Path("apm.lock.yaml").read_text().splitlines():
         stripped = line.lstrip(" ")
@@ -189,7 +187,27 @@ def drifted():
     if unhashed:
         fail(f"apm.lock.yaml records no hash for {', '.join(unhashed)}, so an edit to it cannot be told from the "
              "pack's copy; a lock apm {{ apm_version }} writes records one")
-    return sorted(path for path, sha in hashes.items() if digest(Path(path)) != sha)
+    return deployed - hashes.keys(), hashes
+
+
+# An edit is a deployed file whose bytes no longer match the sha256 apm.lock.yaml records for it. The
+# lock alone settles it: apm audit replays the install from apm.yml, so a ref edited ahead of the lock
+# (every pack minor bump) stops its drift check, and the edits would read as none.
+def drifted():
+    return sorted(path for path, sha in locked()[1].items() if digest(Path(path)) != sha)
+
+
+# The skill root a dropped file may be removed from: one the lock deploys skill directories into
+# (.claude/skills, .agents/skills), the file at least one directory below it, reached through no
+# symlink. A matching hash proves the bytes, not that the path is the pack's.
+def skill_root(path, roots):
+    parts = Path(path).parts
+    if Path(path).is_absolute() or ".." in parts:
+        return None
+    if any(Path(*parts[:end]).is_symlink() for end in range(1, len(parts) + 1)):
+        return None
+    return next((root for root in roots if len(parts) >= len(root.parts) + 2 and parts[:len(root.parts)] == root.parts),
+                None)
 
 
 def content(path):
@@ -347,7 +365,15 @@ if mode == "check":
         fail("run 'mise run agent:intake', then port or drop each patch")
     # A dropped edit to a file the pack no longer ships: an install keeps a user-edited file it no
     # longer deploys, so sync removes it, and only while it holds the bytes intake took in.
-    dropped = [path for path in seen if Path(path).exists()]
+    dropped = [path for path in seen if os.path.lexists(path)]
+    roots = {Path(directory).parent for directory in locked()[0]}
+    owner = {path: skill_root(path, roots) for path in dropped}
+    outside = [path for path in dropped if owner[path] is None]
+    for path in outside:
+        print(f"agent:sync: {path} is in {LEDGER} but is not a file inside a deployed skill directory "
+              "reached without a symlink", file=sys.stderr)
+    if outside:
+        fail(f"sync removes nothing outside the deployed skills: take each such line out of {LEDGER}")
     if dropped:
         with release() as pristine:
             dropped = [path for path in dropped if not (pristine / path).exists()]
@@ -359,8 +385,10 @@ if mode == "check":
         fail("run 'mise run agent:intake', then port or drop each patch")
     for path in dropped:
         Path(path).unlink()
-        with contextlib.suppress(OSError):
-            os.removedirs(Path(path).parent)  # each emptied directory up to the first one left with files
+        directory = Path(path).parent
+        while directory != owner[path] and not any(directory.iterdir()):
+            directory.rmdir()  # each emptied directory up to the skill root
+            directory = directory.parent
         print(f"agent:sync: removed {path}: its edit was dropped and the pack no longer ships it")
     sys.exit(0)
 
