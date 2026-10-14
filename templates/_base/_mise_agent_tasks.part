@@ -208,6 +208,12 @@ def patches():
     return sorted(patch.relative_to(INTAKE).as_posix().removesuffix(".patch") for patch in INTAKE.rglob("*.patch"))
 
 
+# The drifted files, and each file a patch still holds: a release that removes a file drops it from
+# the lock, so only its patch remembers the edit, against /dev/null, until it is ported or dropped.
+def edited():
+    return sorted(set(drifted()) | set(patches()))
+
+
 def save(entries):
     INTAKE.mkdir(exist_ok=True)
     encoded = {path: {**entry, "edit": None if entry["edit"] is None else base64.b64encode(entry["edit"]).decode()}
@@ -290,7 +296,8 @@ def write_patches(paths):
                 )
                 if diff.returncode not in (0, 1):
                     fail(f"diff of {path} failed:\\n{diff.stderr.decode()}")
-                diffs[path] = diff.stdout
+                if diff.returncode == 1:
+                    diffs[path] = diff.stdout
         finally:
             shutil.rmtree(pristine, ignore_errors=True)
     # The old patches go only once every new one is in hand.
@@ -332,7 +339,7 @@ if mode == "check":
 
 if SAVED.is_file():
     print(f"agent:intake: put back the edits an interrupted --refresh saved: {', '.join(recover())}")
-edits = drifted()
+edits = edited()
 if mode == "refresh":
     # The patches are written once, against the release the update takes: the pack's copy of the
     # locked release cannot be installed once apm.yml's ref is ahead of the lock.
@@ -356,7 +363,7 @@ if mode == "refresh":
     if entries:
         save(entries)
         recover()
-    write_patches(drifted())
+    write_patches(sorted(set(edited()) | set(entries)))
 else:
     write_patches(edits)
 report()

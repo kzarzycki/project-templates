@@ -157,7 +157,9 @@ scratch directory so the tree keeps its edits. Each patch ends one of two ways:
 - Port it into the pack and release it, then run `agent:intake -- --refresh`.
   It takes the newer compatible pack; an edited file the release now matches
   resolves itself and its patch goes. Any other edited file is put back and its
-  patch stays, now against the new release.
+  patch stays, now against the new release. That holds for a file the release
+  removes: its patch is against `/dev/null` (a deletion you made resolves), and
+  dropping the patch lets the next `agent:sync` remove the file.
 - Drop it: delete the patch, and the next `agent:sync` restores the pack's
   copy. An edit made after intake ran needs intake again.
 
