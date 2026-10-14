@@ -215,7 +215,7 @@ run = [
 ]
 
 [tasks."ci:approvals"]
-description = "CI's approvals step: posts loop:approvals merge's result as the loop:approvals commit status on the PR head (pending while it waits); success on a merge-queue commit; a push removes approved:merge first; on success turns on auto-merge at the head unless the PR has a request."
+description = "CI's approvals step: posts loop:approvals merge's result as the loop:approvals commit status on the PR head (pending while it waits); success on a merge-queue commit; a push removes approved:merge first; on success turns on auto-merge at the head unless the PR has a request or the repo has no auto-merge."
 # A job ends only as success or failure, and GitHub counts a skipped job as passed, so the
 # result is a commit status, which main's ruleset requires. The workflow sets EVENT, ACTION,
 # PR, QUEUE_HEAD and RUN_URL.
@@ -259,6 +259,15 @@ esac
 # when the workflow runs with a GitHub App's token (APPROVALS_APP_CLIENT_ID), not with github.token.
 # Pinned to the head the proofs covered; gh merges at once when nothing is pending.
 if [ "$(printf '%s' "$pull" | cut -f4)" = true ]; then echo "ci:approvals: PR #$PR already has auto-merge on; left as is"; exit 0; fi
+# On a repo without auto-merge (a private repo on GitHub Free cannot turn it on) and with no required
+# check pending, gh pr merge --auto merges at once with github.token: no push workflow starts on main
+# and loop:land's pinned merge is skipped. So the job stops at the status there, as it does when the
+# setting can't be read, and mise run loop:land lands the PR with the agent's own token.
+auto="$(gh api "repos/$GITHUB_REPOSITORY" --jq .allow_auto_merge)" || {
+  echo "::error::ci:approvals: could not read the repo's auto-merge setting; loop:approvals is still success, so mise run loop:land $PR lands PR #$PR"
+  exit 1
+}
+if [ "$auto" != true ]; then echo "ci:approvals: the repo has no auto-merge, so mise run loop:land $PR lands PR #$PR"; exit 0; fi
 gh pr merge "$PR" --auto --squash --match-head-commit "$head" || {
   echo "::error::ci:approvals: could not turn on auto-merge for PR #$PR at $head; loop:approvals is still success, so mise run loop:land $PR lands it"
   exit 1

@@ -676,6 +676,8 @@ class AgentMiseTasksTest(unittest.TestCase):
             "    sys.exit('gh: Bad Gateway (HTTP 502)')\n"
             "elif method == 'PATCH':\n"
             "    data.update({key: value == 'true' for key, value in fields.items()})\n"
+            "elif data.get('settings_read_fails'):\n"
+            "    sys.exit('gh: Server Error (HTTP 500)')\n"
             "else:\n"
             "    print('\\n'.join(str(data[key.strip().lstrip('.')]).lower() for key in args[args.index('--jq') + 1].split(',')))\n"
             "state.write_text(json.dumps(data))\n"
@@ -888,7 +890,7 @@ class AgentMiseTasksTest(unittest.TestCase):
         script.write_text(f"import sys\nprint('approvals said {code}')\nsys.exit({code})\n")
         state = self.bin / "github.json"
         if not state.exists():
-            self.fake_github(pr=["abc123", "false", "owner", "false"])
+            self.fake_github(pr=["abc123", "false", "owner", "false"], allow_auto_merge=True)
         self.env.update({"GITHUB_REPOSITORY": "o/r", "EVENT": "pull_request", "ACTION": "labeled", "PR": "7",
                          "QUEUE_HEAD": "", "RUN_URL": "https://example.com/run", **env})
         result = self.run_task("ci:approvals")
@@ -929,11 +931,33 @@ class AgentMiseTasksTest(unittest.TestCase):
         _, github = self.approvals_run(0)
         self.assertEqual([], github["edits"])
 
-        self.fake_github(pr=["abc123", "false", "owner", "false"], merge_fails=1)
+        self.fake_github(pr=["abc123", "false", "owner", "false"], allow_auto_merge=True, merge_fails=1)
         refused, github = self.approvals_run(0)
         self.assertEqual(1, refused.returncode, refused.stdout + refused.stderr)
         self.assertEqual(["success"], [status["state"] for status in github["statuses"]])  # the gate stays green
         self.assertIn("could not turn on auto-merge for PR #7 at abc123", refused.stdout)
+
+    def test_ci_approvals_turns_auto_merge_on_only_when_the_repo_allows_it(self) -> None:
+        (self.bin / "mise").symlink_to(MISE)
+        self.fake_github(pr=["abc123", "false", "owner", "false"], allow_auto_merge=True)
+        allowed, github = self.approvals_run(0)
+        self.assertEqual(0, allowed.returncode, allowed.stdout + allowed.stderr)
+        self.assertEqual([["merge", "7", "--auto", "--squash", "--match-head-commit", "abc123"]], github["edits"])
+
+        # Without the setting gh would merge at once with github.token, so the job stops at the status.
+        self.fake_github(pr=["abc123", "false", "owner", "false"], allow_auto_merge=False)
+        off, github = self.approvals_run(0)
+        self.assertEqual(0, off.returncode, off.stdout + off.stderr)
+        self.assertEqual(["success"], [status["state"] for status in github["statuses"]])
+        self.assertEqual([], github["edits"])
+        self.assertIn("the repo has no auto-merge, so mise run loop:land 7 lands PR #7", off.stdout)
+
+        self.fake_github(pr=["abc123", "false", "owner", "false"], allow_auto_merge=True, settings_read_fails=True)
+        unread, github = self.approvals_run(0)
+        self.assertEqual(1, unread.returncode, unread.stdout + unread.stderr)
+        self.assertEqual(["success"], [status["state"] for status in github["statuses"]])
+        self.assertEqual([], github["edits"])
+        self.assertIn("could not read the repo's auto-merge setting", unread.stdout)
 
     def test_loop_land_runs_approvals_land_on_the_pr_and_keeps_its_exit(self) -> None:
         script = self.project / ".agents/skills/engineering-loop/scripts/approvals.py"
