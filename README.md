@@ -182,7 +182,8 @@ committed to the repo.
 With the pack on, `engineering_loop=true` (the default) turns on the pack's
 `engineering-loop` skill: one line in `.apm/instructions/project.instructions.md`,
 which `agent:sync` compiles into `AGENTS.md` (in `CLAUDE.md` with the vendored
-layer), says every change that lands as a PR runs it. Deleting that line turns the loop off. The loop reads this project's
+layer), says every change that lands as a PR runs it, unless a developer's personal
+instructions say `Engineering loop: off` and loop.md allows it. Deleting that line turns the loop off. The loop reads this project's
 facts from three files, seeded with a heading and a short prompt per fact:
 
 - `docs/agents/loop.md`: owner, proof on a branch, acceptance references,
@@ -190,7 +191,7 @@ facts from three files, seeded with a heading and a short prompt per fact:
   too, how a finding is judged in use, the worktree command, the ledger path
   and any extra verifier checklist;
 - `docs/agents/issue-tracker.md`: the tracker, components, what never reaches GitHub,
-  extra labels and categories;
+  extra labels and categories, and the board's name for each loop column;
 - `docs/agents/coding-standards.md`: domain facts only.
 
 `mise run loop:approvals <point> [pr]` (alias `gate`) checks the proof each loop
@@ -202,7 +203,8 @@ Approvals is the owner's standing policy (`spec: auto unless risk`,
 a `risk:` rule, waits for the owner's `approved:merge` label; a push removes it.
 The seed marks a change to `.github/**`, `.pre-commit-config.yaml`, `mise.toml`,
 `apm.yml`, `docs/agents/**` or `CODEOWNERS` high risk; `- risk: always` asks for
-the label on every merge. The
+the label on every merge. The seed explains three lines it leaves off:
+`spec: auto`, `signoff: <condition>` and `Opt-out: allowed`. The
 `.github/workflows/approvals.yml` workflow posts the merge result as the
 `loop:approvals` commit status on the PR head: pending while it waits for CI's
 `check` or a label a rule asks for, failure when a proof is missing, success once every proof
@@ -421,6 +423,24 @@ updating.
 
 Updating to the next release adds the `apple/xcode` project type and its
 `gate_script` question; other project types render as before.
+
+Updating to the next release moves the pack to `^0.18.0`; run
+`mise run agent:sync` and commit what it changes. A new project's seeds
+explain pack 0.18.0's lines without switching any on, so it behaves as before.
+An existing project's `docs/agents/*.md` are its own and keep their lines, so
+it adds what it wants by hand:
+
+- loop.md § Approvals: `- spec: auto` in place of `- spec: auto unless risk`
+  to approve every spec by policy except one a `risk:` rule holds;
+  `- signoff: <condition>` lines for changes the owner signs off in use; and
+  the line `Opt-out: allowed` to let a developer whose personal instructions
+  say `Engineering loop: off` work outside the loop.
+- issue-tracker.md: a `## Board` section naming the board's column for each
+  loop column, such as ``- `Build` is `In progress` ``, when the board's
+  names differ from the loop's.
+- With the vendored layer, `CLAUDE.md` is the project's too: add the opt-out
+  clause to its loop line by hand. The compiled layer's
+  `.apm/instructions/project.instructions.md` gets it from the update.
 
 ## Adopt an existing (pre-template) repo
 
