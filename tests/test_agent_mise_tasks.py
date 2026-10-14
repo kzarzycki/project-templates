@@ -35,10 +35,7 @@ def fake_executable(directory: Path, name: str) -> None:
             '[ -n "${FAKE_APM_ORPHAN_PATH:-}" ]; then\n'
             '  rm -f "$FAKE_APM_ORPHAN_PATH"\n'
             "fi\n"
-            'if [ "${1:-}" = "audit" ] && '
-            '[ -n "${FAKE_APM_AUDIT_JSON:-}" ]; then\n'
-            '  printf "%s" "$FAKE_APM_AUDIT_JSON"\n'
-            "fi\n"
+            'if [ "${1:-}" = "audit" ]; then exit "${FAKE_APM_AUDIT_EXIT:-0}"; fi\n'
             # A release deployed over an edited file, then the update fails or its caller dies.
             'if [ "${1:-}" = "update" ] && '
             '[ -n "${FAKE_APM_UPDATE_WRITES:-}" ]; then\n'
@@ -280,9 +277,15 @@ class AgentMiseTasksTest(unittest.TestCase):
         (self.bin / "mise").symlink_to(MISE)
 
     def drift(self, *paths: str) -> None:
-        (self.project / "apm.lock.yaml").touch()
-        self.env["FAKE_APM_AUDIT_JSON"] = json.dumps(
-            {"drift": {"drift": [{"path": path, "kind": "modified"} for path in paths]}}
+        """A lock whose recorded hash of each path is the pack's copy, so the file on disk differs from it.
+
+        Like APM's, it lists each file's directory too."""
+        pristine = hashlib.sha256(b"pristine\n").hexdigest()
+        (self.project / "apm.lock.yaml").write_text(
+            "dependencies:\n- repo_url: test/engineering\n  deployed_files:\n"
+            + "".join(f"  - {path}\n" for path in sorted({str(Path(path).parent) for path in paths} | set(paths)))
+            + "  deployed_file_hashes:\n"
+            + "".join(f"    {path}: sha256:{pristine}\n" for path in paths)
         )
 
     def test_vendored_sync_installs_and_prunes_without_compiling(self) -> None:
@@ -313,7 +316,7 @@ class AgentMiseTasksTest(unittest.TestCase):
                 self.assertEqual(1, result.returncode, result.stderr)
                 self.assertIn(".claude/skills/wayfinder/SKILL.md differs from the pack's copy", result.stderr)
                 self.assertIn("mise run agent:intake", result.stderr)
-                self.assertEqual([f"{self.bin}/apm audit --ci --no-policy -f json"], self.commands())
+                self.assertEqual([], self.commands())
 
     def test_vendored_sync_refuses_while_a_patch_is_unresolved(self) -> None:
         self.use_vendored_project()
@@ -335,7 +338,7 @@ class AgentMiseTasksTest(unittest.TestCase):
         self.assertNotIn("differs from the pack's copy", refused.stderr)
 
         patch.unlink()  # dropped: the install restores the pack's copy
-        self.log.unlink()
+        self.log.unlink(missing_ok=True)
         dropped = self.run_task("agent:sync")
 
         self.assertEqual(0, dropped.returncode, dropped.stderr)
@@ -358,6 +361,120 @@ class AgentMiseTasksTest(unittest.TestCase):
         self.assertEqual(1, result.returncode, result.stderr)
         self.assertIn(f"{path} differs from the pack's copy", result.stderr)
 
+    def test_intake_refuses_a_lock_without_the_hash_its_drift_check_needs(self) -> None:
+        self.use_vendored_project()
+        path = ".claude/skills/wayfinder/SKILL.md"
+        self.drift(path)
+        lock = self.project / "apm.lock.yaml"
+        lock.write_text(lock.read_text().split("  deployed_file_hashes:")[0])
+
+        for task, arguments in (("agent:sync", ()), ("agent:intake", ()), ("agent:intake", ("--refresh",))):
+            with self.subTest(task=task, arguments=arguments):
+                self.log.unlink(missing_ok=True)
+
+                result = self.run_task(task, *arguments)
+
+                self.assertEqual(1, result.returncode, result.stderr)
+                self.assertIn(f"apm.lock.yaml records no hash for .claude/skills/wayfinder, {path},", result.stderr)
+                self.assertNotIn("no unresolved patch", result.stdout)
+                self.assertEqual([], self.commands())
+
+    def test_intake_refuses_a_lock_hash_line_it_cannot_read(self) -> None:
+        self.use_vendored_project()
+        self.drift(".claude/skills/wayfinder/SKILL.md")
+        lock = self.project / "apm.lock.yaml"
+        lock.write_text(lock.read_text().replace("sha256:", "md5:"))
+
+        result = self.run_task("agent:intake")
+
+        self.assertEqual(1, result.returncode, result.stderr)
+        self.assertIn("apm.lock.yaml: cannot read the deployed file hash line", result.stderr)
+
+    def dropped_edit(self, edit: bytes, on_disk: bytes) -> Path:
+        """A dropped edit to a file the pack no longer ships: the ledger holds it, no patch, the lock omits it.
+
+        The lock deploys one other skill, untouched, so .claude/skills is a skill root."""
+        path = ".claude/skills/wayfinder/reference.md"
+        other = ".claude/skills/other/SKILL.md"
+        self.drift(other)
+        (self.project / other).parent.mkdir(parents=True)
+        (self.project / other).write_text("pristine\n")
+        skill = self.project / path
+        skill.parent.mkdir(parents=True)
+        skill.write_bytes(on_disk)
+        (self.project / ".agent-intake").mkdir()
+        (self.project / ".agent-intake/intaken").write_text(f"{hashlib.sha256(edit).hexdigest()}  {path}\n")
+        return skill
+
+    def test_vendored_sync_refuses_to_remove_a_dropped_file_edited_again(self) -> None:
+        self.use_vendored_project()
+        skill = self.dropped_edit(b"edited\n", b"edited again\n")
+
+        result = self.run_task("agent:sync")
+
+        self.assertEqual(1, result.returncode, result.stderr)
+        self.assertIn(".claude/skills/wayfinder/reference.md changed after intake took in its dropped edit", result.stderr)
+        self.assertEqual(b"edited again\n", skill.read_bytes())
+        self.assertNotIn(f"{self.bin}/apm install --target claude,codex", self.commands())
+
+    def test_vendored_sync_keeps_the_intake_state_until_its_audit_passes(self) -> None:
+        self.use_vendored_project()
+        skill = self.dropped_edit(b"edited\n", b"edited\n")
+        self.env["FAKE_APM_AUDIT_EXIT"] = "1"
+
+        failed = self.run_task("agent:sync")
+
+        self.assertEqual(1, failed.returncode, failed.stderr)
+        self.assertFalse(skill.parent.exists())
+        self.assertTrue((self.project / ".agent-intake/intaken").is_file())
+
+        del self.env["FAKE_APM_AUDIT_EXIT"]
+        synced = self.run_task("agent:sync")
+
+        self.assertEqual(0, synced.returncode, synced.stderr)
+        self.assertFalse((self.project / ".agent-intake").exists())
+
+    def test_vendored_sync_removes_nothing_for_a_ledger_path_outside_the_deployed_skills(self) -> None:
+        self.use_vendored_project()
+        dropped = self.dropped_edit(b"keep\n", b"keep\n")  # a valid removal, held back by the bad one
+        outside = Path(tempfile.mkdtemp(prefix="agent-intake-outside-"))
+        skills = self.project / ".claude/skills"
+        intaken = self.project / ".agent-intake/intaken"
+        valid = intaken.read_text()
+        cases = {
+            "unrelated path": "notes.txt",
+            "traversal": ".claude/skills/../../notes.txt",
+            "symlinked parent directory": ".claude/skills/old/notes.txt",
+            "file symlink": ".claude/skills/linked/ref.md",
+            "absolute path": str(outside / "abs.txt"),
+        }
+        for case, path in cases.items():
+            with self.subTest(case=case):
+                kept = (dropped, self.project / "notes.txt", outside / "notes.txt", outside / "abs.txt")
+                for file in kept:
+                    file.parent.mkdir(parents=True, exist_ok=True)
+                    file.write_bytes(b"keep\n")
+                if not os.path.lexists(skills / "old"):
+                    (skills / "old").symlink_to(outside, target_is_directory=True)
+                (skills / "linked").mkdir(exist_ok=True)
+                if not os.path.lexists(skills / "linked/ref.md"):
+                    (skills / "linked/ref.md").symlink_to(self.project / "notes.txt")
+                intaken.parent.mkdir(exist_ok=True)
+                intaken.write_text(valid + f"{hashlib.sha256(b'keep\n').hexdigest()}  {path}\n")
+                self.log.unlink(missing_ok=True)
+
+                result = self.run_task("agent:sync")
+
+                self.assertEqual(1, result.returncode, result.stderr)
+                self.assertIn(f"agent:sync: {path} is in .agent-intake/intaken but is not a file inside a deployed skill",
+                              result.stderr)
+                self.assertNotIn("removed", result.stdout)
+                self.assertTrue(os.path.lexists(self.project / path))
+                for file in kept:
+                    self.assertEqual(b"keep\n", file.read_bytes())
+                self.assertTrue(intaken.is_file())
+                self.assertEqual([], [command for command in self.commands() if " install " in f"{command} "])
+
     def edited_skill(self) -> tuple[str, Path]:
         path = ".claude/skills/wayfinder/SKILL.md"
         self.drift(path)
@@ -375,10 +492,10 @@ class AgentMiseTasksTest(unittest.TestCase):
         result = self.run_task("agent:intake", "--refresh")
 
         self.assertEqual(1, result.returncode, result.stderr)
-        self.assertIn("apm update failed; the edits are put back and the patches are saved", result.stderr)
+        self.assertIn("apm update failed; the edits are put back", result.stderr)
         self.assertEqual("edited\n", skill.read_text())
-        self.assertTrue((self.project / ".agent-intake" / f"{path}.patch").is_file())
         self.assertFalse((self.project / ".agent-intake/saved.json").exists())
+        self.assertIn(f"{path} differs from the pack's copy", self.run_task("agent:sync").stderr)
 
     def test_intake_refresh_puts_the_edits_back_over_the_release_it_deployed(self) -> None:
         self.use_vendored_project()

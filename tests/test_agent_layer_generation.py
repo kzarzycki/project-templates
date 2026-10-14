@@ -933,6 +933,183 @@ class AgentLayerGenerationTest(unittest.TestCase):
             cwd=project, check=True, capture_output=True, text=True,
         ).stdout)
 
+    def test_vendored_intake_sees_the_edits_once_apm_yml_ref_is_ahead_of_the_lock(self) -> None:
+        project = render(
+            agent_layer_mode="vendored",
+            engineering_capability_source="https://fixture.invalid/test/engineering.git",
+            engineering_capability_ref="^0.2.0",
+            include_fnox=False,
+        )
+        fixture, env = fixture_pack_env(project)
+        subprocess.run(["git", "init", "-q"], cwd=project, check=True)
+        commit_project(project, "render")
+        first = run_agent_sync(project, env)
+        self.assertEqual(0, first.returncode, first.stdout + first.stderr)
+        commit_project(project, "sync")
+
+        # The pack's next minor carries one copy's edit and not the other's.
+        release = fixture / "skills/wayfinder/SKILL.md"
+        release.write_text(release.read_text() + "\nA line the pack released.\n")
+        tag_fixture_release(fixture, "0.3.0")
+        kept, carried = project / ".claude/skills/wayfinder/SKILL.md", project / ".agents/skills/wayfinder/SKILL.md"
+        edit = kept.read_text() + "\nA local edit the pack never took.\n"
+        kept.write_text(edit)
+        carried.write_text(release.read_text())
+        commit_project(project, "edit both skill copies")
+
+        # ^0.2.0 excludes 0.3.0, so the bump edits the ref first; a fresh clone has no install cache.
+        manifest = project / "apm.yml"
+        manifest.write_text(manifest.read_text().replace("^0.2.0", "^0.3.0"))
+        commit_project(project, "take engineering 0.3")
+        shutil.rmtree(project / "apm_modules")
+        audit = subprocess.run(["apm", "audit", "--ci", "--no-policy", "-f", "json"],
+                               cwd=project, env=env, capture_output=True, text=True)
+        self.assertEqual([], json.loads(audit.stdout)["drift"]["drift"])  # apm's own drift check cannot run here
+
+        refused = run_agent_sync(project, env)
+        self.assertEqual(1, refused.returncode, refused.stdout + refused.stderr)
+        for path in (".claude/skills/wayfinder/SKILL.md", ".agents/skills/wayfinder/SKILL.md"):
+            self.assertIn(f"{path} differs from the pack's copy", refused.stderr)
+        intake = run_mise_task(project, env, "agent:intake")
+        self.assertEqual(1, intake.returncode, intake.stdout + intake.stderr)
+        self.assertIn("mise run agent:intake -- --refresh", intake.stderr)
+        self.assertEqual(edit, kept.read_text())
+
+        refresh = run_mise_task(project, env, "agent:intake", "--refresh")
+        self.assertEqual(1, refresh.returncode, refresh.stdout + refresh.stderr)
+        self.assertIn("engineering-v0.3.0", (project / "apm.lock.yaml").read_text())
+        self.assertIn("resolved: the release carries the edit to .agents/skills/wayfinder/SKILL.md", refresh.stdout)
+        self.assertEqual(release.read_text(), carried.read_text())
+        self.assertEqual(edit, kept.read_text())
+        patches = sorted(path.relative_to(project).as_posix() for path in (project / ".agent-intake").rglob("*.patch"))
+        self.assertEqual([".agent-intake/.claude/skills/wayfinder/SKILL.md.patch"], patches)
+        against_release = subprocess.run(["diff", "-u", str(release), str(kept)], capture_output=True, text=True).stdout
+        patch = (project / patches[0]).read_text()
+        self.assertEqual(against_release[against_release.index("@@"):], patch[patch.index("@@"):])
+
+    def test_vendored_refresh_keeps_an_edit_to_a_file_the_release_removes_as_a_patch_from_dev_null(self) -> None:
+        project = render(
+            agent_layer_mode="vendored",
+            engineering_capability_source="https://fixture.invalid/test/engineering.git",
+            engineering_capability_ref="^0.2.0",
+            include_fnox=False,
+        )
+        fixture, env = fixture_pack_env(project)
+        for name in ("reference.md", "notes.md"):
+            (fixture / "skills/wayfinder" / name).write_text(f"The pack's {name}.\n")
+        tag_fixture_release(fixture, "0.2.1")
+        subprocess.run(["git", "init", "-q"], cwd=project, check=True)
+        commit_project(project, "render")
+        first = run_agent_sync(project, env)
+        self.assertEqual(0, first.returncode, first.stdout + first.stderr)
+        commit_project(project, "sync")
+
+        # One file edited, one deleted; the next minor removes both.
+        edited, deleted = project / ".claude/skills/wayfinder/reference.md", project / ".claude/skills/wayfinder/notes.md"
+        edited.write_text("A local reference.\n")
+        deleted.unlink()
+        commit_project(project, "edit the references")
+        for name in ("reference.md", "notes.md"):
+            (fixture / "skills/wayfinder" / name).unlink()
+        tag_fixture_release(fixture, "0.3.0")
+        manifest = project / "apm.yml"
+        manifest.write_text(manifest.read_text().replace("^0.2.0", "^0.3.0"))
+        commit_project(project, "take engineering 0.3")
+
+        refresh = run_mise_task(project, env, "agent:intake", "--refresh")
+        self.assertEqual(1, refresh.returncode, refresh.stdout + refresh.stderr)
+        self.assertNotIn("reference.md", (project / "apm.lock.yaml").read_text())
+        self.assertIn("resolved: the release carries the edit to .claude/skills/wayfinder/notes.md", refresh.stdout)
+        self.assertFalse(deleted.exists())
+        self.assertEqual("A local reference.\n", edited.read_text())
+        patches = sorted(path.relative_to(project).as_posix() for path in (project / ".agent-intake").rglob("*.patch"))
+        self.assertEqual([".agent-intake/.claude/skills/wayfinder/reference.md.patch"], patches)
+        patch = (project / patches[0]).read_text()
+        self.assertEqual("@@ -0,0 +1 @@\n+A local reference.\n", patch[patch.index("@@"):])
+
+        # The patch keeps the guard up through sync and a plain intake, until it is dropped.
+        refused = run_agent_sync(project, env)
+        self.assertEqual(1, refused.returncode, refused.stdout + refused.stderr)
+        self.assertIn(f"{patches[0]} is unresolved", refused.stderr)
+        again = run_mise_task(project, env, "agent:intake")
+        self.assertEqual(1, again.returncode, again.stdout + again.stderr)
+        self.assertTrue((project / patches[0]).is_file())
+        self.assertEqual("A local reference.\n", edited.read_text())
+
+        (project / patches[0]).unlink()
+        dropped = run_agent_sync(project, env)
+        self.assertEqual(0, dropped.returncode, dropped.stdout + dropped.stderr)
+        self.assertFalse(edited.exists())
+        self.assertFalse((project / ".agent-intake").exists())
+
+    def skill_the_release_removes(self) -> tuple[Path, dict[str, str], Path, str]:
+        """An edited skill, taken in, that the next minor replaces with another skill; refreshed onto it."""
+        project = render(
+            agent_layer_mode="vendored",
+            engineering_capability_source="https://fixture.invalid/test/engineering.git",
+            engineering_capability_ref="^0.2.0",
+            include_fnox=False,
+        )
+        fixture, env = fixture_pack_env(project)
+        subprocess.run(["git", "init", "-q"], cwd=project, check=True)
+        commit_project(project, "render")
+        first = run_agent_sync(project, env)
+        self.assertEqual(0, first.returncode, first.stdout + first.stderr)
+        commit_project(project, "sync")
+        skill = project / ".claude/skills/wayfinder/SKILL.md"
+        skill.write_text(skill.read_text() + "\nA local edit.\n")
+        commit_project(project, "edit wayfinder")
+        self.assertEqual(1, run_mise_task(project, env, "agent:intake").returncode)
+
+        shutil.copytree(fixture / "skills/wayfinder", fixture / "skills/other")
+        shutil.rmtree(fixture / "skills/wayfinder")
+        tag_fixture_release(fixture, "0.3.0")
+        manifest = project / "apm.yml"
+        manifest.write_text(manifest.read_text().replace("^0.2.0", "^0.3.0"))
+        commit_project(project, "take engineering 0.3")
+        refresh = run_mise_task(project, env, "agent:intake", "--refresh")
+        self.assertEqual(1, refresh.returncode, refresh.stdout + refresh.stderr)
+        self.assertTrue(skill.is_file())
+        patch = project / ".agent-intake/.claude/skills/wayfinder/SKILL.md.patch"
+        self.assertTrue(patch.is_file())
+        patch.unlink()  # drop the edit
+        return project, env, skill, refresh.stdout
+
+    def test_vendored_sync_removes_a_dropped_edit_to_a_skill_the_release_removes(self) -> None:
+        project, env, skill, refreshed = self.skill_the_release_removes()
+
+        dropped = run_agent_sync(project, env)
+
+        self.assertEqual(0, dropped.returncode, dropped.stdout + dropped.stderr)
+        self.assertIn("removed .claude/skills/wayfinder/SKILL.md", dropped.stdout)
+        self.assertFalse(skill.parent.exists())
+        self.assertNotIn("wayfinder", (project / "apm.lock.yaml").read_text())
+        self.assertTrue((project / ".claude/skills/other/SKILL.md").is_file())
+        self.assertFalse((project / ".agent-intake").exists())
+        commit_project(project, "drop the wayfinder edit")
+        frozen = run_agent_sync(project, env, "--frozen")
+        self.assertEqual(0, frozen.returncode, frozen.stdout + frozen.stderr)
+        self.assertNotIn("resolved:", refreshed)  # APM kept the edited file; the release does not carry it
+
+    def test_vendored_sync_keeps_a_newer_edit_to_a_skill_the_release_removes(self) -> None:
+        project, env, skill, _ = self.skill_the_release_removes()
+        newer = skill.read_text() + "\nA newer edit.\n"
+        skill.write_text(newer)
+
+        refused = run_agent_sync(project, env)
+
+        self.assertEqual(1, refused.returncode, refused.stdout + refused.stderr)
+        self.assertIn(".claude/skills/wayfinder/SKILL.md", refused.stderr)
+        self.assertEqual(newer, skill.read_text())
+        self.assertTrue((project / ".agent-intake/intaken").is_file())
+
+        # Intake takes the newer edit in; dropping it removes the skill.
+        self.assertEqual(1, run_mise_task(project, env, "agent:intake").returncode)
+        (project / ".agent-intake/.claude/skills/wayfinder/SKILL.md.patch").unlink()
+        dropped = run_agent_sync(project, env)
+        self.assertEqual(0, dropped.returncode, dropped.stdout + dropped.stderr)
+        self.assertFalse(skill.parent.exists())
+
     def test_vendored_render_keeps_hand_written_root_files_and_compiles_nothing(self) -> None:
         for project_type, answers in LEAVES:
             with self.subTest(project_type=project_type, **answers):

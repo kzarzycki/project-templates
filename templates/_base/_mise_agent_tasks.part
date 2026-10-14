@@ -86,8 +86,6 @@ case "$mode" in
 esac
 {% if vendored -%}
 apm prune
-# Every edit was ported or dropped, and the install restored the dropped ones.
-rm -rf .agent-intake
 {% else -%}
 apm compile --clean
 apm compile --validate
@@ -108,6 +106,11 @@ if [ "$mode" = frozen ]; then
     exit 1
   fi
 fi
+{% if vendored -%}
+# Every edit was ported or dropped and sync converged: the intake state goes only now, so a failed
+# sync keeps it.
+rm -rf .agent-intake
+{% endif -%}
 """
 {% if vendored -%}
 
@@ -115,10 +118,10 @@ fi
 description = "Turns each local edit of a deployed skill file into a patch against the pack's copy, to port into the pack or drop."
 usage = """
 flag "--refresh" help="Take the newer compatible pack first; a patch the release already carries resolves itself"
-flag "--check" help="Write nothing: exit 1 while a drifted file has no intake or a patch is unresolved (agent:sync runs this)"
+flag "--check" help="Exit 1 while a drifted file has no intake or a patch is unresolved; else remove each dropped edit to a file the pack no longer ships (agent:sync runs this)"
 """
 # A patch is resolved by porting it into the pack and taking that release with --refresh, or by
-# deleting it: the next agent:sync then restores the pack's copy.
+# deleting it: the next agent:sync then restores the pack's copy, or removes a file the pack no longer ships.
 run = """
 command -v apm >/dev/null || { echo "error: apm {{ apm_version }} is required; run 'mise install'" >&2; exit 127; }
 command -v python3 >/dev/null || { echo "error: python3 is required; run 'mise install'" >&2; exit 127; }
@@ -127,9 +130,11 @@ if [ "${usage_refresh:-false}" = true ]; then mode=refresh; fi
 if [ "${usage_check:-false}" = true ]; then mode=check; fi
 python3 - "$mode" <<'PY'
 import base64
+import contextlib
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -151,15 +156,58 @@ def fail(message):
     sys.exit(1)
 
 
-def drifted():
+def scalar(text):
+    if text[:1] == "'":
+        return text[1:-1].replace("''", "'")
+    return json.loads(text) if text[:1] == '"' else text
+
+
+# The lock's deployed directories and the sha256 it records for each deployed file.
+# ponytail: reads the lock's plain YAML lines; a hash line in any other form fails, parse YAML if APM writes one.
+def locked():
     if not Path("apm.lock.yaml").is_file():
-        return []
-    audit = subprocess.run(["apm", "audit", "--ci", "--no-policy", "-f", "json"], capture_output=True, text=True)
-    try:
-        report = json.loads(audit.stdout)
-    except json.JSONDecodeError:
-        fail(f"apm audit gave no JSON report (exit {audit.returncode}):\\n{audit.stderr}")
-    return sorted({entry["path"] for entry in (report.get("drift") or {}).get("drift", [])})
+        return set(), {}
+    deployed, hashes, section = set(), {}, None
+    for line in Path("apm.lock.yaml").read_text().splitlines():
+        stripped = line.lstrip(" ")
+        indent = len(line) - len(stripped)
+        if stripped in ("deployed_files:", "deployed_file_hashes:"):
+            section, depth = stripped[:-1], indent
+        elif section == "deployed_files" and indent >= depth and stripped.startswith("- "):
+            deployed.add(scalar(stripped[2:]))
+        elif section == "deployed_file_hashes" and indent > depth:
+            match = re.fullmatch(r"(.+): sha256:([0-9a-f]{64})", stripped)
+            if match is None:
+                fail(f"apm.lock.yaml: cannot read the deployed file hash line {stripped!r}")
+            hashes[scalar(match.group(1))] = match.group(2)
+        else:
+            section = None
+    # A deployed directory has no hash of its own; a deployed file without one hides its edits.
+    unhashed = sorted(path for path in deployed - hashes.keys() if not any(file.startswith(f"{path}/") for file in hashes))
+    if unhashed:
+        fail(f"apm.lock.yaml records no hash for {', '.join(unhashed)}, so an edit to it cannot be told from the "
+             "pack's copy; a lock apm {{ apm_version }} writes records one")
+    return deployed - hashes.keys(), hashes
+
+
+# An edit is a deployed file whose bytes no longer match the sha256 apm.lock.yaml records for it. The
+# lock alone settles it: apm audit replays the install from apm.yml, so a ref edited ahead of the lock
+# (every pack minor bump) stops its drift check, and the edits would read as none.
+def drifted():
+    return sorted(path for path, sha in locked()[1].items() if digest(Path(path)) != sha)
+
+
+# The skill root a dropped file may be removed from: one the lock deploys skill directories into
+# (.claude/skills, .agents/skills), the file at least one directory below it, reached through no
+# symlink. A matching hash proves the bytes, not that the path is the pack's.
+def skill_root(path, roots):
+    parts = Path(path).parts
+    if Path(path).is_absolute() or ".." in parts:
+        return None
+    if any(Path(*parts[:end]).is_symlink() for end in range(1, len(parts) + 1)):
+        return None
+    return next((root for root in roots if len(parts) >= len(root.parts) + 2 and parts[:len(root.parts)] == root.parts),
+                None)
 
 
 def content(path):
@@ -180,6 +228,12 @@ def patches():
     if not INTAKE.is_dir():
         return []
     return sorted(patch.relative_to(INTAKE).as_posix().removesuffix(".patch") for patch in INTAKE.rglob("*.patch"))
+
+
+# The drifted files, and each file a patch still holds: a release that removes a file drops it from
+# the lock, so only its patch remembers the edit, against /dev/null, until it is ported or dropped.
+def edited():
+    return sorted(set(drifted()) | set(patches()))
 
 
 def save(entries):
@@ -244,16 +298,25 @@ def recover():
     return list(entries)
 
 
+# The pack's copy: what an install would deploy, written to a scratch root so the tree keeps its edits.
+@contextlib.contextmanager
+def release():
+    pristine = Path(tempfile.mkdtemp(prefix="agent-intake-"))
+    try:
+        shutil.copy("apm.lock.yaml", pristine)
+        install = subprocess.run(["apm", "install", "--frozen", "--root", str(pristine)], capture_output=True, text=True)
+        if install.returncode != 0:
+            fail(f"could not install the pack's copy:\\n{install.stdout}{install.stderr}"
+                 "a ref in apm.yml edited ahead of apm.lock.yaml takes 'mise run agent:intake -- --refresh'")
+        yield pristine
+    finally:
+        shutil.rmtree(pristine, ignore_errors=True)
+
+
 def write_patches(paths):
     diffs = {}
     if paths:
-        # The pack's copy: what an install would deploy, written to a scratch root so the tree keeps its edits.
-        pristine = Path(tempfile.mkdtemp(prefix="agent-intake-"))
-        try:
-            shutil.copy("apm.lock.yaml", pristine)
-            install = subprocess.run(["apm", "install", "--frozen", "--root", str(pristine)], capture_output=True, text=True)
-            if install.returncode != 0:
-                fail(f"could not install the pack's copy:\\n{install.stdout}{install.stderr}")
+        with release() as pristine:
             for path in paths:
                 old, new = pristine / path, Path(path)
                 diff = subprocess.run(
@@ -263,9 +326,8 @@ def write_patches(paths):
                 )
                 if diff.returncode not in (0, 1):
                     fail(f"diff of {path} failed:\\n{diff.stderr.decode()}")
-                diffs[path] = diff.stdout
-        finally:
-            shutil.rmtree(pristine, ignore_errors=True)
+                if diff.returncode == 1:
+                    diffs[path] = diff.stdout
     # The old patches go only once every new one is in hand.
     for path in patches():
         (INTAKE / f"{path}.patch").unlink()
@@ -283,7 +345,7 @@ def write_patches(paths):
 def report():
     remaining = patches()
     for path in remaining:
-        print(f"{INTAKE}/{path}.patch: port it into the pack, or delete it to drop the edit (the next agent:sync restores the pack's copy)")
+        print(f"{INTAKE}/{path}.patch: port it into the pack, or delete it to drop the edit (the next agent:sync restores the pack's copy, or removes a file the pack no longer ships)")
     if remaining:
         sys.exit(1)
     print("agent:intake: no unresolved patch")
@@ -301,13 +363,41 @@ if mode == "check":
         print(f"agent:sync: {INTAKE}/{path}.patch is unresolved", file=sys.stderr)
     if unseen or patches():
         fail("run 'mise run agent:intake', then port or drop each patch")
+    # A dropped edit to a file the pack no longer ships: an install keeps a user-edited file it no
+    # longer deploys, so sync removes it, and only while it holds the bytes intake took in.
+    dropped = [path for path in seen if os.path.lexists(path)]
+    roots = {Path(directory).parent for directory in locked()[0]}
+    owner = {path: skill_root(path, roots) for path in dropped}
+    outside = [path for path in dropped if owner[path] is None]
+    for path in outside:
+        print(f"agent:sync: {path} is in {LEDGER} but is not a file inside a deployed skill directory "
+              "reached without a symlink", file=sys.stderr)
+    if outside:
+        fail(f"sync removes nothing outside the deployed skills: take each such line out of {LEDGER}")
+    if dropped:
+        with release() as pristine:
+            dropped = [path for path in dropped if not (pristine / path).exists()]
+    changed = [path for path in dropped if digest(Path(path)) != seen[path]]
+    for path in changed:
+        print(f"agent:sync: {path} changed after intake took in its dropped edit, and the pack no longer ships it",
+              file=sys.stderr)
+    if changed:
+        fail("run 'mise run agent:intake', then port or drop each patch")
+    for path in dropped:
+        Path(path).unlink()
+        directory = Path(path).parent
+        while directory != owner[path] and not any(directory.iterdir()):
+            directory.rmdir()  # each emptied directory up to the skill root
+            directory = directory.parent
+        print(f"agent:sync: removed {path}: its edit was dropped and the pack no longer ships it")
     sys.exit(0)
 
 if SAVED.is_file():
     print(f"agent:intake: put back the edits an interrupted --refresh saved: {', '.join(recover())}")
-edits = drifted()
-write_patches(edits)
+edits = edited()
 if mode == "refresh":
+    # The patches are written once, against the release the update takes: the pack's copy of the
+    # locked release cannot be installed once apm.yml's ref is ahead of the lock.
     if edits:
         save({path: {"edit": content(Path(path)), "deployed": None} for path in edits})
     try:
@@ -320,15 +410,17 @@ if mode == "refresh":
         for path, entry in entries.items():
             put(Path(path), entry["edit"])
         SAVED.unlink(missing_ok=True)
-        fail("apm update failed; the edits are put back and the patches are saved")
+        fail("apm update failed; the edits are put back")
     for path, entry in entries.items():
         entry["deployed"] = digest(Path(path))
-        if content(Path(path)) == entry["edit"]:
-            print(f"resolved: the release carries the edit to {path}")
     if entries:
         save(entries)
         recover()
-    write_patches(drifted())
+    write_patches(sorted(set(edited()) | set(entries)))
+    for path in sorted(entries.keys() - set(patches())):
+        print(f"resolved: the release carries the edit to {path}")
+else:
+    write_patches(edits)
 report()
 PY
 """
