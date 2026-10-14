@@ -305,9 +305,9 @@ replace old coding agent files that conflict with the new scaffold.
 Review the resulting diff before accepting it. The template does not include a
 migration layer for legacy coding-agent configuration.
 
-Until a release newer than v0.8.0 is tagged, reaching anything after v0.8.0 —
-the `apple/xcode` project type and every change from 92bf097 on — needs
-`--vcs-ref main` (or a commit SHA) on `copier update`. Without it, Copier
+Until a release newer than v0.8.0 is tagged, reaching anything after v0.8.0,
+the `apple/xcode` project type included, needs `--vcs-ref main` (or a commit
+SHA) on `copier update`. Without it, Copier
 targets the newest tag, v0.8.0:
 
 - A project at v0.8.0 stays there.
