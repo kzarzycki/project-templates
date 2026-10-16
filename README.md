@@ -494,6 +494,14 @@ blank line, which failed its own `lint:eof`. Copier keeps a deleted file
 deleted on update, so a project that deleted either file to work around this
 copies it back from a fresh render.
 
+Updating to the next release moves the pack to `^0.19.0` (a caret on 0.x:
+`^0.18.0` never takes 0.19.0); run `mise run agent:intake -- --refresh`, then
+`agent:sync`, and commit what they change. 0.19.0 adds the optional
+`chief-of-staff` skill, and since 0.18.3 `engineering-loop` links to
+`orchestrating-agents`. A project whose `apm.yml` lists its skills by name adds
+`orchestrating-agents`, and `chief-of-staff` if it wants one; the rendered
+`apm.yml` lists none and so deploys both.
+
 ## Adopt an existing (pre-template) repo
 
 A repo that predates the template can be brought under management — `copier copy`
