@@ -494,13 +494,18 @@ blank line, which failed its own `lint:eof`. Copier keeps a deleted file
 deleted on update, so a project that deleted either file to work around this
 copies it back from a fresh render.
 
-Updating to the next release moves the pack to `^0.19.0` (a caret on 0.x:
-`^0.18.0` never takes 0.19.0); run `mise run agent:intake -- --refresh`, then
-`agent:sync`, and commit what they change. 0.19.0 adds the optional
-`chief-of-staff` skill, and since 0.18.3 `engineering-loop` links to
-`orchestrating-agents`. A project whose `apm.yml` lists its skills by name adds
-`orchestrating-agents`, and `chief-of-staff` if it wants one; the rendered
-`apm.yml` lists none and so deploys both.
+Updating to the next release moves the pack to `^0.21.0` (a caret on 0.x:
+`^0.18.0` never takes 0.19.0, nor `^0.20.0` 0.21.0); run
+`mise run agent:intake -- --refresh`, then `agent:sync`, and commit what they
+change. 0.19.0 adds the optional `chief-of-staff` skill, and since 0.18.3
+`engineering-loop` links to `orchestrating-agents`. A project whose `apm.yml`
+lists its skills by name adds `orchestrating-agents`, and `chief-of-staff` if it
+wants one; the rendered `apm.yml` lists none and so deploys both. In 0.20.0 a
+chief of staff follows its leads through Omnigent session subscriptions, which
+need an Omnigent build that has them; on an older build, `start --top-level`
+prints `not subscribed` and that lead is followed with `watch`. 0.21.0 archives
+a finished sub-agent and needs an Omnigent build with kzarzycki/omnigent 4dd0af32;
+on an older build, archiving a sub-agent stops its parent too.
 
 ## Adopt an existing (pre-template) repo
 
