@@ -45,6 +45,8 @@ lives once, in `mise.toml` `[tools]` or the toolchain's lock file:
 - `lint:<tool>` is one task per linter or formatter. Run with no files it
   checks the whole repo; the commit hook passes the staged files. A fixer task
   rewrites the files and fails when it changed one.
+  `lint:json` skips the paths matching `LINT_JSON_SKIP`, an ERE the project
+  sets under `[env]` in `mise.toml`, for files with a `.json` name that hold no JSON.
 - `check:lint` (aliases `lint`, `fmt`) runs every `lint:` task, with or
   without pre-commit installed.
 - `check:unit` runs the tests with diff coverage against `origin/$BASE_REF`
@@ -65,7 +67,8 @@ Generated CI runs the same tasks. A `plan` job runs `mise run ci:parts`, which
 lists the `check:` parts (all but `check:all`) this change needs:
 `.github/check-paths.yml` maps a part to the paths that run it, and a part it
 does not name always runs. A matrix job named after each part runs
-`mise run <part>`. The aggregate `check` job passes only when the plan and every
+`mise run <part>`. In a mise monorepo root, which names its own tasks `//:<task>`,
+the parts are the root's own `check:` tasks. The aggregate `check` job passes only when the plan and every
 part passed, and names a failed part with the command that reruns it. A project
 adds a check as a `check:<name>` task in `mise.toml`; CI picks it up with no
 workflow change. Without mise, CI keeps its per-step gate and remote-pinned

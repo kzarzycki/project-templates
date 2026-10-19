@@ -70,7 +70,9 @@ run = '{{ scripts_dir }}/files-or-repo --only "\.toml$" check-toml --'
 
 [tasks."lint:json"]
 description = "Fails on a JSON file that doesn't parse."
-run = '{{ scripts_dir }}/files-or-repo --only "\.json$" check-json --'
+# LINT_JSON_SKIP, an ERE the project sets under [env], drops the paths that carry a .json name but
+# hold no JSON (e.g. chezmoi modify_ scripts), so the project never edits this task.
+run = '{{ scripts_dir }}/files-or-repo --only "\.json$" --skip "${LINT_JSON_SKIP:-}" check-json --'
 
 [tasks."lint:merge-conflict"]
 description = "Fails on a leftover conflict marker."
@@ -153,7 +155,9 @@ mise tasks ls --json | python3 -c '
 import json, os, re, sys
 from pathlib import Path
 
-parts = sorted(t["name"] for t in json.load(sys.stdin) if t["name"].startswith("check:") and t["name"] != "check:all")
+# A mise monorepo root lists its own tasks as //:<task>, and CI runs them by the bare name.
+names = [t["name"].removeprefix("//:") for t in json.load(sys.stdin)]
+parts = sorted(name for name in names if name.startswith("check:") and name != "check:all")
 paths = Path(".github/check-paths.yml")
 key = re.compile(r"^[\x22\x27]?(check:[\w:-]+)[\x22\x27]?[ \t]*:(?:[ \t]|$)", re.MULTILINE)
 filtered = set(key.findall(paths.read_text())) if paths.exists() else set()

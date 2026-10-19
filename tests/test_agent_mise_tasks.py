@@ -870,6 +870,29 @@ class AgentMiseTasksTest(unittest.TestCase):
                 self.assertEqual(0, result.returncode, result.stderr)
                 self.assertEqual(expected, json.loads(result.stdout))
 
+    def test_ci_parts_in_a_monorepo_root_lists_the_roots_own_parts_by_their_bare_names(self) -> None:
+        (self.bin / "mise").symlink_to(MISE)
+        config = self.project / "mise.toml"
+        config.write_text("monorepo_root = true\n" + config.read_text() + '\n[monorepo]\nconfig_roots = ["sub"]\n')
+        (self.project / "sub").mkdir()
+        (self.project / "sub/mise.toml").write_text('[tasks."check:sub"]\nrun = "true"\n')
+
+        result = self.run_task("ci:parts")
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(["check:agents", "check:lint", "check:secrets", "check:unit"], json.loads(result.stdout))
+
+    def test_lint_json_skips_the_paths_lint_json_skip_names(self) -> None:
+        fake_executable(self.bin, "check-json")
+        for name in ("a.json", "modify_b.json"):
+            (self.project / name).write_text("{}")
+        self.env["LINT_JSON_SKIP"] = "(^|/)modify_"
+
+        result = self.run_task("lint:json", "a.json", "modify_b.json")
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual([f"{self.bin}/check-json a.json"], self.commands())
+
     def test_ci_check_passes_only_when_plan_and_parts_passed_and_names_a_failed_part(self) -> None:
         self.fake_github(failed_jobs=["check:unit", "plan"])
         self.env.update({"GITHUB_REPOSITORY": "o/r", "GITHUB_RUN_ID": "1", "GITHUB_RUN_ATTEMPT": "1"})
@@ -1030,6 +1053,58 @@ class AgentMiseTasksTest(unittest.TestCase):
         self.assertNotEqual(0, hooked.returncode)
         self.assertIn("lint:eof", hooked.stdout + hooked.stderr)
         self.assertEqual("no final newline\n", (project / "notes.txt").read_text())
+
+
+
+class TerraformMiseTasksTest(unittest.TestCase):
+    """The Terraform tasks against a fake terraform that logs its data dir and arguments."""
+
+    def setUp(self) -> None:
+        self.project = render("infra/terraform", include_mise=True, include_agent_layer=False, include_fnox=False)
+        for name in ("stacks/a/main.tf", "stacks/a/tests/a.tftest.hcl", "modules/m/main.tf",
+                     "modules/m/m.tftest.hcl"):
+            (self.project / name).parent.mkdir(parents=True, exist_ok=True)
+            (self.project / name).write_text("")
+        subprocess.run(["git", "init", "-q"], cwd=self.project, check=True)
+        subprocess.run(["git", "add", "-A"], cwd=self.project, check=True)
+        self.bin = Path(tempfile.mkdtemp(prefix="terraform-task-bin-"))
+        self.log = self.bin / "commands.log"
+        (self.bin / "terraform").write_text('#!/bin/sh\necho "${TF_DATA_DIR:-} $*" >> "$COMMAND_LOG"\n')
+        (self.bin / "terraform").chmod(0o755)
+        self.env = {**os.environ, "COMMAND_LOG": str(self.log), "MISE_OFFLINE": "true",
+                    "MISE_TRUSTED_CONFIG_PATHS": str(self.project), "PATH": f"{self.bin}:/usr/bin:/bin"}
+
+    def run_task(self, task: str, *arguments: str) -> list[str]:
+        self.log.unlink(missing_ok=True)
+        result = subprocess.run([MISE, "run", "--skip-tools", task, *arguments], cwd=self.project,
+                                env=self.env, capture_output=True, text=True)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        return self.log.read_text().splitlines() if self.log.exists() else []
+
+    def test_validate_runs_offline_in_every_root_module_outside_modules(self) -> None:
+        offline = ".terraform/offline"
+        self.assertEqual([f"{offline} -chdir=. init -backend=false -input=false", f"{offline} -chdir=. validate",
+                          f"{offline} -chdir=stacks/a init -backend=false -input=false",
+                          f"{offline} -chdir=stacks/a validate"],
+                         self.run_task("lint:terraform-validate"))
+
+        self.env["TF_ROOT_MODULES"] = "stacks/a"
+        self.assertEqual([f"{offline} -chdir=stacks/a init -backend=false -input=false",
+                          f"{offline} -chdir=stacks/a validate"],
+                         self.run_task("lint:terraform-validate"))
+
+    def test_test_fast_runs_terraform_test_in_each_module_with_tests(self) -> None:
+        offline = ".terraform/offline"
+        self.assertEqual([f"{offline} -chdir=modules/m init -backend=false -input=false",
+                          f"{offline} -chdir=modules/m test",
+                          f"{offline} -chdir=stacks/a init -backend=false -input=false",
+                          f"{offline} -chdir=stacks/a test"],
+                         self.run_task("test:fast"))
+
+    def test_plan_and_apply_take_the_root_module_directory(self) -> None:
+        self.assertEqual([" -chdir=. init -input=false", " -chdir=. plan"], self.run_task("plan"))
+        self.assertEqual([" -chdir=stacks/a init -input=false", " -chdir=stacks/a apply"],
+                         self.run_task("apply", "stacks/a"))
 
 
 if __name__ == "__main__":
