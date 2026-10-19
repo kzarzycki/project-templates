@@ -11,8 +11,21 @@ run = 'scripts/files-or-repo --fixer --only "\.(tf|tfvars|tftest\.hcl)$" terrafo
 
 [tasks."lint:terraform-validate"]
 alias = "validate"
-description = "Validates the configuration offline (no backend; init fetches only the providers it declares)."
-run = "terraform init -backend=false -input=false && terraform validate"
+description = "Validates every root module offline (no backend; init fetches only the providers it declares)."
+# A root module is a directory with a tracked *.tf file outside a modules/ tree; the child modules
+# are validated through the roots that call them. TF_ROOT_MODULES, set under [env], replaces the
+# list (space-separated directories). Its own TF_DATA_DIR, so a module already initialized against
+# a remote backend validates with no credentials.
+# ponytail: a directory name with a space is not supported; quote the loop when one appears.
+run = '''
+roots="${TF_ROOT_MODULES:-$(git ls-files -- '*.tf' | sed 's#[^/]*$##; s#/$##; s#^$#.#' | sort -u | grep -Ev '(^|/)modules(/|$)')}"
+[ -n "$roots" ] || { echo "lint:terraform-validate: no Terraform root module"; exit 0; }
+for dir in $roots; do
+  echo "== $dir"
+  TF_DATA_DIR=.terraform/offline terraform -chdir="$dir" init -backend=false -input=false >/dev/null || exit 1
+  TF_DATA_DIR=.terraform/offline terraform -chdir="$dir" validate || exit 1
+done
+'''
 
 [tasks."lint:tflint"]
 description = "Lints the Terraform modules with tflint."
@@ -20,8 +33,17 @@ run = "tflint --init && tflint --recursive"
 
 [tasks."test:fast"]
 alias = "test"
-description = "Runs the Terraform tests (terraform test, offline: no backend)."
-run = "terraform init -backend=false -input=false && terraform test"
+description = "Runs the Terraform tests (terraform test, offline: no backend) in every module that has one."
+# terraform test runs from the module directory, with the *.tftest.hcl files in it or in its tests/.
+run = '''
+modules="$(git ls-files -- '*.tftest.hcl' | sed 's#[^/]*$##; s#/$##; s#/tests$##; s#^tests$##; s#^$#.#' | sort -u)"
+[ -n "$modules" ] || { echo "test:fast: no Terraform tests (*.tftest.hcl)"; exit 0; }
+for dir in $modules; do
+  echo "== $dir"
+  TF_DATA_DIR=.terraform/offline terraform -chdir="$dir" init -backend=false -input=false >/dev/null || exit 1
+  TF_DATA_DIR=.terraform/offline terraform -chdir="$dir" test || exit 1
+done
+'''
 
 [tasks."test:unit"]
 description = "Runs test:fast: this project has one test tier."
@@ -44,18 +66,22 @@ run = "pre-commit install --install-hooks"
 # Provider credentials come from the fnox profile "infra" (see fnox.toml), so a coding
 # agent launched with the default profile never holds cloud tokens.
 [tasks.plan]
-description = "Show the plan without applying."
-run = 'fnox exec -P infra --if-missing error -- sh -c "terraform init -input=false && terraform plan"'
+description = "Show the plan of one root module without applying."
+usage = 'arg "[dir]" help="the root module directory" default="."'
+run = '''fnox exec -P infra --if-missing error -- sh -c 'terraform -chdir="$0" init -input=false && terraform -chdir="$0" plan' "${usage_dir}"'''
 
 [tasks.apply]
-description = "Apply the plan."
-run = 'fnox exec -P infra --if-missing error -- sh -c "terraform init -input=false && terraform apply"'
+description = "Apply the plan of one root module."
+usage = 'arg "[dir]" help="the root module directory" default="."'
+run = '''fnox exec -P infra --if-missing error -- sh -c 'terraform -chdir="$0" init -input=false && terraform -chdir="$0" apply' "${usage_dir}"'''
 {% else -%}
 [tasks.plan]
-description = "Show the plan without applying."
-run = "terraform init -input=false && terraform plan"
+description = "Show the plan of one root module without applying."
+usage = 'arg "[dir]" help="the root module directory" default="."'
+run = 'terraform -chdir="${usage_dir}" init -input=false && terraform -chdir="${usage_dir}" plan'
 
 [tasks.apply]
-description = "Apply the plan."
-run = "terraform init -input=false && terraform apply"
+description = "Apply the plan of one root module."
+usage = 'arg "[dir]" help="the root module directory" default="."'
+run = 'terraform -chdir="${usage_dir}" init -input=false && terraform -chdir="${usage_dir}" apply'
 {% endif -%}

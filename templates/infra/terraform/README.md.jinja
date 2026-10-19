@@ -10,7 +10,9 @@ mise run setup:dev            # install git hooks
 mise run check                # lint (fmt, validate, tflint) + terraform test
 ```
 
-Common tasks: `mise run check:lint` · `mise run test:fast` · `mise run plan`.
+Common tasks: `mise run check:lint` · `mise run test:fast` · `mise run plan [dir]`.
+With several root modules, `lint:terraform-validate` validates each one, and
+`plan`/`apply` take the module's directory.
 
 State and `*.tfvars` hold secrets and are gitignored — configure the backend and
 provider for your environment.
