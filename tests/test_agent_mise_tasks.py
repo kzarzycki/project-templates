@@ -1071,7 +1071,10 @@ class TerraformMiseTasksTest(unittest.TestCase):
         self.log = self.bin / "commands.log"
         (self.bin / "terraform").write_text('#!/bin/sh\necho "${TF_DATA_DIR:-} $*" >> "$COMMAND_LOG"\n')
         (self.bin / "terraform").chmod(0o755)
+        # Its own mise dirs, so an installed terraform never shadows the fake one.
         self.env = {**os.environ, "COMMAND_LOG": str(self.log), "MISE_OFFLINE": "true",
+                    "MISE_CACHE_DIR": str(self.bin / "mise-cache"), "MISE_DATA_DIR": str(self.bin / "mise-data"),
+                    "MISE_STATE_DIR": str(self.bin / "mise-state"),
                     "MISE_TRUSTED_CONFIG_PATHS": str(self.project), "PATH": f"{self.bin}:/usr/bin:/bin"}
 
     def run_task(self, task: str, *arguments: str) -> list[str]:
