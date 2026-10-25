@@ -338,6 +338,15 @@ replace old coding agent files that conflict with the new scaffold.
 Review the resulting diff before accepting it. The template does not include a
 migration layer for legacy coding-agent configuration.
 
+`mise run deps:update` does the routine update in one commit, for a scheduled job
+to turn into a PR: `copier update` to the newest tag, then each APM package of the
+template's GitHub owner (the owner in `_src_path`) to its newest release, then
+`agent:sync --refresh`. A range such as `^0.21.0` becomes `^<newest>`, a release
+tag the newest tag, and a commit pin the newest release that contains it, else
+the head of its repo's `main`. It refuses a dirty tree, exits 1 on a conflict
+marker with the tree left for a person, and prints `deps:update: current` when
+nothing moved.
+
 Until a release newer than v0.8.0 is tagged, reaching anything after v0.8.0,
 the `apple/xcode` project type included, needs `--vcs-ref main` (or a commit
 SHA) on `copier update`. Without it, Copier

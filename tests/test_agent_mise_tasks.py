@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -1108,6 +1109,131 @@ class TerraformMiseTasksTest(unittest.TestCase):
         self.assertEqual([" -chdir=. init -input=false", " -chdir=. plan"], self.run_task("plan"))
         self.assertEqual([" -chdir=stacks/a init -input=false", " -chdir=stacks/a apply"],
                          self.run_task("apply", "stacks/a"))
+
+
+class DepsUpdateTest(unittest.TestCase):
+    """deps:update against a local agent-skills: git reads https://github.com/ from a scratch directory."""
+
+    def setUp(self) -> None:
+        self.project = render(include_mise=True, include_agent_layer=True, include_fnox=True)
+        self.bin = Path(tempfile.mkdtemp(prefix="deps-update-bin-"))
+        self.log = self.bin / "commands.log"
+        for name in ("apm", "fnox", "copier"):
+            fake_executable(self.bin, name)
+        github = self.bin / "github"
+        self.upstream = github / "kzarzycki" / "agent-skills"
+        self.git("init", "-q", "-b", "main", str(self.upstream))
+        self.released = {}
+        for version in ("0.21.0", "0.23.2"):
+            self.git("-C", str(self.upstream), "commit", "-q", "--allow-empty", "-m", version)
+            self.git("-C", str(self.upstream), "tag", f"engineering-v{version}")
+            self.released[version] = self.git("-C", str(self.upstream), "rev-parse", "HEAD").strip()
+        answers = self.project / ".copier-answers.yml"
+        answers.write_text(re.sub(r"(?m)^_src_path: .*$", "_src_path: gh:kzarzycki/project-templates", answers.read_text()))
+        self.env = os.environ.copy()
+        self.env.update(
+            {
+                "COMMAND_LOG": str(self.log),
+                "MISE_CACHE_DIR": str(self.bin / "mise-cache"),
+                "MISE_DATA_DIR": str(self.bin / "mise-data"),
+                "MISE_OFFLINE": "true",
+                "MISE_STATE_DIR": str(self.bin / "mise-state"),
+                "MISE_TRUSTED_CONFIG_PATHS": str(self.project),
+                # deps:update runs agent:sync through mise
+                "PATH": f"{self.bin}:{Path(MISE).parent}:/usr/bin:/bin",
+                "GIT_CONFIG_COUNT": "2",
+                "GIT_CONFIG_KEY_0": f"url.{github.as_uri()}/.insteadOf",
+                "GIT_CONFIG_VALUE_0": "https://github.com/",
+                # the commit runs no hook of this machine's
+                "GIT_CONFIG_KEY_1": "core.hooksPath",
+                "GIT_CONFIG_VALUE_1": "/dev/null",
+            }
+        )
+
+    def git(self, *arguments: str, cwd: Path | None = None) -> str:
+        identity = ["-c", "user.name=Test", "-c", "user.email=test@example.com"]
+        return subprocess.run(["git", *identity, *arguments], cwd=cwd, check=True, capture_output=True, text=True).stdout
+
+    def pin(self, ref: str) -> None:
+        manifest = self.project / "apm.yml"
+        manifest.write_text(re.sub(r"(?m)^(\s*)ref: .*$", lambda m: f"{m.group(1)}{ref}", manifest.read_text()))
+
+    def commit(self) -> None:
+        self.git("init", "-q", cwd=self.project)
+        self.git("add", ".", cwd=self.project)
+        self.git("commit", "--no-verify", "-qm", "fixture", cwd=self.project)
+
+    def update(self) -> subprocess.CompletedProcess[str]:
+        env = {**self.env, "GIT_AUTHOR_NAME": "Test", "GIT_AUTHOR_EMAIL": "t@example.com",
+               "GIT_COMMITTER_NAME": "Test", "GIT_COMMITTER_EMAIL": "t@example.com"}
+        return subprocess.run([MISE, "run", "--skip-tools", "deps:update"], cwd=self.project, env=env,
+                              capture_output=True, text=True)
+
+    def ref(self) -> str:
+        return re.search(r"(?m)^\s*ref: (.*)$", (self.project / "apm.yml").read_text()).group(1)
+
+    def test_a_range_moves_to_the_newest_release_in_one_commit_then_reads_current(self) -> None:
+        self.commit()
+        first = self.update()
+        self.assertEqual(0, first.returncode, first.stderr)
+        self.assertEqual("^0.23.2", self.ref())
+        message = self.git("log", "-1", "--format=%B", cwd=self.project)
+        self.assertIn("chore(deps): update template and owner packages", message)
+        self.assertIn("kzarzycki/agent-skills/engineering: ^0.21.0 -> ^0.23.2 (https://github.com/kzarzycki/"
+                      "agent-skills/compare/engineering-v0.21.0...engineering-v0.23.2)", message)
+        commands = self.log.read_text()
+        self.assertIn("copier update --trust --defaults --conflict inline", commands)
+        self.assertIn("apm update --yes", commands)
+        head = self.git("rev-parse", "HEAD", cwd=self.project)
+        second = self.update()
+        self.assertEqual(0, second.returncode, second.stderr)
+        self.assertIn("deps:update: current", second.stdout)
+        self.assertEqual(head, self.git("rev-parse", "HEAD", cwd=self.project))
+
+    def test_a_commit_pin_a_release_contains_moves_to_that_release_and_drops_its_comment(self) -> None:
+        self.pin(f"# a commit, until a release has it\n      ref: {self.released['0.21.0']}  # pragma: allowlist secret")
+        self.commit()
+        result = self.update()
+        self.assertEqual(0, result.returncode, result.stderr)
+        manifest = (self.project / "apm.yml").read_text()
+        self.assertEqual("^0.23.2", self.ref())
+        self.assertNotIn("#", manifest[manifest.index("- git:"):manifest.index("mcp:")])
+
+    def test_a_commit_pin_no_release_contains_moves_to_main(self) -> None:
+        self.git("-C", str(self.upstream), "commit", "-q", "--allow-empty", "-m", "unreleased")
+        pinned = self.git("-C", str(self.upstream), "rev-parse", "HEAD").strip()
+        self.git("-C", str(self.upstream), "commit", "-q", "--allow-empty", "-m", "newer")
+        head = self.git("-C", str(self.upstream), "rev-parse", "HEAD").strip()
+        self.pin(f"ref: {pinned}")
+        self.commit()
+        result = self.update()
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(head, self.ref())
+
+    def test_an_exact_release_tag_moves_to_the_newest_tag(self) -> None:
+        self.pin("ref: engineering-v0.21.0")
+        self.commit()
+        result = self.update()
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("engineering-v0.23.2", self.ref())
+
+    def test_a_dirty_tree_is_refused_and_left_as_it_is(self) -> None:
+        self.commit()
+        (self.project / "README.md").write_text("edited\n")
+        result = self.update()
+        self.assertEqual(1, result.returncode)
+        self.assertIn("uncommitted changes", result.stderr)
+        self.assertFalse(self.log.exists())
+        self.assertEqual("^0.21.0", self.ref())
+
+    def test_a_template_conflict_fails_naming_the_file_and_commits_nothing(self) -> None:
+        self.commit()
+        (self.bin / "copier").write_text("#!/bin/sh\nprintf '<<<<<<< before updating\\n' >> README.md\n")
+        head = self.git("rev-parse", "HEAD", cwd=self.project)
+        result = self.update()
+        self.assertEqual(1, result.returncode)
+        self.assertIn("left conflicts in:\nREADME.md", result.stderr)
+        self.assertEqual(head, self.git("rev-parse", "HEAD", cwd=self.project))
 
 
 if __name__ == "__main__":

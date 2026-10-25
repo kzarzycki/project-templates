@@ -192,6 +192,128 @@ done
 exit 1
 '''
 {% endif -%}
+[tasks."deps:update"]
+description = "Moves the project to the newest template tag{% if include_agent_layer %}, and each APM package of the template's GitHub owner to its newest release{% endif %}, in one commit. Prints 'deps:update: current' when nothing changed. Exits 1 on a dirty tree or a conflict, and leaves the tree as it is."
+# A commit pin moves to the newest release when that release contains it, else to its repo's main.
+run = """
+set -eu
+if [ -n "$(git status --porcelain)" ]; then
+  echo "deps:update: the tree has uncommitted changes; commit them first" >&2
+  exit 1
+fi
+body="$(mktemp)"
+trap 'rm -f "$body"' EXIT
+if [ -f .copier-answers.yml ]; then
+  answer() { sed -n "s/^$1: *//p" .copier-answers.yml; }
+  old="$(answer _commit)"
+  copier update --trust --defaults --conflict inline
+  new="$(answer _commit)"
+  conflicted="$(git diff --name-only -G '^<<<<<<< ')"
+  if [ -n "$conflicted" ]; then
+    echo "deps:update: copier update $old..$new left conflicts in:" >&2
+    echo "$conflicted" >&2
+    exit 1
+  fi
+  repo="$(answer _src_path | sed -E 's#^(gh:|https://github.com/|git@github.com:)##; s#\\.git$##')"
+  if [ "$old" != "$new" ]; then echo "template: $old -> $new (https://github.com/$repo/compare/$old...$new)" >> "$body"; fi
+fi
+{% if include_agent_layer -%}
+python3 - "$body" <<'PY'
+import re
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+answers = Path(".copier-answers.yml")
+source = re.search(r"^_src_path: *(?:gh:|https://github\\.com/|git@github\\.com:)([\\w.-]+)/", answers.read_text(), re.M) if answers.is_file() else None
+if source is None:
+    sys.exit(0)  # no template owner: whose packages to move is unknown
+owner = source.group(1)
+
+
+def git(*arguments):
+    return subprocess.run(["git", *arguments], check=True, capture_output=True, text=True).stdout
+
+
+# The newest release of a package: tags <prefix>vX.Y.Z, where a package in a subdirectory
+# (owner/repo/name) tags "name-v", as the engineering pack does.
+def newest(repo, prefix):
+    versions = []
+    for line in git("ls-remote", "--tags", "--refs", f"https://github.com/{repo}").splitlines():
+        tag = line.split("\\t")[1].removeprefix("refs/tags/")
+        match = re.fullmatch(re.escape(prefix) + r"v(\\d+)\\.(\\d+)\\.(\\d+)", tag)
+        if match:
+            versions.append((tuple(map(int, match.groups())), tag))
+    return max(versions) if versions else (None, None)
+
+
+def contains(repo, tag, commit):
+    with tempfile.TemporaryDirectory() as bare:
+        git("init", "-q", "--bare", bare)
+        git("-C", bare, "fetch", "-q", "--filter=tree:0", f"https://github.com/{repo}", f"refs/tags/{tag}:refs/tags/{tag}")
+        return subprocess.run(["git", "-C", bare, "merge-base", "--is-ancestor", commit, tag + "^{commit}"],
+                              capture_output=True).returncode == 0
+
+
+def moved(package, ref):
+    parts = package.split("/")
+    repo, prefix = "/".join(parts[:2]), (parts[-1] + "-" if len(parts) > 2 else "")
+    version, tag = newest(repo, prefix)
+    dotted = ".".join(map(str, version)) if version else None
+    if range_ := re.fullmatch(r"([\\^~])(\\d+)\\.(\\d+)\\.(\\d+)", ref):
+        if version and version > tuple(map(int, range_.groups()[1:])):
+            return f"{range_.group(1)}{dotted}", repo, f"{prefix}v{range_.group(2)}.{range_.group(3)}.{range_.group(4)}", tag
+    elif pinned := re.fullmatch(re.escape(prefix) + r"v(\\d+)\\.(\\d+)\\.(\\d+)", ref):
+        if version and version > tuple(map(int, pinned.groups())):
+            return tag, repo, ref, tag
+    elif re.fullmatch(r"[0-9a-f]{40}", ref):
+        if tag and contains(repo, tag, ref):
+            return f"^{dotted}", repo, ref, tag
+        head = git("ls-remote", f"https://github.com/{repo}", "refs/heads/main").split("\\t")[0]
+        if head and head != ref:
+            return head, repo, ref, head
+    return None
+
+
+lines = Path("apm.yml").read_text().splitlines(keepends=True)
+changes, item = [], None
+for number, line in enumerate(lines):
+    if start := re.match(r"\\s*-\\s+git:\\s*(\\S+)", line):
+        item = (start.group(1), number)
+    elif item and (ref := re.match(r"(\\s*)ref:\\s*(\\S+)", line)):
+        package, first = item
+        item = None
+        if not package.startswith(f"{owner}/"):
+            continue
+        change = moved(package, ref.group(2))
+        if change is None:
+            continue
+        new, repo, base, head = change
+        # A comment on a commit pin says why it is one, so it goes with the commit.
+        if re.fullmatch(r"[0-9a-f]{40}", ref.group(2)) and not re.fullmatch(r"[0-9a-f]{40}", new):
+            for between in range(first + 1, number):
+                if lines[between].strip().startswith("#"):
+                    lines[between] = ""
+            lines[number] = f"{ref.group(1)}ref: {new}\\n"
+        else:
+            lines[number] = line.replace(ref.group(2), new, 1)
+        changes.append(f"{package}: {ref.group(2)} -> {new} (https://github.com/{repo}/compare/{base}...{head})\\n")
+Path("apm.yml").write_text("".join(lines))
+with open(sys.argv[1], "a") as body:
+    body.writelines(changes)
+PY
+mise run --skip-tools agent:sync -- --refresh
+{% endif -%}
+if [ -z "$(git status --porcelain)" ]; then
+  echo "deps:update: current"
+  exit 0
+fi
+git add -A
+{ echo "chore(deps): update template and owner packages"; echo; cat "$body"; } | git commit -q -F -
+cat "$body"
+git log -1 --format='deps:update: committed %h'
+"""
 {% if loop_enabled %}
 [tasks."loop:approvals"]
 alias = "gate"
