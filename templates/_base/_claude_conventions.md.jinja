@@ -10,5 +10,5 @@
 - **Secrets:** never commit `.env`. CI fails if `.env` is tracked. Add false positives to `.gitleaks.toml`.
 - **Decisions:** record architecture decisions as ADRs in `docs/adr/` (start from `docs/adr/0001-record-architecture-decisions.md`).
 {% if agent_layer_mode == 'vendored' and loop_enabled -%}
-- **Loop:** Every change that lands as a PR runs the `engineering-loop` skill, unless your personal instructions say `Engineering loop: off` and `docs/agents/loop.md` has the line `Opt-out: allowed`. Its project facts are in `docs/agents/`.
+- **Loop:** Every change that lands as a PR runs the `engineering-loop` skill, unless your personal instructions say `Engineering loop: off` and `docs/agents/loop.md` sets `opt_out = true`. Its project facts are in `docs/agents/`.
 {% endif -%}

@@ -209,25 +209,29 @@ layer), says every change that lands as a PR runs it, unless a developer's perso
 instructions say `Engineering loop: off` and loop.md allows it. Deleting that line turns the loop off. The loop reads this project's
 facts from three files, seeded with a heading and a short prompt per fact:
 
-- `docs/agents/loop.md`: owner, proof on a branch, acceptance references,
-  the skill for each stage the project changes, where a person must approve
-  too, how a finding is judged in use, the worktree command, the ledger path
-  and any extra verifier checklist;
-- `docs/agents/issue-tracker.md`: the tracker, components, what never reaches GitHub,
-  extra labels and categories, and the board's name for each loop column;
+- `docs/agents/loop.md`: a `## Settings` block of INI the pack's `approvals.py`
+  reads (the spec policy, the risk rule, the skill for each stage the project
+  changes), then in prose the owner, proof on a branch, acceptance references,
+  why a person must approve, the project's risk criteria, how a finding is
+  judged in use, the worktree command, the ledger path and any extra verifier
+  checklist;
+- `docs/agents/issue-tracker.md`: the tracker, a `## Settings` block of INI with
+  the components, extra labels and categories, renames and the board's name for
+  each loop column, then what never reaches GitHub;
 - `docs/agents/coding-standards.md`: domain facts only.
 
 `mise run loop:approvals <point> [pr]` (alias `gate`) checks the proof each loop
 step leaves on GitHub, with the pack's `approvals.py`. The gates are the merge
 approval: the verifier's verdict is a review on the PR, and a PR whose proofs
 hold needs no person's label. Only people approve: `docs/agents/loop.md` §
-Approvals is the owner's standing policy (`spec: auto unless risk`,
-`merge: auto unless risk`), and a high-risk PR, one with `risk:high` or matching
-a `risk:` rule, waits for the owner's `approved:merge` label; a push removes it.
-The seed marks a change to `.github/**`, `.pre-commit-config.yaml`, `mise.toml`,
-`apm.yml`, `docs/agents/**` or `CODEOWNERS` high risk; `- risk: always` asks for
-the label on every merge. The seed explains three lines it leaves off:
-`spec: auto`, `signoff: <condition>` and `Opt-out: allowed`. The
+Settings is the owner's standing policy (`spec = auto unless risk`), and a
+high-risk PR, one with `risk:high` or matching the `[risk]` rule, waits for the
+owner's `approved:merge` label; a push removes it. The seed's rule is
+`verifier = true`, which holds when the verifier's pass on the head says
+anything but `Risk: low`, plus the paths no check can settle: `.github/**`,
+`CODEOWNERS` and `docs/agents/loop.md`. `always = true` asks for the label on
+every merge. § Approvals explains three settings the seed leaves off:
+`spec = auto`, a `[signoff]` section and `opt_out = true`. The
 `.github/workflows/approvals.yml` workflow posts the merge result as the
 `loop:approvals` commit status on the PR head: pending while it waits for CI's
 `check` or a label a rule asks for, failure when a proof is missing, success once every proof
@@ -311,7 +315,7 @@ whose own workflows only release, answers `include_ci=false`. It then gets no CI
 workflow and no `.github/check-paths.yml`, and no `ci:parts` or `ci:check` task;
 no workflow but `approvals.yml` is written, so the repo's own workflows stay as
 they are. The ruleset requires only `loop:approvals`, and the seeded
-`docs/agents/loop.md` has the line `CI: none`. The merge approval then stops looking for
+`docs/agents/loop.md` has `ci = false` in its `[loop]` settings. The merge approval then stops looking for
 a green `check`. Its proof instead is
 `python3 .agents/skills/engineering-loop/scripts/approvals.py local-ci <pr>`, run
 on a clean checkout at the PR's head commit. It runs `mise run check:all` there and,
@@ -509,6 +513,35 @@ need an Omnigent build that has them; on an older build, `start --top-level`
 prints `not subscribed` and that lead is followed with `watch`. 0.21.0 archives
 a finished sub-agent and needs an Omnigent build with kzarzycki/omnigent 4dd0af32;
 on an older build, archiving a sub-agent stops its parent too.
+
+Updating to the next release moves the pack to the first engineering release
+whose `approvals.py` reads loop.md's and issue-tracker.md's settings as an INI
+block (kzarzycki/agent-skills#344) and has the `verifier` risk term
+(kzarzycki/agent-skills#330). That reader refuses a file still on the line form,
+and an older reader finds no lines in the block and runs with no settings, so
+move both files in the same commit as the pack, after `mise run agent:sync`:
+
+- loop.md: a `## Settings` heading with an `ini` block in place of the
+  `- spec:`, `- merge:` and `- risk:` lines, as a fresh render writes it.
+  `spec: <policy>` becomes `spec = <policy>` under `[loop]`; `merge: auto
+  unless risk` goes; `CI: none` becomes `ci = false`, `cap: <n>` `cap = <n>`
+  and `Opt-out: allowed` `opt_out = true`, all under `[loop]`; § Practice's
+  lines become `[practice]` keys (`spec = brainstorming`); each `risk:`,
+  `plan:` and `signoff:` condition becomes that section's `paths` and `labels`,
+  one per line, with `component billing` written `area:billing` and `size:L or
+  larger` as `size:L` and `size:XL`. The pack's changelog for #344 maps every
+  line. A fresh render's rule is `verifier = true` with `.github/**`,
+  `CODEOWNERS` and `docs/agents/loop.md`: the verifier now judges a change to
+  `mise.toml`, `.pre-commit-config.yaml`, `apm.yml` or the rest of
+  `docs/agents/`, so keep those paths if the owner should still see each one.
+- issue-tracker.md: a `## Settings` block in place of § Components, § Extra
+  labels, § Extra categories, § Renamed labels and § Board, each item a
+  `name = text` line under `[components]`, `[labels]`, `[categories]`,
+  `[renames]` (`frontend = area:web`) and `[board]` (`Build = In progress`).
+  § Never on GitHub stays prose.
+- The loop line in `CLAUDE.md` or `.apm/instructions/project.instructions.md`
+  names `opt_out = true` instead of `Opt-out: allowed`; the compiled layer gets
+  it from the update, a vendored `CLAUDE.md` takes it by hand.
 
 ## Adopt an existing (pre-template) repo
 

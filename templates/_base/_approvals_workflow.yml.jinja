@@ -3,7 +3,7 @@
 {% if include_ci %}# it waits for CI's `check` or the owner's approved:merge on a high-risk PR, failure when a proof is
 # missing, success once every proof holds. It reruns when a label or the PR body changes and
 # when CI completes; a push removes approved:merge.{% else %}# it waits for the owner's approved:merge on a high-risk PR, failure when a proof is missing (with
-# loop.md `CI: none`, approvals.py local-ci's `Local check passed` record on the head), success once
+# loop.md `ci = false`, approvals.py local-ci's `Local check passed` record on the head), success once
 # every proof holds. It reruns when a label or the PR body changes and when local-ci posts its
 # record; a push removes approved:merge.{% endif %} On success on a ready PR with no auto-merge
 # request, it turns auto-merge on, pinned to the head, so a PR made ready by hand lands with no

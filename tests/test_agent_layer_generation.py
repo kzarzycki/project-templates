@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import atexit
+import configparser
 import json
 import os
 import re
@@ -17,6 +18,17 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 MISE = shutil.which("mise")
 assert MISE is not None
+
+
+def settings(text: str) -> dict[str, dict[str, str]]:
+    """A docs/agents/ file's ```ini settings block as the pack's approvals.py parses it: `=` the only delimiter, no
+    DEFAULT section, no interpolation, keys keeping their case."""
+    found = re.search(r"^## Settings\n.*?^```ini[ \t]*\n(.*?)^```[ \t]*$", text, re.DOTALL | re.MULTILINE)
+    assert found, "no ```ini block under ## Settings"
+    parser = configparser.ConfigParser(delimiters=("=",), interpolation=None, default_section="\n")
+    parser.optionxform = str
+    parser.read_string(found[1])
+    return {name: dict(parser[name]) for name in parser.sections()}
 
 
 def evaluate(expression: str, github: dict) -> object:
@@ -1273,32 +1285,34 @@ class AgentLayerGenerationTest(unittest.TestCase):
             )
         approvals_seed = (project / "docs/agents/loop.md").read_text()
         self.assertIn("Only people approve", approvals_seed)
-        self.assertIn("`risk: always` restores a label on every merge", approvals_seed)
-        # The policy lines and the one risk rule, the paths axis holds; the gate reads `- <point>: <condition>` lines.
+        # The seed's policy as the pack reads it: the verifier judges risk, CI, CODEOWNERS and loop.md stay the owner's.
+        # Only the old line form is gone; the alternatives are documented, not switched on.
         self.assertEqual(
-            ["- spec: auto unless risk", "- merge: auto unless risk", "- risk: path .github/** or path .pre-commit-config.yaml or path mise.toml or path apm.yml"
-             " or path docs/agents/** or path CODEOWNERS"],
-            re.findall(r"^[ \t]*[-*] +(?:spec|plan|merge|risk|bot|signoff):.*$", approvals_seed, re.MULTILINE),
+            {
+                "loop": {"spec": "auto unless risk"},
+                "practice": {},
+                "risk": {"verifier": "true", "paths": "\n.github/**\nCODEOWNERS\ndocs/agents/loop.md"},
+            },
+            settings(approvals_seed),
         )
-        # The new lines are documented, not switched on: no opt-out line as the pack's gate reads it.
-        self.assertNotRegex(approvals_seed, re.compile(r"^[ \t]*(?:[-*][ \t]+)?`?Opt-out:[ \t]*allowed`?[ \t]*$", re.MULTILINE))
-        for line in ("`spec: auto`", "`signoff: <condition>`", "`Opt-out: allowed`", "`Engineering loop: off`"):
+        self.assertNotRegex(approvals_seed, re.compile(r"^[ \t]*[-*] +(?:spec|plan|merge|risk|bot|signoff):", re.MULTILINE))
+        for line in ("`spec = auto`", "`[signoff]`", "`opt_out = true`", "`Engineering loop: off`", "`always = true`"):
             self.assertIn(line, approvals_seed)
-        # § Board maps each loop column to the board column of its own name, as the pack's board.py reads it.
+        # [board] maps each loop column to the board column of its own name, as the pack's board.py reads it.
         loop_columns = ["Intent", "Needs owner", "Ready", "Build", "Verify", "Sign-off", "Done"]
-        self.assertEqual(
-            [(column, column) for column in loop_columns],
-            re.findall(r"^- `([^`]+)` is `([^`]+)`", (project / "docs/agents/issue-tracker.md").read_text(), re.MULTILINE),
-        )
+        tracker = settings((project / "docs/agents/issue-tracker.md").read_text())
+        self.assertEqual({column: column for column in loop_columns}, tracker["board"])
+        self.assertEqual(["components", "categories", "labels", "renames", "board"], list(tracker))
         for name, headings in (
             (
                 "loop.md",
                 (
+                    "Settings",
                     "Owner",
                     "Proof on a branch",
                     "Acceptance references",
-                    "Practice",
                     "Approvals",
+                    "Risk criteria",
                     "In use",
                     "Worktree",
                     "Ledger",
@@ -1307,7 +1321,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
             ),
             (
                 "issue-tracker.md",
-                ("Components", "Never on GitHub", "Extra labels", "Extra categories", "Renamed labels", "Board"),
+                ("Settings", "Never on GitHub"),
             ),
             ("coding-standards.md", ("Domain facts",)),
         ):
@@ -1374,16 +1388,13 @@ class AgentLayerGenerationTest(unittest.TestCase):
                 )
                 yaml.safe_load((project / ".github/check-paths.yml").read_text())  # paths-filter reads it
 
-                # The tracker in the format the pack's labels.py reads: each component an `area:` label, as
-                # approvals.py `items` parses `## Components` (the first backticked name of each list item).
-                tracker = (project / "docs/agents/issue-tracker.md").read_text()
-                components = re.search(r"^## Components\n(.*?)(?=^## )", tracker, re.DOTALL | re.MULTILINE).group(1)
-                names = re.findall(r"^[ \t]*[-*] [^`\n]*`([^`\n]+)`\**:?[ \t]*(.*)$", components, re.MULTILINE)
-                self.assertGreater(len(names), 2)  # the leaf's own parts, then tooling and docs
-                self.assertEqual([], [name for name, text in names if not name.startswith("area:") or not text])
-                for heading in ("Extra labels", "Extra categories", "Renamed labels"):  # their prompts list nothing
-                    section = re.search(rf"^## {heading}\n(.*?)(?=^## |\Z)", tracker, re.DOTALL | re.MULTILINE).group(1)
-                    self.assertNotRegex(section, r"(?m)^[ \t]*[-*] ")
+                # The tracker's [components] as the pack's labels.py reads them: each an `area:` label with its text.
+                tracker = settings((project / "docs/agents/issue-tracker.md").read_text())
+                components = tracker["components"]
+                self.assertGreater(len(components), 2)  # the leaf's own parts, then tooling and docs
+                self.assertEqual([], [name for name, text in components.items() if not name.startswith("area:") or not text])
+                self.assertEqual({}, {name: tracker[name] for name in ("categories", "labels", "renames") if tracker[name]})
+                self.assertEqual("true", settings((project / "docs/agents/loop.md").read_text())["risk"]["verifier"])
 
                 # Every step that runs a command runs a mise task: the task is the check's one definition.
                 for workflow in (project / ".github/workflows").glob("*.yml"):
@@ -1504,8 +1515,8 @@ class AgentLayerGenerationTest(unittest.TestCase):
         ruleset = json.loads((project / ".github/rulesets/main.json").read_text())
         [checks] = [rule["parameters"] for rule in ruleset["rules"] if rule["type"] == "required_status_checks"]
         self.assertEqual([{"context": "loop:approvals"}], checks["required_status_checks"])
-        # The pack's approvals.py reads this line as no CI (NO_CI) and then wants its local-ci record.
-        self.assertIn("CI: none", (project / "docs/agents/loop.md").read_text().splitlines())
+        # The pack's approvals.py reads `ci = false` as no CI and then wants its local-ci record.
+        self.assertEqual({"spec": "auto unless risk", "ci": "false"}, settings((project / "docs/agents/loop.md").read_text())["loop"])
 
         # The approvals workflow reruns on local-ci's record, a PR comment, instead of on CI's completion.
         text = (project / ".github/workflows/approvals.yml").read_text()
