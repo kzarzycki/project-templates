@@ -52,6 +52,11 @@ links the issue with `Implements #<n>`, which leaves it open for the sign-off.
 The line `Opt-out: allowed` lets a developer whose personal instructions say
 `Engineering loop: off` keep their PRs out of the loop: a PR with no loop trail
 passes `loop:approvals`, its author merges it, and no risk rule holds it.
+Renovate (`mise run deps:renovate`) labels `verify` the updates an agent
+reviews: the template, the agent packages and every major. Its routine group
+lands on the gates alone once a `bot:` line names who opens it and the paths it
+may touch, such as `bot: branch renovate/ path uv.lock or path mise.toml`, and
+no `risk:` rule matches those paths; without the line, a verifier reviews it too.
 
 - spec: auto unless risk
 - merge: auto unless risk

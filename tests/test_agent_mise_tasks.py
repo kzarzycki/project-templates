@@ -600,6 +600,29 @@ class AgentMiseTasksTest(unittest.TestCase):
         self.assertFalse(skill.exists())
         self.assertFalse(saved.exists())
 
+    def test_deps_renovate_refuses_a_gh_token_without_the_workflow_scope(self) -> None:
+        gh = self.bin / "gh"
+        gh.write_text(
+            "#!/bin/sh\n"
+            'case "$1 $2" in\n'
+            '  "auth token") echo gho_test ;;\n'
+            '  "api -i") printf "HTTP/2.0 200 OK\\r\\nX-Oauth-Scopes: read:org, repo\\r\\n\\r\\n{}\\n" ;;\n'
+            "  *) exit 9 ;;\n"
+            "esac\n"
+        )
+        gh.chmod(0o755)
+        result = self.run_task("deps:renovate")
+        self.assertEqual(1, result.returncode)
+        self.assertIn("lacks the workflow scope", result.stderr)
+
+    def test_deps_renovate_refuses_without_a_gh_login(self) -> None:
+        gh = self.bin / "gh"
+        gh.write_text("#!/bin/sh\nexit 1\n")
+        gh.chmod(0o755)
+        result = self.run_task("deps:renovate")
+        self.assertEqual(1, result.returncode)
+        self.assertIn("gh is not logged in", result.stderr)
+
     def test_check_unit_measures_changed_lines_against_the_commit_ci_passes(self) -> None:
         for name in ("uv",):
             fake_executable(self.bin, name)

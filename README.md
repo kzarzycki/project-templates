@@ -497,7 +497,12 @@ blank line, which failed its own `lint:eof`. Copier keeps a deleted file
 deleted on update, so a project that deleted either file to work around this
 copies it back from a fresh render.
 
-Updating to the next release moves the pack to `^0.21.0` (a caret on 0.x:
+Updating to the next release moves the pack to the exact tag
+`engineering-v0.23.2`, which Renovate moves on from there (below): run
+`mise run agent:intake -- --refresh`, then `agent:sync`, and commit what they
+change. It replaces `.github/dependabot.yml` with `renovate.json`.
+
+Updating to v0.10.0 moved the pack to `^0.21.0` (a caret on 0.x:
 `^0.18.0` never takes 0.19.0, nor `^0.20.0` 0.21.0); run
 `mise run agent:intake -- --refresh`, then `agent:sync`, and commit what they
 change. 0.19.0 adds the optional `chief-of-staff` skill, and since 0.18.3
@@ -509,6 +514,27 @@ need an Omnigent build that has them; on an older build, `start --top-level`
 prints `not subscribed` and that lead is followed with `watch`. 0.21.0 archives
 a finished sub-agent and needs an Omnigent build with kzarzycki/omnigent 4dd0af32;
 on an older build, archiving a sub-agent stops its parent too.
+
+## Dependency updates: Renovate
+
+With mise, a project gets `renovate.json` and `mise run deps:renovate`, which runs the
+Renovate CLI (free, AGPL-3.0) on the repo with the developer's own `gh` login (scopes
+`repo` and `workflow`), so it needs no org admin: its PRs are the developer's, and a PR a
+user token opens starts CI. A nightly scheduled agent runs it. Updates fall in two classes:
+
+- **verify** (label `verify`, draft): the template (Renovate's `copier` manager, which
+  trusts the template's tasks), the `apm.yml` packages pinned to a `<package>-vX.Y.Z`
+  tag (then `agent:sync --refresh` regenerates the lock and agent files), grouped into
+  one PR a night; and every major update, each its own PR. An agent reviews each before
+  `loop:land`.
+- **routine**: patch and minor updates of tools, libraries and actions, one group a week
+  after 3 days, with auto-merge on. It lands on the gates alone once loop.md has a `bot:`
+  line for it; otherwise a verifier reviews it too.
+
+Mend's hosted Renovate does not fit: its free tier runs no scripts and no
+`postUpgradeTasks`, so template and pack updates would fail or leave the lock stale.
+Upgrades that take it off a person's machine: a classic PAT in a repo secret and a
+workflow, or a GitHub App, which needs an org owner.
 
 ## Adopt an existing (pre-template) repo
 
