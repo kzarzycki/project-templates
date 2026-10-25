@@ -391,7 +391,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
             [
                 {
                     "git": "kzarzycki/agent-skills/engineering",
-                    "ref": "^0.21.0",
+                    "ref": "engineering-v0.23.2",
                 }
             ],
             yaml.safe_load(apm)["dependencies"]["apm"],
@@ -442,7 +442,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         manifest = (project / "apm.yml").read_text()
         answers = (project / ".copier-answers.yml").read_text()
         self.assertEqual(1, manifest.count("git: kzarzycki/agent-skills/engineering"))
-        self.assertIn("ref: ^0.21.0", manifest)
+        self.assertIn("ref: engineering-v0.23.2", manifest)
         self.assertIn("include_engineering_workflow: true", answers)
         self.assertNotIn("engineering_capability_source", answers)
         self.assertNotIn("engineering_capability_ref", answers)
@@ -1496,7 +1496,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertEqual(ship, (project / ".github/workflows/ship.yml").read_bytes())
         self.assertEqual(["approvals.yml", "ship.yml"], sorted(path.name for path in (project / ".github/workflows").iterdir()))
         self.assertFalse((project / ".github/check-paths.yml").exists())
-        self.assertTrue((project / ".github/dependabot.yml").exists())  # not CI
+        self.assertTrue((project / "renovate.json").exists())  # not CI
         tasks = tomllib.loads((project / "mise.toml").read_text())["tasks"]
         self.assertEqual(set(), {"ci:parts", "ci:check"} & set(tasks))
         self.assertIn("ci:approvals", tasks)
@@ -1810,6 +1810,40 @@ class AgentLayerGenerationTest(unittest.TestCase):
             "apm.yml",
         ):
             self.assertNotRegex(path, managed, f"{path} must stay linted")
+
+
+class RenovateGenerationTest(unittest.TestCase):
+    def test_mise_projects_get_renovate_and_no_dependabot(self) -> None:
+        project = render(include_mise=True, include_agent_layer=True)
+        config = json.loads((project / "renovate.json").read_text())
+        self.assertFalse((project / ".github/dependabot.yml").exists())
+        self.assertEqual(["github-tags"], [m["datasourceTemplate"] for m in config["customManagers"]])
+        rules = {rule.get("groupName"): rule for rule in config["packageRules"]}
+        agent = rules["template and agent packages"]
+        self.assertEqual((["verify"], True, False), (agent["addLabels"], agent["draftPR"], agent["automerge"]))
+        self.assertEqual(["mise run agent:sync -- --refresh"], agent["postUpgradeTasks"]["commands"])
+        self.assertTrue(rules["tools and libraries"]["automerge"])
+        tasks = tomllib.loads((project / "mise.toml").read_text())["tasks"]
+        self.assertIn("deps:renovate", tasks)
+        self.assertIn("^mise run agent:sync -- --refresh$", tasks["deps:renovate"]["run"])
+
+    def test_the_apm_manager_reads_the_rendered_pin(self) -> None:
+        project = render(include_mise=True, include_agent_layer=True)
+        manager = json.loads((project / "renovate.json").read_text())["customManagers"][0]
+        # Renovate's matchStrings are ECMAScript; this one uses nothing Python's re reads differently.
+        found = re.search(manager["matchStrings"][0].replace("(?<", "(?P<"), (project / "apm.yml").read_text())
+        self.assertEqual(("kzarzycki/agent-skills", "engineering", "0.23.2"),
+                         (found["packageName"], found["package"], found["currentValue"]))
+
+    def test_without_the_agent_layer_renovate_has_no_apm_manager_or_task(self) -> None:
+        config = json.loads((render(include_mise=True, include_agent_layer=False) / "renovate.json").read_text())
+        self.assertNotIn("customManagers", config)
+        self.assertNotIn("postUpgradeTasks", json.dumps(config))
+
+    def test_without_mise_dependabot_stays(self) -> None:
+        project = render(include_mise=False)
+        self.assertTrue((project / ".github/dependabot.yml").exists())
+        self.assertFalse((project / "renovate.json").exists())
 
 
 if __name__ == "__main__":

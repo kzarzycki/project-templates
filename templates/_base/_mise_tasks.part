@@ -192,6 +192,30 @@ done
 exit 1
 '''
 {% endif -%}
+[tasks."deps:renovate"]
+description = "Runs Renovate (renovate.json) on this repo with your gh login: opens or updates its dependency PRs. Needs gh logged in with the repo and workflow scopes."
+# Self-hosted with the developer's own token, so it needs no org admin: the PRs are theirs, and a PR
+# a user token opens starts CI. The admin settings are this process's environment. Pass Renovate's
+# own flags after --, such as --dry-run=full.
+run = """
+command -v gh >/dev/null || { echo "error: gh is required; install the GitHub CLI and run 'gh auth login'" >&2; exit 127; }
+token="$(gh auth token 2>/dev/null)" || { echo "deps:renovate: gh is not logged in; run 'gh auth login'" >&2; exit 1; }
+# An OAuth or classic token names its scopes in this header; a token without the header is let through.
+scopes="$(gh api -i user 2>/dev/null | tr -d '\\r' | sed -n 's/^[Xx]-[Oo][Aa]uth-[Ss]copes: //p')"
+if [ -n "$scopes" ]; then
+  for scope in repo workflow; do
+    case ", $scopes," in *", $scope,"*) ;; *) echo "deps:renovate: the gh token lacks the $scope scope; run 'gh auth refresh -s repo,workflow'" >&2; exit 1 ;; esac
+  done
+fi
+base="${XDG_CACHE_HOME:-$HOME/.cache}/renovate"
+export RENOVATE_TOKEN="$token" RENOVATE_PLATFORM=github RENOVATE_ONBOARDING=false RENOVATE_REQUIRE_CONFIG=required \\
+  RENOVATE_REPOSITORIES="$(gh repo view --json nameWithOwner --jq .nameWithOwner)" \\
+  RENOVATE_ALLOW_SCRIPTS=true RENOVATE_ALLOWED_COMMANDS='[{% if include_agent_layer %}"^mise run agent:sync -- --refresh$"{% endif %}]' \\
+  RENOVATE_BINARY_SOURCE=global RENOVATE_BASE_DIR="$base" \\
+  RENOVATE_GIT_AUTHOR="$(git config user.name) <$(git config user.email)>" \\
+  MISE_TRUSTED_CONFIG_PATHS="$base${MISE_TRUSTED_CONFIG_PATHS:+:$MISE_TRUSTED_CONFIG_PATHS}"
+exec mise exec node@24.21.0 -- npx --yes renovate@44.145.1 "$@"
+"""
 {% if loop_enabled %}
 [tasks."loop:approvals"]
 alias = "gate"

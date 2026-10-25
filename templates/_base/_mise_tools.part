@@ -7,6 +7,7 @@ uv = "0.11.29"  # mise installs the pipx: tools with uv
 "pipx:pre-commit-hooks" = "6.0.0"
 "pipx:detect-secrets" = "1.5.0"
 "pipx:conventional-pre-commit" = "4.4.0"
+"pipx:copier" = "9.17.0"  # deps:renovate applies template updates with it
 gitleaks = "8.30.1"
 actionlint = "1.7.12"
 zizmor = "1.27.0"
