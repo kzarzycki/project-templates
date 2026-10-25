@@ -35,6 +35,7 @@ jobs:
           tests.test_agent_layer_generation
           tests.test_agent_mise_tasks
           tests.test_bootstrap_local_source
+          tests.test_gate_slot
           tests.test_version_contract
       - name: Install example tools
         working-directory: examples/agent-layer-mvp

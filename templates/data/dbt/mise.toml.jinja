@@ -31,8 +31,9 @@ description = "Runs test:fast: this project has no per-change test selection."
 depends = ["test:fast"]
 
 [tasks."check:unit"]
-description = "Runs test:unit; dbt measures no coverage."
-depends = ["test:unit"]
+description = "Runs test:unit in a host gate slot (scripts/gate-slot); dbt measures no coverage."
+# The outer mise run already provided the tools.
+run = "scripts/gate-slot mise run --skip-tools test:unit"
 
 [tasks."setup:dev"]
 alias = "bootstrap"

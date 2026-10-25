@@ -18,9 +18,9 @@ description = "Runs the tests; Gradle skips them when nothing they read changed 
 run = "./gradlew test"
 
 [tasks."check:unit"]
-description = "Runs test:unit with coverage (JaCoCo), then fails on any changed line not covered (diff-cover)."
+description = "Runs test:unit in a host gate slot (gate-slot) with coverage (JaCoCo), then fails on any changed line not covered (diff-cover)."
 run = '''
-mise run --skip-tools test:unit
+scripts/gate-slot mise run --skip-tools test:unit
 {% include "templates/_base/_diff_base.part" %}if git rev-parse -q --verify "$base^{commit}" >/dev/null; then
   report=build/reports/jacoco/test/jacocoTestReport.xml
   [ -f "$report" ] || report=target/site/jacoco/jacoco.xml
