@@ -1414,6 +1414,11 @@ class AgentLayerGenerationTest(unittest.TestCase):
                     self.assertEqual("system", hook["language"], hook["id"])
                     if hook.get("stages") == ["pre-push"]:
                         self.assertEqual(f"mise run {hook['id']}", hook["entry"])
+                    elif hook.get("stages") == ["post-checkout"]:
+                        # mise runs no task in an untrusted worktree, so this one hook trusts it first.
+                        self.assertTrue(hook["entry"].endswith("mise trust --quiet && mise run setup:dev'"), hook["entry"])
+                        self.assertIn("setup:dev", tasks)
+                        self.assertIn("post-checkout", config["default_install_hook_types"])
                     else:
                         self.assertTrue(hook["id"].startswith("lint:"), hook["id"])
                         self.assertEqual(f"mise run {hook['id']} --", hook["entry"])
