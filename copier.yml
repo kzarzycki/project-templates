@@ -131,7 +131,7 @@ include_example:
 include_ci:
   type: bool
   default: true
-  help: "Add the CI workflow? Turn it off when the merge proof is a local run (loop.md CI: none); the repo's own workflows stay as they are."
+  help: "Add the CI workflow? Turn it off when the merge proof is a local run (loop.md `ci: false`); the repo's own workflows stay as they are."
 
 # ---- Computed (not asked) ----
 module_name:
@@ -153,7 +153,7 @@ engineering_capability_ref:
   type: str
   when: false
   # An exact release tag, which Renovate (renovate.json) moves to each new release.
-  default: "engineering-v0.23.2"
+  default: "engineering-v0.24.1"
 
 # An unasked question keeps its default, so the loop is on only when every
 # question it depends on was answered yes.

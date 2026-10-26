@@ -59,6 +59,10 @@ class AgentMiseTasksTest(unittest.TestCase):
         self.log = self.bin / "commands.log"
         for name in ("apm", "fnox", "claude", "codex"):
             fake_executable(self.bin, name)
+        # The tasks run the pack's scripts with `uv run`; this one runs a fake script with python3, logging nothing.
+        uv = self.bin / "uv"
+        uv.write_text('#!/bin/sh\n[ "$1" = run ] || exit 2\nshift\nexec python3 "$@"\n')
+        uv.chmod(0o755)
         self.env = os.environ.copy()
         self.env.update(
             {
