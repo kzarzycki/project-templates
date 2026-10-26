@@ -73,12 +73,14 @@ class GateSlotTest(unittest.TestCase):
         self.assertNotIn("waiting", second.stderr)
 
     def host(self, cores: str, uptime: str) -> Path:
-        """Put a fake getconf and uptime first on PATH; uptime prints the file it returns, so a test can change it."""
+        """Put a fake getconf and uptime first on PATH; uptime prints the file it returns, so a test can change it.
+        Outside LC_ALL=C the fake prints decimal commas, as procps does under a locale such as de_DE."""
         bin_dir = Path(self.cache, "bin")
         bin_dir.mkdir(exist_ok=True)
         reading = Path(self.cache, "uptime.txt")
         reading.write_text(uptime + "\n")
-        for name, body in (("getconf", f"echo {cores}"), ("uptime", f"cat {reading}")):
+        comma = f'sed "s/\\([0-9]\\)\\.\\([0-9]\\)/\\1,\\2/g" {reading}'
+        for name, body in (("getconf", f"echo {cores}"), ("uptime", f'[ "$LC_ALL" = C ] && cat {reading} || {comma}')):
             fake = bin_dir / name
             fake.write_text(f"#!/bin/sh\n{body}\n")
             fake.chmod(0o755)
