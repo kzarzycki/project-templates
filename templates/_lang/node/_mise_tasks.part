@@ -24,9 +24,9 @@ run = '''
 '''
 
 [tasks."check:unit"]
-description = "Runs test:unit with coverage, then fails on any changed line not covered (scripts/check-coverage.mjs)."
+description = "Runs test:unit in a host gate slot (gate-slot) with coverage, then fails on any changed line not covered (scripts/check-coverage.mjs)."
 run = '''
-mise run --skip-tools test:unit -- --coverage
+scripts/gate-slot mise run --skip-tools test:unit -- --coverage
 node scripts/check-coverage.mjs
 '''
 
