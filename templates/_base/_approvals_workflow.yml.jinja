@@ -3,7 +3,7 @@
 {% if include_ci %}# it waits for CI's `check` or the owner's approved:merge on a high-risk PR, failure when a proof is
 # missing, success once every proof holds. It reruns when a label or the PR body changes and
 # when CI completes; a push removes approved:merge.{% else %}# it waits for the owner's approved:merge on a high-risk PR, failure when a proof is missing (with
-# loop.md `CI: none`, approvals.py local-ci's `Local check passed` record on the head), success once
+# loop.md `ci: false`, approvals.py local-ci's `Local check passed` record on the head), success once
 # every proof holds. It reruns when a label or the PR body changes and when local-ci posts its
 # record; a push removes approved:merge.{% endif %} On success on a ready PR with no auto-merge
 # request, and only with the App's token below, it turns auto-merge on, pinned to the head, so a PR
@@ -83,7 +83,7 @@ jobs:
           permission-statuses: write
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
-          install: false # approvals.py needs only python3 and gh, which the runner has
+          install_args: uv # approvals.py runs with uv run, which installs its PyYAML; gh is on the runner
       - env:
           GH_TOKEN: {% raw %}${{ steps.app.outputs.token || github.token }}{% endraw %}
           APP_TOKEN: {% raw %}${{ steps.app.outputs.token != '' }}{% endraw %}

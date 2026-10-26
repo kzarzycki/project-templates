@@ -212,25 +212,29 @@ layer), says every change that lands as a PR runs it, unless a developer's perso
 instructions say `Engineering loop: off` and loop.md allows it. Deleting that line turns the loop off. The loop reads this project's
 facts from three files, seeded with a heading and a short prompt per fact:
 
-- `docs/agents/loop.md`: owner, proof on a branch, acceptance references,
-  the skill for each stage the project changes, where a person must approve
-  too, how a finding is judged in use, the worktree command, the ledger path
-  and any extra verifier checklist;
-- `docs/agents/issue-tracker.md`: the tracker, components, what never reaches GitHub,
-  extra labels and categories, and the board's name for each loop column;
+- `docs/agents/loop.md`: a `## Settings` block of YAML the pack's `approvals.py`
+  reads (the spec policy, the risk rule, the skill for each stage the project
+  changes), then in prose the owner, proof on a branch, acceptance references,
+  why a person must approve, the project's risk criteria, how a finding is
+  judged in use, the worktree command, the ledger path and any extra verifier
+  checklist;
+- `docs/agents/issue-tracker.md`: the tracker, a `## Settings` block of YAML with
+  the components, extra labels and categories, renames and the board's name for
+  each loop column, then what never reaches GitHub;
 - `docs/agents/coding-standards.md`: domain facts only.
 
 `mise run loop:approvals <point> [pr]` (alias `gate`) checks the proof each loop
 step leaves on GitHub, with the pack's `approvals.py`. The gates are the merge
 approval: the verifier's verdict is a review on the PR, and a PR whose proofs
 hold needs no person's label. Only people approve: `docs/agents/loop.md` §
-Approvals is the owner's standing policy (`spec: auto unless risk`,
-`merge: auto unless risk`), and a high-risk PR, one with `risk:high` or matching
-a `risk:` rule, waits for the owner's `approved:merge` label; a push removes it.
-The seed marks a change to `.github/**`, `.pre-commit-config.yaml`, `mise.toml`,
-`apm.yml`, `docs/agents/**` or `CODEOWNERS` high risk; `- risk: always` asks for
-the label on every merge. The seed explains three lines it leaves off:
-`spec: auto`, `signoff: <condition>` and `Opt-out: allowed`. The
+Settings is the owner's standing policy (`spec.auto`: `bug`, `follow-up`,
+`sub-issue`), and a high-risk PR, one with `risk:high` or matching the `risk` rule, waits for the
+owner's `approved:merge` label; a push removes it. The seed's rule is
+`verifier: true`, which holds when the verifier's pass on the head says
+anything but `Risk: low`, plus the paths no check can settle: `.github/**`,
+`CODEOWNERS` and `docs/agents/loop.md`. `always: true` asks for the label on
+every merge. § Approvals explains three settings the seed leaves off:
+`spec.auto: true`, a `signoff` section and `opt_out: true` under `loop`. The
 `.github/workflows/approvals.yml` workflow posts the merge result as the
 `loop:approvals` commit status on the PR head: pending while it waits for CI's
 `check` or a label a rule asks for, failure when a proof is missing, success once every proof
@@ -320,9 +324,9 @@ whose own workflows only release, answers `include_ci=false`. It then gets no CI
 workflow and no `.github/check-paths.yml`, and no `ci:parts` or `ci:check` task;
 no workflow but `approvals.yml` is written, so the repo's own workflows stay as
 they are. The ruleset requires only `loop:approvals`, and the seeded
-`docs/agents/loop.md` has the line `CI: none`. The merge approval then stops looking for
+`docs/agents/loop.md` has `ci: false` under `loop` in its settings. The merge approval then stops looking for
 a green `check`. Its proof instead is
-`python3 .agents/skills/engineering-loop/scripts/approvals.py local-ci <pr>`, run
+`uv run .agents/skills/engineering-loop/scripts/approvals.py local-ci <pr>`, run
 on a clean checkout at the PR's head commit. It runs `mise run check:all` there and,
 when the check passes without changing the tree, posts `Local check passed` with
 that head on the PR. So anything the project's CI enforced has to be in
@@ -515,6 +519,38 @@ Updating to the next release moves the pack to the exact tag
 `mise run agent:intake -- --refresh`, then `agent:sync`, and commit what they
 change. It replaces `.github/dependabot.yml` with `renovate.json`.
 
+Updating to the next release moves the pack to `engineering-v0.24.0`, whose
+`approvals.py`, `labels.py` and `board.py` read loop.md's and
+issue-tracker.md's settings from a YAML block under `## Settings` and refuse a
+file still on the line form (kzarzycki/agent-skills#344, #352). An older
+reader finds no lines in the block and runs with no settings, so move both
+files in the same commit as the pack, after `mise run agent:sync`. The pack's
+0.24.0 changelog maps every old line to its key:
+
+- loop.md: a `## Settings` heading with a `yaml` block in place of the
+  `- spec:`, `- merge:` and `- risk:` lines, as a fresh render writes it.
+  `spec: auto unless risk` becomes `spec:` `auto:` with `bug`, `follow-up` and
+  `sub-issue`; `merge: auto unless risk` goes; `CI: none`, `cap: <n>` and
+  `Opt-out: allowed` become `ci: false`, `cap: <n>` and `opt_out: true` under
+  `loop:`; § Practice's lines become `practice:` keys (`spec: brainstorming`);
+  each `risk:`, `plan:` and `signoff:` condition becomes that section's
+  `paths` and `labels`, one per line, `component billing` written
+  `area:billing` and `size:L or larger` `size:L` and `size:XL`. A fresh
+  render's rule is `verifier: true` with `.github/**`, `CODEOWNERS` and
+  `docs/agents/loop.md`: the verifier now judges a change to `mise.toml`,
+  `.pre-commit-config.yaml`, `apm.yml` or the rest of `docs/agents/`, so keep
+  those paths if the owner should still see each one.
+- issue-tracker.md: a `## Settings` block in place of § Components, § Extra
+  labels, § Extra categories, § Renamed labels and § Board: `components:`,
+  `labels:`, `categories:`, `renames:` (`frontend: area:web`) and `board:`
+  (`Build: In progress`), each item `name: text`. § Never on GitHub stays
+  prose.
+- The loop line in `CLAUDE.md` or `.apm/instructions/project.instructions.md`
+  names `opt_out: true` instead of `Opt-out: allowed`; the compiled layer gets
+  it from the update, a vendored `CLAUDE.md` takes it by hand.
+- The tasks call the scripts with `uv run`, which installs their PyYAML, and
+  the approvals workflow installs `uv` through mise.
+
 Updating to v0.10.0 moved the pack to `^0.21.0` (a caret on 0.x:
 `^0.18.0` never takes 0.19.0, nor `^0.20.0` 0.21.0); run
 `mise run agent:intake -- --refresh`, then `agent:sync`, and commit what they
@@ -541,8 +577,8 @@ user token opens starts CI. A nightly scheduled agent runs it. Updates fall in t
   one PR a night; and every major update, each its own PR. An agent reviews each before
   `loop:land`.
 - **routine**: patch and minor updates of tools, libraries and actions, one group a week
-  after 3 days, with auto-merge on. It lands on the gates alone once loop.md has a `bot:`
-  line for it; otherwise a verifier reviews it too.
+  after 3 days, with auto-merge on. It lands on the gates alone once loop.md's settings have a
+  `bot` section for the login that opens it; otherwise a verifier reviews it too.
 
 Mend's hosted Renovate does not fit: its free tier runs no scripts and no
 `postUpgradeTasks`, so template and pack updates would fail or leave the lock stale.

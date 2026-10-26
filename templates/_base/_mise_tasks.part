@@ -14,7 +14,7 @@ APM_MANAGED = '^(\.agents|\.claude|\.codex|\.github/instructions)/|(^|/)AGENTS\.
 {% if include_ci %}# The merge checks: every check: task but check:all is a part, and CI runs each as its own
 # job named after it (mise run ci:parts). Add a part here and CI runs it; give it a path
 # filter in .github/check-paths.yml.
-{% else %}# The merge checks: every check: task but check:all is a part. With no CI (loop.md `CI: none`),
+{% else %}# The merge checks: every check: task but check:all is a part. With no CI (loop.md `ci: false`),
 # the merge proof is approvals.py local-ci, which runs them on a clean checkout of the head.
 {% endif %}[tasks.check]
 description = "Runs check:lint and check:unit: the fast set to run before every push."
@@ -228,7 +228,7 @@ arg "[pr]" help="the PR number; default: this branch's PR"
 # ponytail: the path is the codex target's copy; without codex, point it at .claude/skills.
 run = [
   'test -f .agents/skills/engineering-loop/scripts/approvals.py || { echo "loop:approvals: the engineering-loop skill is not installed; run mise run agent:sync and commit its output" >&2; exit 1; }',
-  'python3 .agents/skills/engineering-loop/scripts/approvals.py check "${usage_point}" ${usage_pr:-}',
+  'uv run .agents/skills/engineering-loop/scripts/approvals.py check "${usage_point}" ${usage_pr:-}',
 ]
 
 [tasks."loop:land"]
@@ -240,7 +240,7 @@ flag "--wait" help="wait until the PR merges or needs someone"
 # ponytail: the path is the codex target's copy; without codex, point it at .claude/skills.
 run = [
   'test -f .agents/skills/engineering-loop/scripts/approvals.py || { echo "loop:land: the engineering-loop skill is not installed; run mise run agent:sync and commit its output" >&2; exit 1; }',
-  'python3 .agents/skills/engineering-loop/scripts/approvals.py land "${usage_pr}" $([ "${usage_wait:-false}" = true ] && echo --wait)',
+  'uv run .agents/skills/engineering-loop/scripts/approvals.py land "${usage_pr}" $([ "${usage_wait:-false}" = true ] && echo --wait)',
 ]
 
 [tasks."ci:approvals"]
@@ -332,7 +332,7 @@ elif [ ! -f "$labels" ]; then
   exit 1
 elif [ "${usage_dry_run:-false}" = true ]; then
   echo "dry run: the ruleset and repository settings are left as they are"
-  exec python3 "$labels" --dry-run
+  exec uv run "$labels" --dry-run
 fi
 # A private repo on GitHub Free has no rulesets and no auto-merge: GitHub answers the rules read with this 403,
 # the probe the pack's land uses. Any other error stops the task.
@@ -384,6 +384,6 @@ else
     "to change that, set the repo variable APPROVALS_APP_CLIENT_ID and the secret APPROVALS_APP_PRIVATE_KEY for a GitHub App" \
     "with Contents, Pull requests and Commit statuses write and Issues, Checks and Actions read, installed on this repo"
 fi
-python3 "$labels"
+uv run "$labels"
 '''
 {% endif -%}

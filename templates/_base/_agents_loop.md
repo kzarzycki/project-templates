@@ -3,6 +3,37 @@
 The `engineering-loop` skill reads this file at every step but the gate.
 Replace each prompt with this project's fact; keep the headings.
 
+## Settings
+
+`mise run loop:approvals` reads this block, the engineering loop's settings
+(its SKILL.md § Settings has every key). It is YAML: `key: value` under a
+section name, a list one item per line. Quote a value that starts with `*` or
+reads as another type (`no`, `on`, `1.10`). A key or section the loop doesn't
+know is refused, naming it. § Approvals says what the seed's settings do.
+
+```yaml
+spec:
+  # specs approved by policy, with no owner record; any other waits for the owner
+  auto:
+    - bug
+    - follow-up
+    - sub-issue
+{% if not include_ci %}
+loop:
+  ci: false
+{% endif %}
+# practice:
+#   the skill that fills a stage this project changes, one key each, such as
+#   spec: brainstorming; a stage left out runs its default
+
+risk:
+  verifier: true
+  paths:
+    - .github/**
+    - CODEOWNERS
+    - docs/agents/loop.md
+```
+
 ## Owner
 
 Who owns this repository and answers the loop's questions (a GitHub handle).
@@ -18,52 +49,57 @@ What a new result is checked against, in order of preference: references the
 code did not produce, such as the owner's evidence, an external source, a
 recomputation or an invariant.
 
-## Practice
-
-The skill that fills each stage this project changes, one line each, such as
-`Spec: <skill>`, or "Default".
-
 ## Approvals
 
-Only people approve; the rest is this standing policy, which
-`mise run loop:approvals` evaluates. `spec: auto unless risk` approves the spec
-of a bug, a `Found while #<n>` follow-up, or a writer's sub-issue of an epic the
-owner approved; any other spec waits for the owner. `merge: auto unless risk`
-lands a PR on its gates unless it is high risk: `risk:high` on the PR or its
-issue, a `risk:` rule below matches, or the verifier's cap was reached with a
-blocker or major open. A high-risk merge waits for the owner's
-`approved:merge` label, added after the head's push. A `risk:` condition reads
-`always`, `size:L or larger`, `component <name>`, `category <name>` and
-`path <glob>`, joined by `or`; a condition the gate can't read matches. The rule
-below marks a change to CI, hooks, tasks, the agent pack or these files as high
-risk; `risk: always` restores a label on every merge. A line `cap: <n>` changes
-the verifier's pass cap from the skill's default, and a `plan: <condition>`
-line asks for the owner's approval of a matching plan. Required reviews and code
-owners go in branch protection and `CODEOWNERS`, which the loop obeys.
+Only people approve; the rest is the standing policy in § Settings, which
+`mise run loop:approvals` evaluates. `spec.auto` with `bug`, `follow-up` and
+`sub-issue` approves the spec of a bug, a `Found while #<n>` follow-up, or a writer's sub-issue of an epic the
+owner approved; any other spec waits for the owner. A PR lands on its gates
+unless it is high risk: `risk:high` on the PR or its issue, the `risk` rule
+matches, or the verifier's cap was reached with a blocker or major open. A
+high-risk merge waits for the owner's `approved:merge` label, added after the
+head's push.
 
-Three lines the seed leaves out change this. `spec: auto` in place of
-`spec: auto unless risk` approves every spec by policy, epics included, except
-one a `risk:` rule matches or one opened by an account without write access,
-which waits for the owner; a risk rule then holds the spec instead of the
-merge, so that merge needs no `approved:merge`. A `signoff: <condition>` line,
-read as a `risk:` condition is, has the owner sign off a matching change in use
-after it lands: its spec says `Sign-off: owner` or `Sign-off: none`, and its PR
-links the issue with `Implements #<n>`, which leaves it open for the sign-off.
-The line `Opt-out: allowed` lets a developer whose personal instructions say
+The seed's `risk` rule lets the verifier judge every change and keeps a few
+paths the owner's whatever it says. `verifier: true` holds when the verifier's
+newest pass on the head says anything but `Risk: low`, so the owner sees only
+what no check can settle. The paths hold on their own: CI's workflows and
+rulesets under `.github/`, `CODEOWNERS`, and this file, since each decides what
+the gates require and who approves. `risk` also takes `labels` (such as
+`size:XL` or `area:<name>`, one per line) and `always: true`, which holds every
+merge for the owner. `cap: <n>` under `loop` changes the verifier's pass cap
+from the skill's default, and a `plan` section with `labels` asks for the
+owner's approval of a matching plan. Required reviews and code owners go in
+branch protection and `CODEOWNERS`, which the loop obeys.
+
+Three settings the seed leaves out change this. `auto: true` under `spec`, in place of
+the list, approves every spec by policy, epics included, except
+one the `risk` rule matches or one opened by an account without write access,
+which waits for the owner; the rule then holds the spec instead of the merge,
+so that merge needs no `approved:merge`, but for its `verifier` term, which the
+gate still judges at the merge. A `signoff` section, read as `risk` is, has
+the owner sign off a matching change in use after it lands: its spec says
+`Sign-off: owner` or `Sign-off: none`, and its PR links the issue with
+`Implements #<n>`, which leaves it open for the sign-off. `opt_out: true` under
+`loop` lets a developer whose personal instructions say
 `Engineering loop: off` keep their PRs out of the loop: a PR with no loop trail
 passes `loop:approvals`, its author merges it, and no risk rule holds it.
 Renovate (`mise run deps:renovate`) labels `verify` the updates an agent
 reviews: the template, the agent packages and every major. Its routine group
-lands on the gates alone once a `bot:` line names who opens it and the paths it
-may touch, such as `bot: branch renovate/ path uv.lock or path mise.toml`, and
-no `risk:` rule matches those paths; without the line, a verifier reviews it too.
-
-- spec: auto unless risk
-- merge: auto unless risk
-- risk: path .github/** or path .pre-commit-config.yaml or path mise.toml or path apm.yml or path docs/agents/** or path CODEOWNERS
+lands on the gates alone once a `bot` section names the login that opens it and
+the paths it may touch, and no `risk` rule matches those paths; without it, a
+verifier reviews it too.
 {% if not include_ci %}
-CI: none
+`ci: false` says this project has no CI: the merge proof is the local check
+`uv run .agents/skills/engineering-loop/scripts/approvals.py local-ci <pr>`
+records on the head. A check that reads environment variables names them in
+`local_ci_env`, one per line.
 {% endif %}
+## Risk criteria
+
+Optional. What makes a change risky here beyond the `risk` rule, in words,
+which the verifier reads when it judges a change's risk.
+
 ## In use
 
 Who and what uses this project, and so how a finding is judged: by what a user
