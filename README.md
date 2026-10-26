@@ -603,7 +603,7 @@ An Xcode repo adopts with `--data project_type=apple/xcode --data
 gate_script=Scripts/gate.sh --data include_example=false`, naming its own gate
 script: `mise run check` then runs it.
 
-Governance files (hooks, CI, `.editorconfig`, ADR, CODEOWNERS) land clean;
+Governance files (hooks, CI, `.editorconfig`, ADR) land clean;
 toolchain config (`pyproject.toml`, `build.gradle`) is hand-merged once.
 
 ## How the template is organized

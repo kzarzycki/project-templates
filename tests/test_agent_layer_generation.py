@@ -1349,6 +1349,8 @@ class AgentLayerGenerationTest(unittest.TestCase):
         for project_type, answers in LEAVES:
             with self.subTest(project_type=project_type, **answers):
                 project = render(project_type, **answers)
+                # No CODEOWNERS: its automatic review requests notify the owners on every loop PR.
+                self.assertEqual([], [path for path in ("CODEOWNERS", ".github/CODEOWNERS", "docs/CODEOWNERS") if (project / path).exists()])
 
                 tasks = tomllib.loads((project / "mise.toml").read_text())["tasks"]
                 self.assertEqual(set(), contract - set(tasks))
