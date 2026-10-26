@@ -259,11 +259,11 @@ missing proof (the PR is left untouched) and 3 while it waits: run it again, or
 pass `--wait` to return only once the PR merges or needs someone. It
 runs as you, so a merge it makes starts main's push workflows.
 
-A draft that `loop:land` marks ready is usually merged by the approvals workflow,
-since CI's completion reaches the workflow before `land` runs again. GitHub starts
-no workflow for an event the workflow's `GITHUB_TOKEN` causes, so by default that
-merge starts no push workflow on main (CI's push run, Pages, tags). To have it
-start them, give the workflow a GitHub App's token:
+By default the approvals workflow only posts the status, and `loop:land` lands
+the PR: GitHub starts no workflow for an event the workflow's `GITHUB_TOKEN`
+causes, so a merge it made would start no push workflow on main (CI's push run,
+Pages, tags). To have the workflow land a PR made ready by hand too, give it a
+GitHub App's token, whose merge starts them:
 
 1. Create a GitHub App with repository permissions Contents: write, Pull requests:
    write, Commit statuses: write, Issues: write, Checks: read and Actions: read, and install it on
@@ -272,9 +272,10 @@ start them, give the workflow a GitHub App's token:
    secret `APPROVALS_APP_PRIVATE_KEY` to a private key it generated
    (`gh variable set`, `gh secret set`).
 
-With the variable set, the workflow runs everything with the App's token; without
-it, with `GITHUB_TOKEN`, as before. `mise run setup:github` prints which one the
-repo uses.
+With the variable set, the workflow runs everything with the App's token and,
+on success, turns auto-merge on where the repo allows it and the PR has no
+request (the paragraph above); without it, it posts the status with `GITHUB_TOKEN` and
+turns nothing on. `mise run setup:github` prints which one the repo uses.
 
 Where GitHub offers rulesets and merge queues, main lands through a queue.
 Generated CI skips draft PRs (marking one ready starts it) and runs on every push
@@ -291,8 +292,8 @@ are green. Its name stays `loop-merge-queue`, since `setup:github` finds its
 ruleset by that name. `mise run setup:github` (alias `merge-queue`) creates
 that ruleset on GitHub, or updates it if one with that name exists, and sets
 the repository's `allow_auto_merge` and `delete_branch_on_merge` to true, so
-`mise run loop:land <n>` (or the approvals workflow) queues the PR once both
-names are green, or without a queue merges it, and its branch is deleted after the merge. It never reads or changes another ruleset: GitHub
+`mise run loop:land <n>` (or, with the App token, the approvals workflow) queues
+the PR once both names are green, or without a queue merges it, and its branch is deleted after the merge. It never reads or changes another ruleset: GitHub
 applies every active ruleset on a branch, so the repo's own rules on main keep
 applying alongside it. The task prints both settings' previous values and the
 `gh api -X PATCH` command that restores them. `mise run setup:github --revert`
