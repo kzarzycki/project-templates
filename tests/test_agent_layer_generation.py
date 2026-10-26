@@ -1202,7 +1202,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
             approvals_run[-1],
         )
         self.assertEqual(
-            'python3 .agents/skills/engineering-loop/scripts/approvals.py land "${usage_pr}"',
+            'python3 .agents/skills/engineering-loop/scripts/approvals.py land "${usage_pr}" $([ "${usage_wait:-false}" = true ] && echo --wait)',
             tasks["loop:land"]["run"][-1],
         )
         self.assertFalse((project / ".github/workflows/gate.yml").exists())

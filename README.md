@@ -255,7 +255,8 @@ block: it catches a forgotten step, not a deliberate one.
 `approvals.py land`, which checks every merge proof, then marks the PR ready and
 squash-merges it pinned to its head, or turns auto-merge on while only required
 checks are pending. It exits 0 once the PR merged or auto-merge is on, 1 on a
-missing proof (the PR is left untouched) and 3 while it waits: run it again. It
+missing proof (the PR is left untouched) and 3 while it waits: run it again, or
+pass `--wait` to return only once the PR merges or needs someone. It
 runs as you, so a merge it makes starts main's push workflows.
 
 A draft that `loop:land` marks ready is usually merged by the approvals workflow,
