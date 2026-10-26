@@ -255,6 +255,12 @@ with the agent's own token. GitHub's free plan has no protection for private rep
 status is only a mark (pending while it waits, red on a missing proof), not a
 block: it catches a forgotten step, not a deliberate one.
 
+The template ships no `CODEOWNERS`. GitHub asks code owners to review every
+PR that opens or leaves draft, and the loop can land dozens a day with no other
+engineer, so each request is a notification nobody needs to act on. Keep paths
+to a team with a push ruleset (a `file_path_restriction` rule with the team as
+its bypass) instead, and ask someone for a review by name when it needs one.
+
 `mise run loop:land <pr>` is the one way an agent lands a PR: it runs the pack's
 `approvals.py land`, which checks every merge proof, then marks the PR ready and
 squash-merges it pinned to its head, or turns auto-merge on while only required
@@ -518,6 +524,11 @@ Updating to the next release moves the pack to the exact tag
 `engineering-v0.23.2`, which Renovate moves on from there (below): run
 `mise run agent:intake -- --refresh`, then `agent:sync`, and commit what they
 change. It replaces `.github/dependabot.yml` with `renovate.json`.
+
+Updating to the next release deletes `CODEOWNERS`, even one the project
+edited: Copier removes a file the template stopped shipping without comparing
+its content. To keep your own, restore it from git in the update commit
+(`git checkout HEAD -- CODEOWNERS`).
 
 Updating to the next release moves the pack to `engineering-v0.24.1`. Since
 0.24.0 its `approvals.py`, `labels.py` and `board.py` read loop.md's and
