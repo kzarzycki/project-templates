@@ -233,14 +233,18 @@ the label on every merge. The seed explains three lines it leaves off:
 `check` or a label a rule asks for, failure when a proof is missing, success once every proof
 holds. It reruns when a label or the PR body changes and when CI completes, and
 posts success on a merge-queue commit, since a PR is queued only once its status
-was green. On success on a ready PR that has no auto-merge request yet, it turns
-auto-merge on with the repo's `GITHUB_TOKEN`, pinned to the head
+was green. On success on a ready PR that has no auto-merge request yet, and when
+the workflow runs with the optional GitHub App's token (`APPROVALS_APP_CLIENT_ID`), it turns
+auto-merge on, pinned to the head
 (`--match-head-commit`), so a PR made ready by hand lands with no agent action;
 the job needs `contents: write` and `pull-requests: write` for that, and `actions: read` to read each check run's workflow (without it GitHub refuses the merge check's query). It never
 replaces an existing request, and it turns nothing on when the repo's `allow_auto_merge`
 is not `true` or can't be read: there, with no required check pending, `gh pr merge --auto`
-would merge at once with `GITHUB_TOKEN`, so no push workflow would run on main. The job
-stops at the status and `mise run loop:land <pr>` merges. GitHub's free plan has no protection for private repos, so there the
+would merge at once with `GITHUB_TOKEN`, so no push workflow would run on main. Without
+the App token it turns nothing on either: GitHub starts no workflow for an event `GITHUB_TOKEN`
+makes, so a merge queue would build the group commit with no CI and wait out its timeout. In
+each case the job stops at the status and `mise run loop:land <pr>` queues or merges the PR
+with the agent's own token. GitHub's free plan has no protection for private repos, so there the
 status is only a mark (pending while it waits, red on a missing proof), not a
 block: it catches a forgotten step, not a deliberate one.
 
@@ -448,6 +452,10 @@ user-owned repo, where GitHub rejected the ruleset's merge queue and
 On the next release, a private repo on GitHub Free, where `setup:github` stopped
 at the ruleset's 403, runs `mise run setup:github` again: it now sets
 squash-only merges and head branch deletion and syncs the labels.
+
+On the next release, with the loop on and no approvals App configured, the approvals
+workflow posts `loop:approvals` and stops: it no longer turns auto-merge on with
+`GITHUB_TOKEN`, whose merge-queue entry got no CI. `mise run loop:land <pr>` lands the PR.
 
 Updating to the next release asks `include_ci` (default true; with it true
 nothing changes). Answering false, with the loop on:

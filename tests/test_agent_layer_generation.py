@@ -1250,6 +1250,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
             job["permissions"],
         )
         self.assertEqual("${{ steps.app.outputs.token || github.token }}", job["steps"][-1]["env"]["GH_TOKEN"])
+        self.assertEqual("${{ steps.app.outputs.token != '' }}", job["steps"][-1]["env"]["APP_TOKEN"])
         self.assertIn("actions/variables/APPROVALS_APP_CLIENT_ID", tasks["setup:github"]["run"])
         self.assertIn("actions/secrets/APPROVALS_APP_PRIVATE_KEY", tasks["setup:github"]["run"])
         ci_name = yaml.safe_load(workflow)["name"]

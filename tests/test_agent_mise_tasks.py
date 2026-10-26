@@ -938,7 +938,7 @@ class AgentMiseTasksTest(unittest.TestCase):
         if not state.exists():
             self.fake_github(pr=["abc123", "false", "owner", "false"], allow_auto_merge=True)
         self.env.update({"GITHUB_REPOSITORY": "o/r", "EVENT": "pull_request", "ACTION": "labeled", "PR": "7",
-                         "QUEUE_HEAD": "", "RUN_URL": "https://example.com/run", **env})
+                         "QUEUE_HEAD": "", "RUN_URL": "https://example.com/run", "APP_TOKEN": "true", **env})
         result = self.run_task("ci:approvals")
         return result, json.loads(state.read_text())
 
@@ -1004,6 +1004,18 @@ class AgentMiseTasksTest(unittest.TestCase):
         self.assertEqual(["success"], [status["state"] for status in github["statuses"]])
         self.assertEqual([], github["edits"])
         self.assertIn("could not read the repo's auto-merge setting", unread.stdout)
+
+    def test_ci_approvals_without_the_app_token_posts_the_status_only(self) -> None:
+        # github.token starts no workflow for the merge, so a merge queue would wait for CI forever.
+        (self.bin / "mise").symlink_to(MISE)
+        self.fake_github(pr=["abc123", "false", "owner", "false"], allow_auto_merge=True)
+        for app in ("false", ""):
+            with self.subTest(app=app):
+                result, github = self.approvals_run(0, APP_TOKEN=app)
+                self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                self.assertEqual("success", github["statuses"][-1]["state"])
+                self.assertEqual([], github["edits"])
+                self.assertIn("no App token, so mise run loop:land 7 lands PR #7", result.stdout)
 
     def test_loop_land_runs_approvals_land_on_the_pr_and_keeps_its_exit(self) -> None:
         script = self.project / ".agents/skills/engineering-loop/scripts/approvals.py"
