@@ -272,8 +272,9 @@ GitHub App's token, whose merge starts them:
    secret `APPROVALS_APP_PRIVATE_KEY` to a private key it generated
    (`gh variable set`, `gh secret set`).
 
-With the variable set, the workflow runs everything with the App's token and
-turns auto-merge on; without it, it posts the status with `GITHUB_TOKEN` and
+With the variable set, the workflow runs everything with the App's token and,
+on success, turns auto-merge on where the repo allows it and the PR has no
+request (the paragraph above); without it, it posts the status with `GITHUB_TOKEN` and
 turns nothing on. `mise run setup:github` prints which one the repo uses.
 
 Where GitHub offers rulesets and merge queues, main lands through a queue.
