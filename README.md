@@ -519,13 +519,15 @@ Updating to the next release moves the pack to the exact tag
 `mise run agent:intake -- --refresh`, then `agent:sync`, and commit what they
 change. It replaces `.github/dependabot.yml` with `renovate.json`.
 
-Updating to the next release moves the pack to `engineering-v0.24.0`, whose
-`approvals.py`, `labels.py` and `board.py` read loop.md's and
+Updating to the next release moves the pack to `engineering-v0.24.1`. Since
+0.24.0 its `approvals.py`, `labels.py` and `board.py` read loop.md's and
 issue-tracker.md's settings from a YAML block under `## Settings` and refuse a
 file still on the line form (kzarzycki/agent-skills#344, #352). An older
 reader finds no lines in the block and runs with no settings, so move both
-files in the same commit as the pack, after `mise run agent:sync`. The pack's
-0.24.0 changelog maps every old line to its key:
+files in the same commit as the pack, after `mise run agent:sync`. 0.24.1 puts
+a `__pycache__` file in each skill's `scripts/`, so a project that ignores
+cache folders writes `__pycache__/` with the slash, as the python leaves'
+`.gitignore` does. The pack's 0.24.0 changelog maps every old line to its key:
 
 - loop.md: a `## Settings` heading with a `yaml` block in place of the
   `- spec:`, `- merge:` and `- risk:` lines, as a fresh render writes it.

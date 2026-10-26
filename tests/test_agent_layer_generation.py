@@ -398,7 +398,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
             [
                 {
                     "git": "kzarzycki/agent-skills/engineering",
-                    "ref": "engineering-v0.24.0",
+                    "ref": "engineering-v0.24.1",
                 }
             ],
             yaml.safe_load(apm)["dependencies"]["apm"],
@@ -449,7 +449,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         manifest = (project / "apm.yml").read_text()
         answers = (project / ".copier-answers.yml").read_text()
         self.assertEqual(1, manifest.count("git: kzarzycki/agent-skills/engineering"))
-        self.assertIn("ref: engineering-v0.24.0", manifest)
+        self.assertIn("ref: engineering-v0.24.1", manifest)
         self.assertIn("include_engineering_workflow: true", answers)
         self.assertNotIn("engineering_capability_source", answers)
         self.assertNotIn("engineering_capability_ref", answers)
@@ -1837,7 +1837,7 @@ class RenovateGenerationTest(unittest.TestCase):
         manager = json.loads((project / "renovate.json").read_text())["customManagers"][0]
         # Renovate's matchStrings are ECMAScript; this one uses nothing Python's re reads differently.
         found = re.search(manager["matchStrings"][0].replace("(?<", "(?P<"), (project / "apm.yml").read_text())
-        self.assertEqual(("kzarzycki/agent-skills", "engineering", "0.24.0"),
+        self.assertEqual(("kzarzycki/agent-skills", "engineering", "0.24.1"),
                          (found["packageName"], found["package"], found["currentValue"]))
 
     def test_without_the_agent_layer_renovate_has_no_apm_manager_or_task(self) -> None:
