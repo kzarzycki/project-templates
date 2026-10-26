@@ -232,14 +232,15 @@ run = [
 ]
 
 [tasks."loop:land"]
-description = "The one way an agent lands a PR: every merge proof, then ready and a squash merge pinned to the head, or auto-merge while required checks are pending. Exits 0 merged or auto-merge on, 1 on a missing proof, 3 while it waits."
+description = "The one way an agent lands a PR: every merge proof, then ready and a squash merge pinned to the head, or auto-merge while required checks are pending. Exits 0 merged or auto-merge on, 1 on a missing proof, 3 while it waits; with --wait it returns only once the PR merges or needs someone."
 usage = '''
 arg "<pr>" help="the PR number"
+flag "--wait" help="wait until the PR merges or needs someone"
 '''
 # ponytail: the path is the codex target's copy; without codex, point it at .claude/skills.
 run = [
   'test -f .agents/skills/engineering-loop/scripts/approvals.py || { echo "loop:land: the engineering-loop skill is not installed; run mise run agent:sync and commit its output" >&2; exit 1; }',
-  'python3 .agents/skills/engineering-loop/scripts/approvals.py land "${usage_pr}"',
+  'python3 .agents/skills/engineering-loop/scripts/approvals.py land "${usage_pr}" $([ "${usage_wait:-false}" = true ] && echo --wait)',
 ]
 
 [tasks."ci:approvals"]

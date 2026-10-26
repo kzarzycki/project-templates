@@ -1016,6 +1016,9 @@ class AgentMiseTasksTest(unittest.TestCase):
         waiting = self.run_task("loop:land", "7")
         self.assertEqual(3, waiting.returncode, waiting.stderr)
         self.assertEqual("land 7", waiting.stdout.strip())
+        waited = self.run_task("loop:land", "7", "--wait")
+        self.assertEqual(3, waited.returncode, waited.stderr)
+        self.assertEqual("land 7 --wait", waited.stdout.strip())
 
     def test_ci_approvals_on_a_push_removes_the_merge_approval_first(self) -> None:
         (self.bin / "mise").symlink_to(MISE)
