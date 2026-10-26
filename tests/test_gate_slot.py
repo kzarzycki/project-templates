@@ -21,6 +21,7 @@ class GateSlotTest(unittest.TestCase):
         self.cache = tempfile.mkdtemp(prefix="gate-slot-test-")
         self.env = {**os.environ, "XDG_CACHE_HOME": self.cache}
         self.env.pop("GATE_SLOTS", None)
+        self.env.pop("LC_ALL", None)  # the fake uptime keys on it: a runner's own LC_ALL=C would hide the override
 
     def start(self, *command: str) -> subprocess.Popen[str]:
         return subprocess.Popen(
