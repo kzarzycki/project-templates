@@ -243,7 +243,7 @@ run = [
 ]
 
 [tasks."ci:approvals"]
-description = "CI's approvals step: posts loop:approvals merge's result as the loop:approvals commit status on the PR head (pending while it waits); success on a merge-queue commit; a push removes approved:merge first; on success turns on auto-merge at the head unless the PR has a request or the repo has no auto-merge."
+description = "CI's approvals step: posts loop:approvals merge's result as the loop:approvals commit status on the PR head (pending while it waits); success on a merge-queue commit; a push removes approved:merge first; on success, with the App's token, turns on auto-merge at the head unless the PR has a request or the repo has no auto-merge."
 # A job ends only as success or failure, and GitHub counts a skipped job as passed, so the
 # result is a commit status, which main's ruleset requires. The workflow sets EVENT, ACTION,
 # PR, QUEUE_HEAD and RUN_URL.
@@ -283,10 +283,14 @@ case "$code" in
   *) post "$head" failure "${first:-loop:approvals exited $code}"; exit 1 ;;
 esac
 # Every proof holds on a ready PR (a draft returned above), so a PR made ready by hand lands with no agent
-# action. A request already there is left alone. The merge this makes starts main's push workflows only
-# when the workflow runs with a GitHub App's token (APPROVALS_APP_CLIENT_ID), not with github.token.
+# action, when the workflow runs with a GitHub App's token (APPROVALS_APP_CLIENT_ID). A request already
+# there is left alone.
 # Pinned to the head the proofs covered; gh merges at once when nothing is pending.
 if [ "$(printf '%s' "$pull" | cut -f4)" = true ]; then echo "ci:approvals: PR #$PR already has auto-merge on; left as is"; exit 0; fi
+# With github.token (no App) GitHub starts no workflow for the merge: a merge queue builds its commit
+# with no CI and waits out its timeout, and a direct merge starts none of main's push workflows. So the
+# job stops at the status, and mise run loop:land lands the PR with the agent's own token.
+if [ "${APP_TOKEN:-}" != true ]; then echo "ci:approvals: no App token, so mise run loop:land $PR lands PR #$PR"; exit 0; fi
 # On a repo without auto-merge (a private repo on GitHub Free cannot turn it on) and with no required
 # check pending, gh pr merge --auto merges at once with github.token: no push workflow starts on main
 # and loop:land's pinned merge is skipped. So the job stops at the status there, as it does when the
