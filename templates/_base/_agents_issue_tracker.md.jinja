@@ -8,19 +8,19 @@ engineering loop's SKILL.md § Settings has every key. It is YAML, each section
 `name: text` lines; a section or key the loop doesn't know is refused, naming
 it. Uncomment an optional section to use it.
 
-- `[components]`: where a change lands, each an `area:` label (`area:<name>`
+- `components`: where a change lands, each an `area:` label (`area:<name>`
   or the bare name) and what it covers. Every issue carries at least one. Edit
   the list to the project's parts; `mise run setup:github` creates each label.
-- `[categories]`: optional, categories beyond the method's four (`kind:bug`,
+- `categories`: optional, categories beyond the method's four (`kind:bug`,
   `kind:enhancement`, `kind:chore`, `kind:documentation`), each `kind:<name>`
   and what it means.
-- `[labels]`: optional, labels this project adds beyond the pack's, each in
+- `labels`: optional, labels this project adds beyond the pack's, each in
   full and what it means.
-- `[renames]`: optional, labels to rename in place so every issue keeps them,
+- `renames`: optional, labels to rename in place so every issue keeps them,
   the old name then the new, such as `frontend: area:web`. The pack's own
   renames (`bug`, `enhancement`, `chore` and `documentation` to their `kind:`
   names) need no line.
-- `[board]`: the board column each loop column shows in. Rename the right side
+- `board`: the board column each loop column shows in. Rename the right side
   to the board's own column; several loop columns may share one, and a loop
   column left out keeps its own name.
 

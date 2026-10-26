@@ -577,8 +577,8 @@ user token opens starts CI. A nightly scheduled agent runs it. Updates fall in t
   one PR a night; and every major update, each its own PR. An agent reviews each before
   `loop:land`.
 - **routine**: patch and minor updates of tools, libraries and actions, one group a week
-  after 3 days, with auto-merge on. It lands on the gates alone once loop.md's settings have a
-  `bot` section for the login that opens it; otherwise a verifier reviews it too.
+  after 3 days, with auto-merge on. A verifier reviews it too: its PRs are the developer's, and
+  loop.md's `bot` section exempts only a GitHub App's account.
 
 Mend's hosted Renovate does not fit: its free tier runs no scripts and no
 `postUpgradeTasks`, so template and pack updates would fail or leave the lock stale.

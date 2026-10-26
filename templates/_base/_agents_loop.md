@@ -85,10 +85,10 @@ the owner sign off a matching change in use after it lands: its spec says
 `Engineering loop: off` keep their PRs out of the loop: a PR with no loop trail
 passes `loop:approvals`, its author merges it, and no risk rule holds it.
 Renovate (`mise run deps:renovate`) labels `verify` the updates an agent
-reviews: the template, the agent packages and every major. Its routine group
-lands on the gates alone once a `bot` section names the login that opens it and
-the paths it may touch, and no `risk` rule matches those paths; without it, a
-verifier reviews it too.
+reviews: the template, the agent packages and every major. A verifier reviews
+its routine group too: Renovate runs on the developer's token, so its PRs are
+the developer's, and a `bot` section exempts only a GitHub App's account (such
+as `renovate[bot]`) whose every commit is its own.
 {% if not include_ci %}
 `ci: false` says this project has no CI: the merge proof is the local check
 `uv run .agents/skills/engineering-loop/scripts/approvals.py local-ci <pr>`
