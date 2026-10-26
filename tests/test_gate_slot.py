@@ -10,7 +10,7 @@ import time
 import unittest
 from pathlib import Path
 
-from tests.test_agent_layer_generation import render
+from tests.test_agent_layer_generation import LEAVES, render
 
 ROOT = Path(__file__).resolve().parents[1]
 GATE_SLOT = ROOT / "templates/_base/_gate_slot.sh"
@@ -72,13 +72,52 @@ class GateSlotTest(unittest.TestCase):
         self.assertEqual(second.returncode, 0, second.stderr)
         self.assertNotIn("waiting", second.stderr)
 
-    def test_gate_jobs_is_at_least_one_and_at_most_the_cores(self) -> None:
+    def host(self, cores: str, uptime: str) -> Path:
+        """Put a fake getconf and uptime first on PATH; uptime prints the file it returns, so a test can change it."""
+        bin_dir = Path(self.cache, "bin")
+        bin_dir.mkdir(exist_ok=True)
+        reading = Path(self.cache, "uptime.txt")
+        reading.write_text(uptime + "\n")
+        for name, body in (("getconf", f"echo {cores}"), ("uptime", f"cat {reading}")):
+            fake = bin_dir / name
+            fake.write_text(f"#!/bin/sh\n{body}\n")
+            fake.chmod(0o755)
+        self.env["PATH"] = f"{bin_dir}:{self.env['PATH']}"
+        return reading
+
+    def jobs(self) -> str:
         out = subprocess.run(
             [str(GATE_SLOT), "sh", "-c", 'echo "$GATE_JOBS"'], env=self.env, capture_output=True, text=True, timeout=10
         )
-        cores = int(subprocess.run(["getconf", "_NPROCESSORS_ONLN"], capture_output=True, text=True).stdout)
         self.assertEqual(out.returncode, 0, out.stderr)
-        self.assertTrue(1 <= int(out.stdout) <= cores, out.stdout)
+        return out.stdout.strip()
+
+    def test_gate_jobs_is_the_free_cores_within_one_and_all_of_them(self) -> None:
+        mac = "10:00  up 3 days, 2 users, load averages: {} 1.00 0.50"
+        linux = " 10:00:00 up 3 days,  2 users,  load average: {}, 1.00, 0.50"
+        for form in (mac, linux):
+            for load, jobs in (("0.00", "10"), ("2.50", "7"), ("9.99", "1"), ("160.00", "1")):
+                with self.subTest(form=form, load=load):
+                    self.host("10", form.format(load))
+                    self.assertEqual(self.jobs(), jobs)
+
+    def test_unreadable_cores_or_load_fall_back_to_one_core_and_no_load(self) -> None:
+        self.host("", "no load here")
+        self.assertEqual(self.jobs(), "1")
+        self.host("8", "no load here")
+        self.assertEqual(self.jobs(), "8")
+
+    def test_a_gate_that_waited_sizes_itself_to_the_load_when_it_starts(self) -> None:
+        reading = self.host("10", "load averages: 9.00 1.00 0.50")
+        holder = self.start("sleep", "2")
+        self.held()
+        waiter = self.start("sh", "-c", 'echo "$GATE_JOBS"')
+        time.sleep(0.5)
+        reading.write_text("load averages: 1.00 1.00 0.50\n")
+        out, err = waiter.communicate(timeout=30)
+        holder.communicate(timeout=30)
+        self.assertIn("waiting", err)
+        self.assertEqual(out.strip(), "9")
 
     def test_a_bad_slot_count_is_refused(self) -> None:
         self.env["GATE_SLOTS"] = "0"
@@ -92,15 +131,18 @@ class GateSlotTest(unittest.TestCase):
 
 class GateSlotGenerationTest(unittest.TestCase):
     def test_every_template_runs_check_unit_through_an_executable_gate_slot(self) -> None:
-        for project_type in ("software/python", "software/node", "data/dbt"):
-            with self.subTest(project_type=project_type):
-                project = render(project_type)
-                script = project / "scripts" / "gate-slot"
+        for project_type, answers in LEAVES:
+            if project_type == "authoring/content":
+                continue  # its check:unit is a network-bound link check, not a test suite: no gate slot
+            with self.subTest(project_type=project_type, **answers):
+                project = render(project_type, **answers)
+                folder = "Scripts" if project_type == "apple/xcode" else "scripts"
+                script = project / folder / "gate-slot"
                 self.assertTrue(os.access(script, os.X_OK), script)
                 self.assertEqual(script.read_text(), GATE_SLOT.read_text())
                 mise = (project / "mise.toml").read_text()
                 unit = mise.split('[tasks."check:unit"]', 1)[1].split("\n[tasks", 1)[0]
-                self.assertIn("scripts/gate-slot mise run --skip-tools test:unit", unit)
+                self.assertIn(f"{folder}/gate-slot mise run --skip-tools test:unit", unit)
 
 
 if __name__ == "__main__":

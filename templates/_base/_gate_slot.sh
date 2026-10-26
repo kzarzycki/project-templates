@@ -16,12 +16,8 @@ slots="${GATE_SLOTS:-1}"
 [[ "$slots" =~ ^[1-9][0-9]*$ ]] || { echo "gate-slot: GATE_SLOTS=$slots is no positive count" >&2; exit 2; }
 dir="${XDG_CACHE_HOME:-$HOME/.cache}/engineering-loop"
 mkdir -p "$dir"
-cores="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1)"
-load="$(LC_ALL=C uptime | sed -E 's/.*load averages?: *([0-9.]+).*/\1/')"
-GATE_JOBS="$(awk -v c="$cores" -v l="$load" 'BEGIN { f = int(c - l); print (f < 1 ? 1 : (f > c ? c : f)) }')"
-export GATE_JOBS
-
 # perl, since macOS ships no flock(1); the lock's descriptor stays open across exec, so the command holds it.
+# GATE_JOBS is sampled once the slot is held, so a gate that waited sizes itself to the host as it is then.
 exec perl -MFcntl=:flock -e '
   my ($dir, $slots, @command) = @ARGV;
   $^F = 1023;
@@ -40,5 +36,10 @@ exec perl -MFcntl=:flock -e '
     }
     sleep 2;
   }
+  my $cores = `getconf _NPROCESSORS_ONLN 2>/dev/null`;
+  $cores = $cores =~ /^\s*(\d+)/ && $1 > 0 ? $1 : 1;
+  my $load = do { local $ENV{LC_ALL} = "C"; `uptime` } =~ /load averages?: *([0-9.]+)/ ? $1 : 0;
+  my $free = int($cores - $load);
+  $ENV{GATE_JOBS} = $free < 1 ? 1 : $free > $cores ? $cores : $free;
   exec { $command[0] } @command or die "gate-slot: $command[0]: $!\n";
 ' "$dir" "$slots" "$@"
