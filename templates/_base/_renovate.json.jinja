@@ -51,6 +51,13 @@
       }{% endif %}
     },
     {
+      "description": "mise pins conda tools by bare name and installs them from conda-forge; anaconda.org names a package by channel.",
+      "matchManagers": ["mise"],
+      "matchDatasources": ["conda"],
+      "matchPackageNames": ["!/\\//"],
+      "overridePackageName": "{{ 'conda-forge/{{{packageName}}}' }}"
+    },
+    {
       "description": "Copier records gh:owner/repo, which Renovate's git-tags lookup cannot read.",
       "matchManagers": ["copier"],
       "matchPackageNames": ["/^gh:/"],
