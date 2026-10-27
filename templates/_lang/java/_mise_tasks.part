@@ -31,4 +31,4 @@ fi
 [tasks."setup:dev"]
 alias = "bootstrap"
 description = "Installs the dependencies and the git hooks on a fresh checkout."
-run = "./gradlew classes testClasses && pre-commit install --install-hooks"
+run = "./gradlew classes testClasses && pre-commit install --allow-missing-config --install-hooks"

@@ -38,7 +38,7 @@ run = "scripts/gate-slot mise run --skip-tools test:unit"
 [tasks."setup:dev"]
 alias = "bootstrap"
 description = "Installs the dependencies and the git hooks on a fresh checkout."
-run = "uv sync && pre-commit install --install-hooks"
+run = "uv sync && pre-commit install --allow-missing-config --install-hooks"
 
 [tasks.deps]
 description = "Installs the dbt packages (dbt deps)."

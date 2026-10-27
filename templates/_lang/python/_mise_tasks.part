@@ -30,4 +30,4 @@ scripts/gate-slot mise run --skip-tools test:unit -- --cov --cov-report=xml
 [tasks."setup:dev"]
 alias = "bootstrap"
 description = "Installs the dependencies and the git hooks on a fresh checkout."
-run = "uv sync && pre-commit install --install-hooks"
+run = "uv sync && pre-commit install --allow-missing-config --install-hooks"
