@@ -1432,6 +1432,21 @@ class AgentLayerGenerationTest(unittest.TestCase):
                 self.assertTrue(os.access(scripts / "check-symlinks.sh", os.X_OK))
                 self.assertIn(f"run = '{scripts.name}/files-or-repo ", (project / "mise.toml").read_text())
 
+    def test_a_named_repository_guards_every_workflow_job_and_an_empty_one_changes_nothing(self) -> None:
+        # A fork or mirror with Actions on would otherwise run CI and post loop:approvals statuses.
+        for answers in ({}, {"include_mise": False}, {"include_ci": False}):
+            with self.subTest(**answers):
+                unguarded = render(**answers) / ".github/workflows"
+                guarded = render(github_repository="o/r", **answers) / ".github/workflows"
+                names = sorted(path.name for path in unguarded.glob("*.yml"))
+                self.assertEqual(names, sorted(path.name for path in guarded.glob("*.yml")))
+                for name in names:
+                    self.assertNotIn("github.repository ==", (unguarded / name).read_text())
+                    for job, spec in yaml.safe_load((guarded / name).read_text())["jobs"].items():
+                        self.assertRegex(spec["if"].strip(), r"^\$\{\{ github\.repository == 'o/r' && ", f"{name} {job}")
+        with self.assertRaises(subprocess.CalledProcessError):
+            render(github_repository="o/r' || 'x")
+
     def test_without_a_merge_queue_the_ruleset_keeps_every_other_rule(self) -> None:
         # GitHub offers merge queues only on organization-owned repos; every leaf includes the one ruleset template.
         queued = json.loads((render() / ".github/rulesets/main.json").read_text())

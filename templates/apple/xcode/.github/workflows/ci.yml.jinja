@@ -7,7 +7,7 @@ jobs:
 {% else %}
   build:
     # A draft runs nothing until ready_for_review; a push or a queue entry has no PR, so it always runs.
-    if: {% raw %}${{ !github.event.pull_request.draft }}{% endraw %}
+    if: {% raw %}${{ {% endraw %}{{ repository_guard }}{% raw %}!github.event.pull_request.draft }}{% endraw %}
     runs-on: macos-latest # the gate script needs Xcode
     steps:
 {% include "templates/_base/_ci_steps.yml.jinja" %}      - name: Gate script

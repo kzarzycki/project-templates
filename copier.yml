@@ -133,6 +133,18 @@ include_ci:
   default: true
   help: "Add the CI workflow? Turn it off when the merge proof is a local run (loop.md `ci: false`); the repo's own workflows stay as they are."
 
+github_repository:
+  type: str
+  default: ""
+  help: "The project's own GitHub repository, as owner/name, to run the workflows only there and not in a fork or mirror with Actions on. Empty runs them in any repository."
+  validator: "{% if github_repository and (github_repository.count('/') != 1 or github_repository.startswith('/') or github_repository.endswith('/') or not (github_repository | replace('/', '') | replace('-', '') | replace('_', '') | replace('.', '')).isalnum()) %}Give owner/name: letters, digits, '-', '_' and '.' only{% endif %}"
+
+# A job's `if:` starts with this guard when the project's repository is named.
+repository_guard:
+  type: str
+  when: false
+  default: "{% if github_repository %}github.repository == '{{ github_repository }}' && {% endif %}"
+
 # ---- Computed (not asked) ----
 module_name:
   type: str

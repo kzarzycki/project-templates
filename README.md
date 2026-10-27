@@ -325,6 +325,11 @@ keeps its label, then creates the loop's labels (states, `kind:`, sizes) and an
 label only once nothing carries it. `mise run setup:github --dry-run` prints that
 plan and writes nothing to GitHub: no ruleset, settings or labels.
 
+`github_repository` (`owner/name`, default empty) names the project's own
+repository: every job of the generated workflows then runs only there, so a fork
+or mirror with Actions on runs no CI and posts no `loop:approvals` status. Empty
+renders the workflows without the guard.
+
 A project without CI, for example a private repo with GitHub Actions off or one
 whose own workflows only release, answers `include_ci=false`. It then gets no CI
 workflow and no `.github/check-paths.yml`, and no `ci:parts` or `ci:check` task;
@@ -458,6 +463,9 @@ Updating to the next release moves APM to 0.33.0 and asks `agent_layer_mode`:
   hand-written ones. Delete `.apm/instructions` and the nested `AGENTS.md` and
   `CLAUDE.md` files `apm compile` wrote, since nothing updates them any more,
   then run `mise run agent:sync` and commit the result.
+
+The next release asks `github_repository` (default empty, which changes
+nothing). Answer `owner/name` to run the workflows only in that repository.
 
 The next release asks `merge_queue` (default true) with the loop on. A
 user-owned repo, where GitHub rejected the ruleset's merge queue and

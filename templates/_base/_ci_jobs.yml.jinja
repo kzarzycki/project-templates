@@ -3,7 +3,7 @@
   # `check` is the one check main's ruleset requires. Add a part in mise.toml, not here.
   # A draft runs nothing until ready_for_review; a push or a queue entry has no PR, so it always runs.
   plan:
-    if: {% raw %}${{ !github.event.pull_request.draft }}{% endraw %}
+    if: {% raw %}${{ {% endraw %}{{ repository_guard }}{% raw %}!github.event.pull_request.draft }}{% endraw %}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -30,7 +30,8 @@
 
   part:
     needs: plan
-    name: {% raw %}${{ matrix.part }}{% endraw %}
+{% if github_repository %}    if: {% raw %}${{ {% endraw %}{{ repository_guard }}{% raw %}success() }}{% endraw %}
+{% endif %}    name: {% raw %}${{ matrix.part }}{% endraw %}
     runs-on: {{ part_runner | default('ubuntu-latest') }}
     # ponytail: one timeout for every part, the longest's; a per-part limit would be a second definition of the part.
     timeout-minutes: 45
@@ -58,7 +59,7 @@
   check:
     needs: [plan, part]
     # Always, so the required check reports even when the plan or a part failed or was cancelled.
-    if: {% raw %}${{ always() && !github.event.pull_request.draft }}{% endraw %}
+    if: {% raw %}${{ {% endraw %}{{ repository_guard }}{% raw %}always() && !github.event.pull_request.draft }}{% endraw %}
     runs-on: ubuntu-latest
     permissions:
       contents: read
