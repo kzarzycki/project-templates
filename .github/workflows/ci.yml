@@ -126,7 +126,7 @@ jobs:
           grep -q '^\[tasks."loop:land"\]$' mise.toml
           grep -q 'run: mise run ci:approvals' .github/workflows/approvals.yml
           grep -q '^\[tasks."setup:github"\]$' mise.toml
-          # merge_queue defaults to false: no workflow listens to a queue the pack's land refuses
+          # merge_queue defaults to false: no workflow listens to a queue
           ! grep -rq 'merge_group' .github/workflows/
           ! grep -q '"merge_queue"' .github/rulesets/main.json
           test ! -e .github/workflows/gate.yml
