@@ -1421,7 +1421,9 @@ class AgentLayerGenerationTest(unittest.TestCase):
                 self.assertNotIn("rev", config["repos"][0])
                 for hook in config["repos"][0]["hooks"]:
                     self.assertEqual("system", hook["language"], hook["id"])
-                    if hook.get("stages") == ["pre-push"]:
+                    if hook["id"] == "test:changed":  # tests start without a linked worktree's GIT_DIR (#25)
+                        self.assertEqual("sh -c 'unset $(git rev-parse --local-env-vars); exec mise run test:changed'", hook["entry"])
+                    elif hook.get("stages") == ["pre-push"]:
                         self.assertEqual(f"mise run {hook['id']}", hook["entry"])
                     else:
                         self.assertTrue(hook["id"].startswith("lint:"), hook["id"])
@@ -1615,28 +1617,37 @@ class AgentLayerGenerationTest(unittest.TestCase):
         subprocess.run(["bash", str(ROOT / "_post_gen.sh"), "data/dbt", "python"], cwd=project, env=env, check=True, capture_output=True)
         self.assertTrue((project / "uv.lock").exists())
 
+    @unittest.skipUnless(shutil.which("pre-commit"), "needs pre-commit")
     def test_pre_push_tests_run_outside_a_linked_worktrees_git_dir(self) -> None:
-        # a pushed test that makes its own repo must not touch the pushing one (#25)
+        # A push from a linked worktree runs the installed pre-push hook; a test that makes its own repo
+        # must not touch the pushing one (#25). Only `mise` is a stand-in: its test:changed is that test.
         project = render("software/python")
-        env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1",
+        scratch = project.parent
+        bin_dir, fixture, remote, linked = (scratch / name for name in ("bin", "fixture", "remote.git", "linked"))
+        bin_dir.mkdir()
+        (bin_dir / "mise").write_text(
+            "#!/bin/sh\n"
+            f'[ "$*" = "run test:changed" ] || exit 0\n'
+            f"git init -q --template= {fixture} && git -C {fixture} commit -q --allow-empty -m fixture\n")
+        (bin_dir / "mise").chmod(0o755)
+        env = {**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+               "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1",
                "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
-        [hook] = [hook for repo in yaml.safe_load((project / ".pre-commit-config.yaml").read_text())["repos"]
-                  for hook in repo["hooks"] if hook["id"] == "test:changed"]
         git = lambda *args, cwd=project: subprocess.run(["git", *args], cwd=cwd, env=env, check=True, capture_output=True, text=True)
         git("init", "-q", "--template=", "-b", "main")
-        git("commit", "-q", "--allow-empty", "-m", "root")
-        worktree = project.parent / "linked"
-        git("worktree", "add", "-q", "-b", "feature", str(worktree))
-        head = git("rev-parse", "HEAD", cwd=worktree).stdout
-        # What a test inside `mise run test:changed` would do; git's hook environment for a linked worktree.
-        fixture = project.parent / "fixture"
-        probe = f"git init -q --template= {fixture} && git -C {fixture} commit -q --allow-empty -m fixture"
-        hook_env = {**env, "GIT_DIR": str(project / ".git/worktrees/linked"), "GIT_INDEX_FILE": str(project / ".git/worktrees/linked/index")}
-        entry = hook["entry"].replace("exec mise run test:changed", probe).replace("mise run test:changed", probe)
-        subprocess.run(entry, shell=True, cwd=worktree, env=hook_env, check=True, capture_output=True)
-        self.assertEqual(head, git("rev-parse", "HEAD", cwd=worktree).stdout)
-        self.assertNotEqual("true", subprocess.run(["git", "config", "core.bare"], cwd=project, env=env, capture_output=True, text=True).stdout.strip())
-        self.assertTrue((fixture / ".git").is_dir())
+        git("add", "-A")
+        git("commit", "-q", "--no-verify", "-m", "render")
+        git("init", "-q", "--bare", "--template=", str(remote))
+        git("remote", "add", "origin", str(remote))
+        subprocess.run(["pre-commit", "install", "--hook-type", "pre-push"], cwd=project, env=env, check=True, capture_output=True)
+        git("worktree", "add", "-q", "-b", "feature", str(linked))
+        head = git("rev-parse", "HEAD", cwd=linked).stdout
+        pushed = subprocess.run(["git", "push", "-q", "origin", "feature"], cwd=linked, env=env, capture_output=True, text=True)
+        self.assertEqual(0, pushed.returncode, pushed.stdout + pushed.stderr)
+        self.assertEqual(head, git("rev-parse", "HEAD", cwd=linked).stdout)
+        self.assertTrue((fixture / ".git").is_dir(), "the fixture repo is missing: its git init acted on another repo")
+        self.assertNotEqual("true", subprocess.run(["git", "config", "core.bare"], cwd=project, env=env,
+                                                   capture_output=True, text=True).stdout.strip())
 
     def test_apm_version_has_one_template_source(self) -> None:
         partial = (ROOT / "templates/_base/_mise_agent_tasks.part").read_text()
