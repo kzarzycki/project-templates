@@ -1,7 +1,7 @@
 name: {{ project_name }}
 version: 0.1.0
 description: {{ description | tojson }}
-author: {{ author }}
+author: {{ author | tojson }}
 # Add each coding agent's APM mapping here. Claude Code and Codex are the
 # currently implemented and acceptance-tested integrations.
 targets:
