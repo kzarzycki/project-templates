@@ -2,12 +2,14 @@
   # parts this change needs, the matrix runs each as a job named after it, and the aggregate
   # `check` is the one check main's ruleset requires. Add a part in mise.toml, not here.
   # A draft runs nothing until ready_for_review; a push or a queue entry has no PR, so it always runs.
+  # A push the merge queue already tested lists no part (ci:parts says how).
   plan:
     if: {% raw %}${{ !github.event.pull_request.draft }}{% endraw %}
     runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: read # paths-filter lists a PR's files through the API
+      actions: read # to find the merge_group run of a push's commit
     outputs:
       parts: {% raw %}${{ steps.parts.outputs.parts }}{% endraw %}
     steps:
@@ -25,11 +27,13 @@
       - id: parts
         env:
           CHANGES: {% raw %}${{ steps.filter.outputs.changes }}{% endraw %}
+          GH_TOKEN: {% raw %}${{ github.token }}{% endraw %}
           MISE_TASK_RUN_AUTO_INSTALL: "false"
         run: mise run ci:parts
 
   part:
     needs: plan
+    if: {% raw %}${{ needs.plan.outputs.parts != '[]' }}{% endraw %}
     name: {% raw %}${{ matrix.part }}{% endraw %}
     runs-on: {{ part_runner | default('ubuntu-latest') }}
     # ponytail: one timeout for every part, the longest's; a per-part limit would be a second definition of the part.
@@ -73,6 +77,7 @@
       - env:
           PLAN: {% raw %}${{ needs.plan.result }}{% endraw %}
           PARTS: {% raw %}${{ needs.part.result }}{% endraw %}
+          PLANNED: {% raw %}${{ needs.plan.outputs.parts }}{% endraw %}
           GH_TOKEN: {% raw %}${{ github.token }}{% endraw %}
           MISE_TASK_RUN_AUTO_INSTALL: "false"
         run: mise run ci:check

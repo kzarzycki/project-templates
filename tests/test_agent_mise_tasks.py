@@ -897,6 +897,27 @@ class AgentMiseTasksTest(unittest.TestCase):
                 self.assertEqual(0, result.returncode, result.stderr)
                 self.assertEqual(expected, json.loads(result.stdout))
 
+    def test_ci_parts_on_a_push_the_merge_queue_tested_lists_no_part(self) -> None:
+        (self.bin / "mise").symlink_to(MISE)
+        gh = self.bin / "gh"
+        gh.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$COMMAND_LOG"\n[ -n "$GH_COUNT" ] || exit 1\necho "$GH_COUNT"\n')
+        gh.chmod(0o755)
+        self.env.update({"GITHUB_REPOSITORY": "o/r", "GITHUB_SHA": "abc",
+                         "GITHUB_WORKFLOW_REF": "o/r/.github/workflows/ci.yml@refs/heads/main"})
+        everything = ["check:agents", "check:lint", "check:secrets", "check:unit"]
+        # A wrong skip leaves main untested, so anything but a found run, the lookup failing included, runs every part.
+        for event, count, expected in (("push", "1", []), ("push", "0", everything), ("push", "", everything),
+                                       ("merge_group", "1", everything), ("pull_request", "1", everything)):
+            with self.subTest(event=event, count=count):
+                self.env.update({"GITHUB_EVENT_NAME": event, "GH_COUNT": count})
+                result = self.run_task("ci:parts")
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertEqual(expected, json.loads(result.stdout))
+        self.assertIn(
+            "api repos/o/r/actions/workflows/ci.yml/runs?event=merge_group&status=success&head_sha=abc --jq .total_count",
+            self.commands(),
+        )
+
     def test_ci_parts_in_a_monorepo_root_lists_the_roots_own_parts_by_their_bare_names(self) -> None:
         (self.bin / "mise").symlink_to(MISE)
         config = self.project / "mise.toml"
@@ -924,10 +945,13 @@ class AgentMiseTasksTest(unittest.TestCase):
         self.fake_github(failed_jobs=["check:unit", "plan"])
         self.env.update({"GITHUB_REPOSITORY": "o/r", "GITHUB_RUN_ID": "1", "GITHUB_RUN_ATTEMPT": "1"})
 
-        for plan, parts, code in (("success", "success", 0), ("success", "failure", 1),
-                                  ("success", "skipped", 1), ("failure", "skipped", 1)):
-            with self.subTest(plan=plan, parts=parts):
-                self.env.update({"PLAN": plan, "PARTS": parts})
+        for plan, parts, planned, code in (("success", "success", '["check:unit"]', 0),
+                                           ("success", "failure", '["check:unit"]', 1),
+                                           ("success", "skipped", '["check:unit"]', 1),
+                                           ("success", "skipped", "[]", 0),  # nothing to run: a queued commit's push
+                                           ("failure", "skipped", "", 1)):
+            with self.subTest(plan=plan, parts=parts, planned=planned):
+                self.env.update({"PLAN": plan, "PARTS": parts, "PLANNED": planned})
                 result = self.run_task("ci:check")
                 self.assertEqual(code, result.returncode, result.stdout + result.stderr)
         self.assertIn("::error::check:unit failed; rerun it with: mise run check:unit", result.stdout)
