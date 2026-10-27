@@ -627,6 +627,34 @@ class AgentMiseTasksTest(unittest.TestCase):
         self.assertEqual(1, result.returncode)
         self.assertIn("gh is not logged in", result.stderr)
 
+    def test_deps_renovate_branch_dry_runs_that_branch_with_the_local_config(self) -> None:
+        gh = self.bin / "gh"
+        gh.write_text(
+            "#!/bin/sh\n"
+            'case "$1 $2" in\n'
+            '  "auth token") echo gho_test ;;\n'
+            '  "api -i") printf "HTTP/2.0 200 OK\\r\\nX-Oauth-Scopes: repo, workflow\\r\\n\\r\\n{}\\n" ;;\n'
+            '  "repo view") echo owner/repo ;;\n'
+            "  *) exit 9 ;;\n"
+            "esac\n"
+        )
+        gh.chmod(0o755)
+        renovate = self.bin / "mise"  # the task runs Renovate through `mise exec`
+        renovate.write_text('#!/bin/sh\nenv | grep ^RENOVATE_ | grep -v TOKEN | sort > "$COMMAND_LOG.env"\necho "$@" > "$COMMAND_LOG"\n')
+        renovate.chmod(0o755)
+        result = self.run_task("deps:renovate", "--branch", "feat/x", "--print-config")
+        self.assertEqual(0, result.returncode, result.stderr)
+        env = dict(line.split("=", 1) for line in Path(f"{self.log}.env").read_text().splitlines())
+        self.assertEqual((f"{self.project.resolve()}/renovate.json", '["feat/x"]', "ignored", "full"),
+                         (str(Path(env["RENOVATE_CONFIG_FILE"]).resolve()), env["RENOVATE_BASE_BRANCH_PATTERNS"],
+                          env["RENOVATE_REQUIRE_CONFIG"], env["RENOVATE_DRY_RUN"]))
+        self.assertEqual("exec node@24.21.0 -- npx --yes renovate@44.145.1 --print-config", self.commands()[0])
+        self.assertEqual(2, self.run_task("deps:renovate", "--branch").returncode)
+        self.run_task("deps:renovate")
+        plain = dict(line.split("=", 1) for line in Path(f"{self.log}.env").read_text().splitlines())
+        self.assertNotIn("RENOVATE_CONFIG_FILE", plain)
+        self.assertEqual("required", plain["RENOVATE_REQUIRE_CONFIG"])
+
     def test_check_unit_measures_changed_lines_against_the_commit_ci_passes(self) -> None:
         for name in ("uv",):
             fake_executable(self.bin, name)
