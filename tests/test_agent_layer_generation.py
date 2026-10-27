@@ -1830,6 +1830,9 @@ class RenovateGenerationTest(unittest.TestCase):
         self.assertEqual((["verify"], True, False), (agent["addLabels"], agent["draftPR"], agent["automerge"]))
         self.assertEqual(["mise run agent:sync -- --refresh"], agent["postUpgradeTasks"]["commands"])
         self.assertTrue(rules["tools and libraries"]["automerge"])
+        maintenance = config["lockFileMaintenance"]
+        self.assertEqual((True, rules["tools and libraries"]["schedule"], True),
+                         (maintenance["enabled"], maintenance["schedule"], maintenance["automerge"]))
         tasks = tomllib.loads((project / "mise.toml").read_text())["tasks"]
         self.assertIn("deps:renovate", tasks)
         self.assertIn("^mise run agent:sync -- --refresh$", tasks["deps:renovate"]["run"])
