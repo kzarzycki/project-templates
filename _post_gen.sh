@@ -64,9 +64,10 @@ case "$language" in
     log "java project — run ./gradlew build when ready"
     ;;
 esac
-# A uv project outside the python leaves (dbt) still needs its lock committed: CI runs
-# `uv sync --locked`, which fails without one.
-if [ "$language" != python ] && [ -f pyproject.toml ] && [ ! -f uv.lock ] && with_tools uv --version >/dev/null 2>&1; then
+# dbt is a uv project outside the python leaves, and still needs its lock committed: CI runs
+# `uv sync --locked`, which fails without one. Only dbt: another leaf adopted onto a repo whose
+# pyproject.toml belongs to Poetry or plain PEP 621 must not get a uv.lock.
+if [ "$project_type" = data/dbt ] && [ -f pyproject.toml ] && [ ! -f uv.lock ] && with_tools uv --version >/dev/null 2>&1; then
   with_tools uv lock >/dev/null 2>&1 && log "uv lock" || log "uv lock skipped: run it before the first push"
 fi
 
