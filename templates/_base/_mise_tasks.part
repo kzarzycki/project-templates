@@ -149,11 +149,25 @@ run = "{{ scripts_dir }}/check-symlinks.sh"
 description = "Prints the check: parts this change needs, for CI's matrix."
 # A part with a key in .github/check-paths.yml runs only when its filter matched: CHANGES is the
 # keys that matched, as JSON (dorny/paths-filter's `changes`). Without CHANGES every part runs.
-# In GitHub Actions it also writes the list to the step's output and summary.
+# In GitHub Actions it also writes the list to the step's output and summary. A push lists no part
+# when a merge_group run of this workflow already passed on its commit: a merge queue lands the
+# commit it tested, so the push would repeat it. Any other push, or a failed lookup, runs every part.
 run = '''
 mise tasks ls --json | python3 -c '
-import json, os, re, sys
+import json, os, re, subprocess, sys
 from pathlib import Path
+
+
+def tested_by_the_queue():
+    workflow = os.environ.get("GITHUB_WORKFLOW_REF", "").split("@")[0].rsplit("/", 1)[-1]
+    query = "repos/{}/actions/workflows/{}/runs?event=merge_group&status=success&head_sha={}".format(
+        os.environ.get("GITHUB_REPOSITORY"), workflow, os.environ.get("GITHUB_SHA"))
+    try:
+        found = subprocess.run(["gh", "api", query, "--jq", ".total_count"], capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return found.returncode == 0 and found.stdout.strip() not in ("", "0")
+
 
 # A mise monorepo root lists its own tasks as //:<task>, and CI runs them by the bare name.
 names = [t["name"].removeprefix("//:") for t in json.load(sys.stdin)]
@@ -165,7 +179,12 @@ changes = os.environ.get("CHANGES")
 matched = set(json.loads(changes or "[]")) if changes is not None else set(filtered)
 run = [part for part in parts if part not in filtered or part in matched]
 skipped = [part for part in parts if part not in run]
+queued = os.environ.get("GITHUB_EVENT_NAME") == "push" and tested_by_the_queue()
+if queued:
+    run, skipped = [], []
 print(json.dumps(run))
+if queued:
+    print("skipped every part: a merge_group run of this workflow passed on this commit", file=sys.stderr)
 for part in skipped:
     print(f"skipped {part}: its filter in {paths} matched no changed file", file=sys.stderr)
 if os.environ.get("GITHUB_OUTPUT"):
@@ -173,6 +192,8 @@ if os.environ.get("GITHUB_OUTPUT"):
         out.write(f"parts={json.dumps(run)}\n")
 if os.environ.get("GITHUB_STEP_SUMMARY"):
     with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as out:
+        if queued:
+            out.write("- every part: skipped, the merge queue tested this commit\n")
         out.write("".join(f"- `{part}`: runs\n" for part in run))
         out.write("".join(f"- `{part}`: skipped, its path filter matched no change\n" for part in skipped))
 '
@@ -180,10 +201,11 @@ if os.environ.get("GITHUB_STEP_SUMMARY"):
 
 [tasks."ci:check"]
 description = "CI's aggregate check: fails unless the plan and every part passed, naming each failed part and the command that reruns it."
-# PLAN and PARTS are the plan and matrix jobs' results. Locally `mise run check` is only the
-# fast set, so a failed part names its own command.
+# PLAN and PARTS are the plan and matrix jobs' results, PLANNED the plan's parts: none skips the
+# matrix. Locally `mise run check` is only the fast set, so a failed part names its own command.
 run = '''
 if [ "${PLAN:-}" = success ] && [ "${PARTS:-}" = success ]; then echo "every check: part passed"; exit 0; fi
+if [ "${PLAN:-}" = success ] && [ "${PARTS:-}" = skipped ] && [ "${PLANNED:-}" = "[]" ]; then echo "the plan listed no check: part"; exit 0; fi
 echo "::error::plan: ${PLAN:-unknown}, parts: ${PARTS:-unknown}"
 failed="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs" --jq '.jobs[] | select(.conclusion == "failure" or .conclusion == "cancelled") | .name')" || failed=""
 for part in $failed; do

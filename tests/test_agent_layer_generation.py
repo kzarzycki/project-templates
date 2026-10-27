@@ -1432,6 +1432,17 @@ class AgentLayerGenerationTest(unittest.TestCase):
                 self.assertTrue(os.access(scripts / "check-symlinks.sh", os.X_OK))
                 self.assertIn(f"run = '{scripts.name}/files-or-repo ", (project / "mise.toml").read_text())
 
+    def test_ci_skips_a_push_the_queue_tested_whether_or_not_the_queue_was_answered(self) -> None:
+        # Only a merge_group run on the commit skips it, so a repo without a queue still tests every push to main.
+        queued, unqueued = (yaml.safe_load((render(merge_queue=answer) / ".github/workflows/ci.yml").read_text())
+                            for answer in (True, False))
+        self.assertEqual(queued["jobs"], unqueued["jobs"])
+        jobs = queued["jobs"]
+        self.assertEqual("read", jobs["plan"]["permissions"]["actions"])
+        self.assertEqual("${{ github.token }}", jobs["plan"]["steps"][-1]["env"]["GH_TOKEN"])
+        self.assertEqual("${{ needs.plan.outputs.parts != '[]' }}", jobs["part"]["if"])
+        self.assertEqual("${{ needs.plan.outputs.parts }}", jobs["check"]["steps"][-1]["env"]["PLANNED"])
+
     def test_without_a_merge_queue_the_ruleset_keeps_every_other_rule(self) -> None:
         # GitHub offers merge queues only on organization-owned repos; every leaf includes the one ruleset template.
         queued = json.loads((render() / ".github/rulesets/main.json").read_text())
