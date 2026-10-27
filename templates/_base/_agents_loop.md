@@ -102,8 +102,8 @@ reviews: the template, the agent packages and every major. Its routine group
 runs on the developer's token, so its PRs are the developer's and a verifier
 reviews them too. The commented `bot.renovate` entry above exempts them
 instead: it names Renovate by its `renovate/` branch, and holds only when every
-commit is the developer's (set Renovate's `gitAuthor` to them) and every file
-matches its `paths`. The `risk` rule still holds a match on its own paths, so
+commit is the developer's (`deps:renovate` sets Renovate's git author to
+your git identity) and every file matches its `paths`. The `risk` rule still holds a match on its own paths, so
 a workflow update keeps waiting for the owner until `.github/**` narrows to
 what it means to keep, such as `.github/rulesets/**`.
 {% if not include_ci %}
