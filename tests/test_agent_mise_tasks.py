@@ -1152,5 +1152,46 @@ class TerraformMiseTasksTest(unittest.TestCase):
                          self.run_task("apply", "stacks/a"))
 
 
+class FilesOrRepoTest(unittest.TestCase):
+    """scripts/files-or-repo picks the files every lint: task hands its linter (#74)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.project = render("software/python")
+        cls.script = cls.project / "scripts/files-or-repo"
+        env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+        (cls.project / "blob.bin").write_bytes(b"\0\1\2")
+        (cls.project / "skipped.md").write_text("x\n")
+        subprocess.run(["git", "init", "-q", "--template="], cwd=cls.project, env=env, check=True)
+        subprocess.run(["git", "add", "-A"], cwd=cls.project, env=env, check=True)
+        cls.tracked = set(subprocess.run(["git", "ls-files"], cwd=cls.project, env=env, check=True,
+                                         capture_output=True, text=True).stdout.split())
+
+    def picked(self, *args: str) -> list[str]:
+        record = Path(tempfile.mkdtemp()) / "args"
+        linter = f"printf '%s\\n' \"$@\" >> {record}"
+        subprocess.run([str(self.script), *args, "sh", "-c", linter, "linter", "--"] + list(self.files),
+                       cwd=self.project, check=True)
+        return sorted(record.read_text().split()) if record.exists() else []
+
+    def test_given_files_it_passes_those_filtered(self) -> None:
+        self.files = ["README.md", "skipped.md", "pyproject.toml", "missing.md"]
+        self.assertEqual(["README.md", "skipped.md"], self.picked("--only", r"\.md$"))
+        self.assertEqual(["README.md"], self.picked("--only", r"\.md$", "--skip", "^skipped"))
+
+    def test_given_none_it_passes_the_tracked_files(self) -> None:
+        self.files = []
+        self.assertEqual(sorted(self.tracked), self.picked())
+        self.assertEqual(sorted(self.tracked - {"blob.bin"}), self.picked("--text"))
+
+    def test_a_fixer_that_changes_a_file_fails(self) -> None:
+        target = self.project / "skipped.md"
+        before = target.read_text()
+        self.addCleanup(target.write_text, before)
+        changed = subprocess.run([str(self.script), "--fixer", "sh", "-c", 'echo y >> "$1"', "fixer", "--", "skipped.md"],
+                                 cwd=self.project, capture_output=True, text=True)
+        self.assertEqual(1, changed.returncode, changed.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()
