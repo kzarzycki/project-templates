@@ -61,7 +61,7 @@ run = "scripts/gate-slot mise run --skip-tools test:unit"
 [tasks."setup:dev"]
 alias = "bootstrap"
 description = "Installs the git hooks on a fresh checkout."
-run = "pre-commit install --install-hooks"
+run = "pre-commit install --allow-missing-config --install-hooks"
 
 {% if include_fnox -%}
 # Provider credentials come from the fnox profile "infra" (see fnox.toml), so a coding
