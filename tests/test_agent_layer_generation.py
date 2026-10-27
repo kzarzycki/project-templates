@@ -1875,6 +1875,12 @@ class RenovateGenerationTest(unittest.TestCase):
         self.assertIn("deps:renovate", tasks)
         self.assertIn("^mise run agent:sync -- --refresh$", tasks["deps:renovate"]["run"])
 
+    def test_conda_tools_are_looked_up_in_conda_forge(self) -> None:
+        config = json.loads((render(include_mise=True) / "renovate.json").read_text())
+        [rule] = [rule for rule in config["packageRules"] if rule.get("matchDatasources") == ["conda"]]
+        self.assertEqual((["mise"], ["!/\\//"], "conda-forge/{{{packageName}}}"),
+                         (rule["matchManagers"], rule["matchPackageNames"], rule["overridePackageName"]))
+
     def test_the_apm_manager_reads_the_rendered_pin(self) -> None:
         project = render(include_mise=True, include_agent_layer=True)
         manager = json.loads((project / "renovate.json").read_text())["customManagers"][0]
