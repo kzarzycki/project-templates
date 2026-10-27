@@ -1651,6 +1651,35 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertIn('{% set apm_version = "0.33.0" %}', partial)
         self.assertEqual(1, partial.count("0.33.0"))
 
+    def test_renders_need_no_fix_from_the_first_commits_fixers(self) -> None:
+        # The first commit's fixer hooks rewrite whatever they would fix, and the next `copier update`
+        # re-renders the template's version, a phantom diff (#1). So a render is already what they leave:
+        # one final newline, no trailing whitespace, a blank line around a Markdown fence (MD031).
+        leaves = [("software/python", {}), ("software/node", {}), ("software/java", {}), ("data/dbt", {}),
+                  ("authoring/content", {}), ("authoring/content", {"include_mise": False}), ("ai/skills", {}),
+                  ("ai/mcp", {"language": "python"}), ("ai/mcp", {"language": "node"}), ("infra/terraform", {}),
+                  ("apple/xcode", {})]
+        for leaf, answers in leaves:
+            project = render(leaf, **answers)
+            for path in project.rglob("*"):
+                if not path.is_file() or ".git" in path.parts or path.suffix in {".jar", ".png", ".bat"}:
+                    continue
+                text = path.read_bytes().decode("utf-8", "replace")
+                name = f"{leaf} {answers} {path.relative_to(project)}"
+                with self.subTest(file=name):
+                    if text:
+                        self.assertTrue(text.endswith("\n") and not text.endswith("\n\n"), "final newline")
+                    self.assertEqual([], [n for n, line in enumerate(text.splitlines(), 1) if line != line.rstrip()],
+                                     "trailing whitespace")
+                    if path.suffix == ".md":
+                        lines, inside = text.splitlines(), False
+                        for n, line in enumerate(lines):
+                            if line.startswith("```"):
+                                edge = n - 1 if not inside else n + 1
+                                if 0 <= edge < len(lines):
+                                    self.assertEqual("", lines[edge], f"line {n + 1}: fence without a blank line")
+                                inside = not inside
+
     def test_disabled_layer_leaves_no_agent_framework(self) -> None:
         project = render(include_mise=True, include_agent_layer=False)
 
