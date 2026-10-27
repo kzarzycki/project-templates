@@ -3,6 +3,12 @@
   "extends": ["config:recommended", ":semanticCommitTypeAll(chore)"],
   "timezone": "UTC",
   "labels": ["dependencies"],
+  "lockFileMaintenance": {
+    "description": "Routine: refreshes the lock files once a week, so a package pinned only there (a transitive one in uv.lock) updates too.",
+    "enabled": true,
+    "schedule": ["* 0-5 * * 1"],
+    "automerge": true
+  },
 {% if include_agent_layer %}
   "customManagers": [
     {

@@ -433,11 +433,11 @@ class AgentLayerGenerationTest(unittest.TestCase):
         ):
             self.assertIn(remediation, (project / "mise.toml").read_text())
 
-    def test_description_with_colon_renders_valid_apm_yml(self) -> None:
-        description = "Infra: server, network and DNS"
-        project = render("infra/terraform", description=description)
+    def test_description_and_author_with_colon_render_valid_apm_yml(self) -> None:
+        description, author = "Infra: server, network and DNS", "Doe: Jr"
+        project = render("infra/terraform", description=description, author=author)
         manifest = yaml.safe_load((project / "apm.yml").read_text())
-        self.assertEqual(manifest["description"], description)
+        self.assertEqual((description, author), (manifest["description"], manifest["author"]))
 
     def test_engineering_workflow_is_enabled_by_default(self) -> None:
         project = render(
@@ -1613,6 +1613,29 @@ class AgentLayerGenerationTest(unittest.TestCase):
         subprocess.run(["bash", str(ROOT / "_post_gen.sh"), "data/dbt", "python"], cwd=project, env=env, check=True, capture_output=True)
         self.assertTrue((project / "uv.lock").exists())
 
+    def test_setup_dev_hooks_skip_a_worktree_without_the_config(self) -> None:
+        # .git/hooks is shared by every worktree; a branch without .pre-commit-config.yaml must still commit (#14)
+        project = render("authoring/content")
+        env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1",
+               "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+        git = lambda *args, cwd=project: subprocess.run(["git", *args], cwd=cwd, env=env, check=True, capture_output=True)
+        git("init", "-q", "--template=", "-b", "main")
+        git("commit", "-q", "--allow-empty", "-m", "root")
+        other = project.parent / "other"
+        git("worktree", "add", "-q", "-b", "bare-branch", str(other))
+        git("add", "-A")
+        git("commit", "-q", "--no-verify", "-m", "adopt")
+        setup = tomllib.loads((project / "mise.toml").read_text())["tasks"]["setup:dev"]["run"]
+        subprocess.run(["sh", "-c", setup], cwd=project, env=env, check=True, capture_output=True)
+        (other / "note.txt").write_text("x\n")
+        git("add", "note.txt", cwd=other)
+        committed = subprocess.run(["git", "commit", "-q", "-m", "note"], cwd=other, env=env, capture_output=True, text=True)
+        self.assertEqual(0, committed.returncode, committed.stdout + committed.stderr)
+        for leaf in ("software/python", "software/node", "software/java", "data/dbt", "ai/skills", "infra/terraform", "apple/xcode"):
+            run = tomllib.loads((render(leaf) / "mise.toml").read_text())["tasks"]["setup:dev"]["run"]
+            self.assertIn("pre-commit install --allow-missing-config --install-hooks", run, leaf)
+        self.assertEqual(2, (ROOT / "_post_gen.sh").read_text().count("--allow-missing-config --install-hooks"))
+
     def test_apm_version_has_one_template_source(self) -> None:
         partial = (ROOT / "templates/_base/_mise_agent_tasks.part").read_text()
 
@@ -1830,6 +1853,9 @@ class RenovateGenerationTest(unittest.TestCase):
         self.assertEqual((["verify"], True, False), (agent["addLabels"], agent["draftPR"], agent["automerge"]))
         self.assertEqual(["mise run agent:sync -- --refresh"], agent["postUpgradeTasks"]["commands"])
         self.assertTrue(rules["tools and libraries"]["automerge"])
+        maintenance = config["lockFileMaintenance"]
+        self.assertEqual((True, rules["tools and libraries"]["schedule"], True),
+                         (maintenance["enabled"], maintenance["schedule"], maintenance["automerge"]))
         tasks = tomllib.loads((project / "mise.toml").read_text())["tasks"]
         self.assertIn("deps:renovate", tasks)
         self.assertIn("^mise run agent:sync -- --refresh$", tasks["deps:renovate"]["run"])
