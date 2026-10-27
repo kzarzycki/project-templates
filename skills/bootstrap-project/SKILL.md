@@ -51,7 +51,7 @@ script.
 2. **For `ai/mcp` only, pick the toolchain.** Pass `--language python` or
    `--language node` (default python). No other type takes `--language`.
 3. **Infer optionals from context — don't interrogate.** `description`,
-   `license` (default MIT), `include_mise` (default true),
+   `license` (default none; Proprietary, MIT or Apache-2.0), `include_mise` (default true),
    `include_agent_layer` (default true with mise), `include_fnox` (default true
    with the coding-agent integration), `include_engineering_workflow` (default
    true with the coding-agent integration), `engineering_loop` (default true

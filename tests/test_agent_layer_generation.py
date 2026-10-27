@@ -1613,6 +1613,19 @@ class AgentLayerGenerationTest(unittest.TestCase):
         subprocess.run(["bash", str(ROOT / "_post_gen.sh"), "data/dbt", "python"], cwd=project, env=env, check=True, capture_output=True)
         self.assertTrue((project / "uv.lock").exists())
 
+    def test_license_defaults_to_none_and_proprietary_reserves_all_rights(self) -> None:
+        # a new repo stays closed unless someone opens it (#2)
+        default = render()
+        self.assertFalse((default / "LICENSE").exists())
+        self.assertNotIn("license =", (default / "pyproject.toml").read_text())
+        closed = render(license="Proprietary", author="Ada Lovelace", year="2026")
+        self.assertEqual("Copyright (c) 2026 Ada Lovelace. All rights reserved.", (closed / "LICENSE").read_text().strip())
+        self.assertEqual("LicenseRef-Proprietary", tomllib.loads((closed / "pyproject.toml").read_text())["project"]["license"])
+        self.assertIn("Proprietary © 2026 Ada Lovelace", (closed / "README.md").read_text())
+        opened = render(license="MIT", author="Ada Lovelace")
+        self.assertTrue((opened / "LICENSE").read_text().startswith("MIT License"))
+        self.assertEqual("MIT", tomllib.loads((opened / "pyproject.toml").read_text())["project"]["license"])
+
     def test_apm_version_has_one_template_source(self) -> None:
         partial = (ROOT / "templates/_base/_mise_agent_tasks.part").read_text()
 

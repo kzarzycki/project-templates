@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "{{ description }}"
 readme = "README.md"
 requires-python = ">={{ python_version }}"
-{% if license != 'none' %}license = "{{ license }}"
+{% if license != 'none' %}license = "{{ 'LicenseRef-Proprietary' if license == 'Proprietary' else license }}"
 {% endif %}authors = [{ name = "{{ author }}", email = "{{ email }}" }]
 dependencies = []
 

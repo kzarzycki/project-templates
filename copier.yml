@@ -48,8 +48,9 @@ email:
 
 license:
   type: str
-  default: MIT
-  choices: [MIT, Apache-2.0, none]
+  default: none
+  help: "none and Proprietary keep the code closed (Proprietary writes an all-rights-reserved LICENSE); MIT and Apache-2.0 open it"
+  choices: [none, Proprietary, MIT, Apache-2.0]
 
 include_mise:
   type: bool
