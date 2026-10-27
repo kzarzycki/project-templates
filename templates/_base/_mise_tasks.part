@@ -217,9 +217,11 @@ export RENOVATE_TOKEN="$token" RENOVATE_PLATFORM=github RENOVATE_ONBOARDING=fals
 # mise appends the task's arguments to the script's last line, so that line calls a function.
 run_renovate() {
   # Proof for a branch's renovate.json before it lands: Renovate reads this checkout's file as its
-  # config and dry-runs only that branch; a config error exits non-zero.
+  # config and dry-runs only that branch. Renovate only warns on a config error, so the validator
+  # runs first and its failure is the task's.
   if [ "${1:-}" = --branch ]; then
     [ -n "${2:-}" ] || { echo "deps:renovate: --branch needs a branch name" >&2; exit 2; }
+    mise exec node@24.21.0 -- npx --yes --package renovate@44.145.1 -- renovate-config-validator renovate.json || exit
     export RENOVATE_CONFIG_FILE="$PWD/renovate.json" RENOVATE_BASE_BRANCH_PATTERNS="[\\"$2\\"]" \\
       RENOVATE_REQUIRE_CONFIG=ignored RENOVATE_DRY_RUN=full
     shift 2

@@ -640,7 +640,8 @@ class AgentMiseTasksTest(unittest.TestCase):
         )
         gh.chmod(0o755)
         renovate = self.bin / "mise"  # the task runs Renovate through `mise exec`
-        renovate.write_text('#!/bin/sh\nenv | grep ^RENOVATE_ | grep -v TOKEN | sort > "$COMMAND_LOG.env"\necho "$@" > "$COMMAND_LOG"\n')
+        renovate.write_text('#!/bin/sh\nenv | grep ^RENOVATE_ | grep -v TOKEN | sort > "$COMMAND_LOG.env"\necho "$@" >> "$COMMAND_LOG"\n'
+                            'case "$*" in *config-validator*) exit "${VALIDATOR_EXIT:-0}" ;; esac\n')
         renovate.chmod(0o755)
         result = self.run_task("deps:renovate", "--branch", "feat/x", "--print-config")
         self.assertEqual(0, result.returncode, result.stderr)
@@ -648,9 +649,18 @@ class AgentMiseTasksTest(unittest.TestCase):
         self.assertEqual((f"{self.project.resolve()}/renovate.json", '["feat/x"]', "ignored", "full"),
                          (str(Path(env["RENOVATE_CONFIG_FILE"]).resolve()), env["RENOVATE_BASE_BRANCH_PATTERNS"],
                           env["RENOVATE_REQUIRE_CONFIG"], env["RENOVATE_DRY_RUN"]))
-        self.assertEqual("exec node@24.21.0 -- npx --yes renovate@44.145.1 --print-config", self.commands()[0])
+        self.assertEqual(["exec node@24.21.0 -- npx --yes --package renovate@44.145.1 -- renovate-config-validator renovate.json",
+                          "exec node@24.21.0 -- npx --yes renovate@44.145.1 --print-config"], self.commands())
         self.assertEqual(2, self.run_task("deps:renovate", "--branch").returncode)
+        # Renovate only warns on an invalid config; the validator's failure stops the run.
+        self.log.unlink()
+        self.env["VALIDATOR_EXIT"] = "1"
+        self.assertEqual(1, self.run_task("deps:renovate", "--branch", "feat/x").returncode)
+        self.assertEqual(1, len(self.commands()))
+        del self.env["VALIDATOR_EXIT"]
+        self.log.unlink()
         self.run_task("deps:renovate")
+        self.assertEqual(["exec node@24.21.0 -- npx --yes renovate@44.145.1"], self.commands())
         plain = dict(line.split("=", 1) for line in Path(f"{self.log}.env").read_text().splitlines())
         self.assertNotIn("RENOVATE_CONFIG_FILE", plain)
         self.assertEqual("required", plain["RENOVATE_REQUIRE_CONFIG"])
