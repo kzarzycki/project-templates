@@ -1642,6 +1642,27 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertIn('{% set apm_version = "0.33.0" %}', partial)
         self.assertEqual(1, partial.count("0.33.0"))
 
+    def test_with_ci_a_skipped_approvals_run_cancels_nothing(self) -> None:
+        # With CI on, a run whose job skips (a draft, dependabot) gets its own group, as without CI (#45)
+        approvals = yaml.safe_load((render() / ".github/workflows/approvals.yml").read_text())
+        job = approvals["jobs"]["approvals"]
+        pr = {"number": 17, "draft": False}
+        events = {
+            "label": ({"event_name": "pull_request", "actor": "owner", "event": {"pull_request": pr}}, True),
+            "review": ({"event_name": "pull_request_review", "actor": "verifier", "event": {"pull_request": pr}}, True),
+            "draft label": ({"event_name": "pull_request", "actor": "owner", "event": {"pull_request": {"number": 17, "draft": True}}}, False),
+            "dependabot label": ({"event_name": "pull_request", "actor": "dependabot[bot]", "event": {"pull_request": pr}}, False),
+            "push run": ({"event_name": "workflow_run", "event": {"pull_request": pr, "workflow_run": {"event": "push"}}}, False),
+        }
+        for name, (github, runs) in events.items():
+            with self.subTest(event=name):
+                self.assertEqual(runs, bool(evaluate(job["if"], github)))
+                group = evaluate(approvals["concurrency"]["group"], {**github, "run_id": name})
+                self.assertEqual("approvals-17" if runs else f"approvals-skipped-{name}", group)
+        ci_completion = {"event_name": "workflow_run", "event": {"workflow_run": {"event": "pull_request"}}}
+        self.assertTrue(evaluate(job["if"], ci_completion))
+        self.assertIn("github.event.workflow_run.pull_requests[0].number", approvals["concurrency"]["group"])
+
     def test_disabled_layer_leaves_no_agent_framework(self) -> None:
         project = render(include_mise=True, include_agent_layer=False)
 
