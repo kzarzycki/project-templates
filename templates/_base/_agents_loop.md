@@ -69,8 +69,10 @@ the gates require and who approves. `risk` also takes `labels` (such as
 `size:XL` or `area:<name>`, one per line) and `always: true`, which holds every
 merge for the owner. `cap: <n>` under `loop` changes the verifier's pass cap
 from the skill's default, and a `plan` section with `labels` asks for the
-owner's approval of a matching plan. Required reviews and code owners go in
-branch protection and `CODEOWNERS`, which the loop obeys.
+owner's approval of a matching plan. Required reviews go in branch protection,
+which the loop obeys. The template ships no `CODEOWNERS`: GitHub would ask its
+owners to review every PR the loop opens. Keep paths to a team with a push
+ruleset instead, and ask someone for a review by name when it needs one.
 
 Three settings the seed leaves out change this. `auto: true` under `spec`, in place of
 the list, approves every spec by policy, epics included, except
