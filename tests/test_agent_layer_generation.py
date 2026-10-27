@@ -433,11 +433,11 @@ class AgentLayerGenerationTest(unittest.TestCase):
         ):
             self.assertIn(remediation, (project / "mise.toml").read_text())
 
-    def test_description_with_colon_renders_valid_apm_yml(self) -> None:
-        description = "Infra: server, network and DNS"
-        project = render("infra/terraform", description=description)
+    def test_description_and_author_with_colon_render_valid_apm_yml(self) -> None:
+        description, author = "Infra: server, network and DNS", "Doe: Jr"
+        project = render("infra/terraform", description=description, author=author)
         manifest = yaml.safe_load((project / "apm.yml").read_text())
-        self.assertEqual(manifest["description"], description)
+        self.assertEqual((description, author), (manifest["description"], manifest["author"]))
 
     def test_engineering_workflow_is_enabled_by_default(self) -> None:
         project = render(
