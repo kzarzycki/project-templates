@@ -35,5 +35,5 @@ alias = "bootstrap"
 description = "Installs the dependencies and the git hooks on a fresh checkout."
 run = '''
 if [ -f package-lock.json ]; then npm ci; else npm install; fi
-pre-commit install --install-hooks
+pre-commit install --allow-missing-config --install-hooks
 '''

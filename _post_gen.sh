@@ -78,9 +78,9 @@ fi
 #    install migrates any existing hook to .legacy instead.
 if with_tools pre-commit --version >/dev/null 2>&1; then
   if [ "$fresh_repo" = true ]; then
-    with_tools pre-commit install -f --install-hooks >/dev/null 2>&1 && log "pre-commit installed" || true
+    with_tools pre-commit install -f --allow-missing-config --install-hooks >/dev/null 2>&1 && log "pre-commit installed" || true
   else
-    with_tools pre-commit install --install-hooks >/dev/null 2>&1 && log "pre-commit installed (existing hooks preserved)" || true
+    with_tools pre-commit install --allow-missing-config --install-hooks >/dev/null 2>&1 && log "pre-commit installed (existing hooks preserved)" || true
   fi
 else
   log "pre-commit not found — run 'uv tool install pre-commit && pre-commit install'"
