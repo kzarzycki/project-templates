@@ -65,9 +65,11 @@
         stages: [commit-msg]
       # A push runs the changed tests and the branch's secret scan. The loop's proofs stay
       # off the push: a push is reversible and a draft can't merge.
+      # git exports GIT_DIR and GIT_INDEX_FILE to a linked worktree's hooks; a test that runs
+      # `git init` in a temp dir would then act on this repo, so the tests start without them.
       - id: test:changed
         name: test:changed
-        entry: mise run test:changed
+        entry: sh -c 'unset $(git rev-parse --local-env-vars); exec mise run test:changed'
         language: system
         pass_filenames: false
         always_run: true

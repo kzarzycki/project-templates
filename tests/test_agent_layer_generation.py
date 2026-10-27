@@ -1273,9 +1273,11 @@ class AgentLayerGenerationTest(unittest.TestCase):
             for repo in yaml.safe_load((project / ".pre-commit-config.yaml").read_text())["repos"]
             for hook in repo["hooks"]
         }
+        entries = {"test:changed": "sh -c 'unset $(git rev-parse --local-env-vars); exec mise run test:changed'",
+                   "check:secrets": "mise run check:secrets"}
         for name in ("test:changed", "check:secrets"):
             self.assertEqual(
-                {"id": name, "name": name, "entry": f"mise run {name}", "language": "system",
+                {"id": name, "name": name, "entry": entries[name], "language": "system",
                  "pass_filenames": False, "always_run": True, "stages": ["pre-push"]},
                 hooks[name],
             )
@@ -1612,6 +1614,29 @@ class AgentLayerGenerationTest(unittest.TestCase):
         env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
         subprocess.run(["bash", str(ROOT / "_post_gen.sh"), "data/dbt", "python"], cwd=project, env=env, check=True, capture_output=True)
         self.assertTrue((project / "uv.lock").exists())
+
+    def test_pre_push_tests_run_outside_a_linked_worktrees_git_dir(self) -> None:
+        # a pushed test that makes its own repo must not touch the pushing one (#25)
+        project = render("software/python")
+        env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1",
+               "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+        [hook] = [hook for repo in yaml.safe_load((project / ".pre-commit-config.yaml").read_text())["repos"]
+                  for hook in repo["hooks"] if hook["id"] == "test:changed"]
+        git = lambda *args, cwd=project: subprocess.run(["git", *args], cwd=cwd, env=env, check=True, capture_output=True, text=True)
+        git("init", "-q", "--template=", "-b", "main")
+        git("commit", "-q", "--allow-empty", "-m", "root")
+        worktree = project.parent / "linked"
+        git("worktree", "add", "-q", "-b", "feature", str(worktree))
+        head = git("rev-parse", "HEAD", cwd=worktree).stdout
+        # What a test inside `mise run test:changed` would do; git's hook environment for a linked worktree.
+        fixture = project.parent / "fixture"
+        probe = f"git init -q --template= {fixture} && git -C {fixture} commit -q --allow-empty -m fixture"
+        hook_env = {**env, "GIT_DIR": str(project / ".git/worktrees/linked"), "GIT_INDEX_FILE": str(project / ".git/worktrees/linked/index")}
+        entry = hook["entry"].replace("exec mise run test:changed", probe).replace("mise run test:changed", probe)
+        subprocess.run(entry, shell=True, cwd=worktree, env=hook_env, check=True, capture_output=True)
+        self.assertEqual(head, git("rev-parse", "HEAD", cwd=worktree).stdout)
+        self.assertNotEqual("true", subprocess.run(["git", "config", "core.bare"], cwd=project, env=env, capture_output=True, text=True).stdout.strip())
+        self.assertTrue((fixture / ".git").is_dir())
 
     def test_apm_version_has_one_template_source(self) -> None:
         partial = (ROOT / "templates/_base/_mise_agent_tasks.part").read_text()
