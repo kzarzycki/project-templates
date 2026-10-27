@@ -530,7 +530,7 @@ edited: Copier removes a file the template stopped shipping without comparing
 its content. To keep your own, restore it from git in the update commit
 (`git checkout HEAD -- CODEOWNERS`).
 
-Updating to the next release moves the pack to `engineering-v0.24.1`. Since
+Updating to the next release moves the pack to `engineering-v0.24.4`. Since
 0.24.0 its `approvals.py`, `labels.py` and `board.py` read loop.md's and
 issue-tracker.md's settings from a YAML block under `## Settings` and refuse a
 file still on the line form (kzarzycki/agent-skills#344, #352). An older

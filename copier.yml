@@ -153,7 +153,7 @@ engineering_capability_ref:
   type: str
   when: false
   # An exact release tag, which Renovate (renovate.json) moves to each new release.
-  default: "engineering-v0.24.1"
+  default: "engineering-v0.24.4"
 
 # An unasked question keeps its default, so the loop is on only when every
 # question it depends on was answered yes.

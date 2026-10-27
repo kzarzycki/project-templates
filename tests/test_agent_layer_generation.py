@@ -398,7 +398,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
             [
                 {
                     "git": "kzarzycki/agent-skills/engineering",
-                    "ref": "engineering-v0.24.1",
+                    "ref": "engineering-v0.24.4",
                 }
             ],
             yaml.safe_load(apm)["dependencies"]["apm"],
@@ -449,7 +449,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         manifest = (project / "apm.yml").read_text()
         answers = (project / ".copier-answers.yml").read_text()
         self.assertEqual(1, manifest.count("git: kzarzycki/agent-skills/engineering"))
-        self.assertIn("ref: engineering-v0.24.1", manifest)
+        self.assertIn("ref: engineering-v0.24.4", manifest)
         self.assertIn("include_engineering_workflow: true", answers)
         self.assertNotIn("engineering_capability_source", answers)
         self.assertNotIn("engineering_capability_ref", answers)
@@ -1291,6 +1291,14 @@ class AgentLayerGenerationTest(unittest.TestCase):
             settings(approvals_seed),
         )
         self.assertNotRegex(approvals_seed, re.compile(r"^[ \t]*[-*] +(?:spec|plan|merge|risk|bot|signoff):", re.MULTILINE))
+        # Uncommented, the seed's bot entry is the pack's updater named by its branch, over the routine group's files.
+        bot = re.search(r"^# bot:\n(?:#  .*\n)+", approvals_seed, re.MULTILINE)
+        self.assertEqual(
+            {"bot": {"renovate": {"branch": "renovate/", "paths": [
+                "uv.lock", "package-lock.json", "pyproject.toml", "package.json", "mise.toml", ".github/workflows/*.yml",
+            ]}}},
+            yaml.safe_load(re.sub(r"^# ?", "", bot[0], flags=re.MULTILINE)),
+        )
         for line in ("`auto: true`", "`signoff`", "`opt_out: true`", "`Engineering loop: off`", "`always: true`"):
             self.assertIn(line, approvals_seed)
         # board maps each loop column to the board column of its own name, as the pack's board.py reads it.
