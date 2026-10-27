@@ -1841,6 +1841,12 @@ class AgentLayerGenerationTest(unittest.TestCase):
         ):
             self.assertNotRegex(path, managed, f"{path} must stay linted")
 
+    def test_the_loops_scratch_folder_is_ignored(self) -> None:
+        project = render()
+        subprocess.run(["git", "init", "-q", str(project)], check=True)
+        ignored = subprocess.run(["git", "-C", str(project), "check-ignore", "tmp/loop/report.md"], capture_output=True)
+        self.assertEqual(0, ignored.returncode)
+
 
 class RenovateGenerationTest(unittest.TestCase):
     def test_mise_projects_get_renovate_and_no_dependabot(self) -> None:

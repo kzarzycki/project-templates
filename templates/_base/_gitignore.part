@@ -16,6 +16,9 @@ fnox.local.toml
 # Agents' worktrees
 .worktrees/
 
+# The engineering loop's briefs, verifier reports and repros
+tmp/
+
 # OS / editor
 .DS_Store
 *.swp
