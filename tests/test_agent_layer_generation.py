@@ -1613,6 +1613,15 @@ class AgentLayerGenerationTest(unittest.TestCase):
         subprocess.run(["bash", str(ROOT / "_post_gen.sh"), "data/dbt", "python"], cwd=project, env=env, check=True, capture_output=True)
         self.assertTrue((project / "uv.lock").exists())
 
+    def test_post_gen_leaves_a_foreign_pyproject_unlocked(self) -> None:
+        # adopting a non-uv leaf onto a Poetry repo must not add a uv.lock nobody asked for (#34)
+        poetry = b'[tool.poetry]\nname = "x"\nversion = "0.1.0"\ndescription = ""\nauthors = []\n'
+        project = render("authoring/content", existing={"pyproject.toml": poetry}, include_mise=False)
+        subprocess.run(["git", "init", "-q"], cwd=project, check=True)
+        env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+        subprocess.run(["bash", str(ROOT / "_post_gen.sh"), "authoring/content", "python"], cwd=project, env=env, check=True, capture_output=True)
+        self.assertFalse((project / "uv.lock").exists())
+
     def test_setup_dev_hooks_skip_a_worktree_without_the_config(self) -> None:
         # .git/hooks is shared by every worktree; a branch without .pre-commit-config.yaml must still commit (#14)
         project = render("authoring/content")
