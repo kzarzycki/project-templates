@@ -1950,9 +1950,12 @@ class RenovateGenerationTest(unittest.TestCase):
         self.assertFalse((project / ".github/dependabot.yml").exists())
         self.assertEqual(["github-tags"], [m["datasourceTemplate"] for m in config["customManagers"]])
         rules = {rule.get("groupName"): rule for rule in config["packageRules"]}
-        agent = rules["template and agent packages"]
-        self.assertEqual((["verify"], True, False), (agent["addLabels"], agent["draftPR"], agent["automerge"]))
-        self.assertEqual(["mise run agent:sync -- --refresh"], agent["postUpgradeTasks"]["commands"])
+        # Copier refuses a tree another manager changed, so the template and the agent packages update apart (#88).
+        for group, managers in (("template", ["copier"]), ("agent packages", ["custom.regex"])):
+            rule = rules[group]
+            self.assertEqual((managers, ["verify"], True, False),
+                             (rule["matchManagers"], rule["addLabels"], rule["draftPR"], rule["automerge"]))
+            self.assertEqual(["mise run agent:sync -- --refresh"], rule["postUpgradeTasks"]["commands"])
         self.assertTrue(rules["tools and libraries"]["automerge"])
         maintenance = config["lockFileMaintenance"]
         self.assertEqual((True, rules["tools and libraries"]["schedule"], True),

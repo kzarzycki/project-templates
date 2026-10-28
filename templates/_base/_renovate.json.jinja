@@ -41,10 +41,11 @@
       "draftPR": true,
       "automerge": false
     },
+    {%- for manager, group in [("copier", "template")] + ([("custom.regex", "agent packages")] if include_agent_layer else []) %}
     {
-      "description": "Verify: the template{% if include_agent_layer %} and the agent packages{% endif %}, one draft PR a night, which an agent reviews before it lands.",
-      "matchManagers": ["copier"{% if include_agent_layer %}, "custom.regex"{% endif %}],
-      "groupName": "template{% if include_agent_layer %} and agent packages{% endif %}",
+      "description": "Verify: the {{ group }}, one draft PR a night, which an agent reviews before it lands.{% if include_agent_layer %} Its own branch: copier refuses a tree another manager already changed.{% endif %}",
+      "matchManagers": ["{{ manager }}"],
+      "groupName": "{{ group }}",
       "schedule": ["* 0-5 * * *"],
       "minimumReleaseAge": null,
       "addLabels": ["verify"],
@@ -56,6 +57,7 @@
         "executionMode": "branch"
       }{% endif %}
     },
+    {%- endfor %}
     {
       "description": "mise pins conda tools by bare name and installs them from conda-forge; anaconda.org names a package by channel.",
       "matchManagers": ["mise"],

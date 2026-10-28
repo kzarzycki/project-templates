@@ -78,7 +78,11 @@ if [ "$mode" = frozen ]; then
 fi
 case "$mode" in
   default) apm install --target "$agent_targets" ;;
-  refresh) apm update --yes --target "$agent_targets" ;;
+  refresh)
+    apm update --yes --target "$agent_targets"
+    # apm 0.35.0's update can leave out a skill that ships scripts/; an install puts it back.
+    apm install --target "$agent_targets"
+    ;;
   frozen)
     apm install --frozen --target "$agent_targets"
     apm audit --ci --no-policy

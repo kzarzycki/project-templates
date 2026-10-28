@@ -162,9 +162,10 @@ class AgentMiseTasksTest(unittest.TestCase):
         result = self.run_task("agent:sync", "--refresh")
 
         self.assertEqual(0, result.returncode, result.stderr)
+        # The install after the update puts back a skill apm 0.35.0's update leaves out (#88).
         self.assertEqual(
-            f"{self.bin}/apm update --yes --target claude,codex",
-            self.commands()[0],
+            [f"{self.bin}/apm update --yes --target claude,codex", f"{self.bin}/apm install --target claude,codex"],
+            self.commands()[:2],
         )
 
     def test_sync_frozen_checks_integrity_before_and_after_compile(self) -> None:
