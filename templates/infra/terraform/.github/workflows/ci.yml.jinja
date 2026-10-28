@@ -5,7 +5,7 @@ jobs:
 {% else %}
   validate:
     # A draft runs nothing until ready_for_review; a push or a queue entry has no PR, so it always runs.
-    if: {% raw %}${{ !github.event.pull_request.draft }}{% endraw %}
+    if: {% raw %}${{ {% endraw %}{{ repository_guard }}{% raw %}!github.event.pull_request.draft }}{% endraw %}
     runs-on: ubuntu-latest
     steps:
       # setup-* only install binaries — no repo needed yet, so they run before

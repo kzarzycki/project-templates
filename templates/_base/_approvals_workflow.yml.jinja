@@ -50,11 +50,11 @@ jobs:
   approvals:
 {% if include_ci %}    # A dependabot PR's own run has a read-only token; its status comes from the CI completion run.
     if: >-
-      {{ '${{ ' }}{{ runs }}{{ ' }}' }}{% else %}    # A dependabot PR's own run has a read-only token; its status comes from a local-ci record on it.
+      {{ '${{ ' }}{% if github_repository %}{{ repository_guard }}({{ runs }}){% else %}{{ runs }}{% endif %}{{ ' }}' }}{% else %}    # A dependabot PR's own run has a read-only token; its status comes from a local-ci record on it.
     # A comment counts only on a PR and when its first line is the record's; the gate reads the
     # record itself.
     if: >-
-      {{ '${{ ' }}{{ runs }}{{ ' }}' }}{% endif %}
+      {{ '${{ ' }}{% if github_repository %}{{ repository_guard }}({{ runs }}){% else %}{{ runs }}{% endif %}{{ ' }}' }}{% endif %}
     runs-on: ubuntu-latest
     permissions:
       contents: write # turns on auto-merge, or merges when nothing is pending
