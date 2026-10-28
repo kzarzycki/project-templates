@@ -32,6 +32,17 @@ risk:
     - .github/**
     - CODEOWNERS
     - docs/agents/loop.md
+
+# bot:
+#   renovate:   # deps:renovate's routine group, run on your token: see § Approvals
+#     branch: renovate/
+#     paths:
+#       - uv.lock
+#       - package-lock.json
+#       - pyproject.toml
+#       - package.json
+#       - mise.toml
+#       - .github/workflows/*.yml
 ```
 
 ## Owner
@@ -87,10 +98,14 @@ the owner sign off a matching change in use after it lands: its spec says
 `Engineering loop: off` keep their PRs out of the loop: a PR with no loop trail
 passes `loop:approvals`, its author merges it, and no risk rule holds it.
 Renovate (`mise run deps:renovate`) labels `verify` the updates an agent
-reviews: the template, the agent packages and every major. A verifier reviews
-its routine group too: Renovate runs on the developer's token, so its PRs are
-the developer's, and a `bot` section exempts only a GitHub App's account (such
-as `renovate[bot]`) whose every commit is its own.
+reviews: the template, the agent packages and every major. Its routine group
+runs on the developer's token, so its PRs are the developer's and a verifier
+reviews them too. The commented `bot.renovate` entry above exempts them
+instead: it names Renovate by its `renovate/` branch, and holds only when every
+commit is the developer's (`deps:renovate` sets Renovate's git author to
+your git identity) and every file matches its `paths`. The `risk` rule still holds a match on its own paths, so
+a workflow update keeps waiting for the owner until `.github/**` narrows to
+what it means to keep, such as `.github/rulesets/**`.
 {% if not include_ci %}
 `ci: false` says this project has no CI: the merge proof is the local check
 `uv run .agents/skills/engineering-loop/scripts/approvals.py local-ci <pr>`
