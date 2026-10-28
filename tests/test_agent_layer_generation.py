@@ -1626,6 +1626,15 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertTrue((opened / "LICENSE").read_text().startswith("MIT License"))
         self.assertEqual("MIT", tomllib.loads((opened / "pyproject.toml").read_text())["project"]["license"])
 
+    def test_post_gen_leaves_a_foreign_pyproject_unlocked(self) -> None:
+        # adopting a non-uv leaf onto a Poetry repo must not add a uv.lock nobody asked for (#34)
+        poetry = b'[tool.poetry]\nname = "x"\nversion = "0.1.0"\ndescription = ""\nauthors = []\n'
+        project = render("authoring/content", existing={"pyproject.toml": poetry}, include_mise=False)
+        subprocess.run(["git", "init", "-q"], cwd=project, check=True)
+        env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+        subprocess.run(["bash", str(ROOT / "_post_gen.sh"), "authoring/content", "python"], cwd=project, env=env, check=True, capture_output=True)
+        self.assertFalse((project / "uv.lock").exists())
+
     def test_setup_dev_hooks_skip_a_worktree_without_the_config(self) -> None:
         # .git/hooks is shared by every worktree; a branch without .pre-commit-config.yaml must still commit (#14)
         project = render("authoring/content")
@@ -1654,6 +1663,27 @@ class AgentLayerGenerationTest(unittest.TestCase):
 
         self.assertIn('{% set apm_version = "0.33.0" %}', partial)
         self.assertEqual(1, partial.count("0.33.0"))
+
+    def test_with_ci_a_skipped_approvals_run_cancels_nothing(self) -> None:
+        # With CI on, a run whose job skips (a draft, dependabot) gets its own group, as without CI (#45)
+        approvals = yaml.safe_load((render() / ".github/workflows/approvals.yml").read_text())
+        job = approvals["jobs"]["approvals"]
+        pr = {"number": 17, "draft": False}
+        events = {
+            "label": ({"event_name": "pull_request", "actor": "owner", "event": {"pull_request": pr}}, True),
+            "review": ({"event_name": "pull_request_review", "actor": "verifier", "event": {"pull_request": pr}}, True),
+            "draft label": ({"event_name": "pull_request", "actor": "owner", "event": {"pull_request": {"number": 17, "draft": True}}}, False),
+            "dependabot label": ({"event_name": "pull_request", "actor": "dependabot[bot]", "event": {"pull_request": pr}}, False),
+            "push run": ({"event_name": "workflow_run", "event": {"pull_request": pr, "workflow_run": {"event": "push"}}}, False),
+        }
+        for name, (github, runs) in events.items():
+            with self.subTest(event=name):
+                self.assertEqual(runs, bool(evaluate(job["if"], github)))
+                group = evaluate(approvals["concurrency"]["group"], {**github, "run_id": name})
+                self.assertEqual("approvals-17" if runs else f"approvals-skipped-{name}", group)
+        ci_completion = {"event_name": "workflow_run", "event": {"workflow_run": {"event": "pull_request"}}}
+        self.assertTrue(evaluate(job["if"], ci_completion))
+        self.assertIn("github.event.workflow_run.pull_requests[0].number", approvals["concurrency"]["group"])
 
     def test_disabled_layer_leaves_no_agent_framework(self) -> None:
         project = render(include_mise=True, include_agent_layer=False)
@@ -1854,6 +1884,12 @@ class AgentLayerGenerationTest(unittest.TestCase):
         ):
             self.assertNotRegex(path, managed, f"{path} must stay linted")
 
+    def test_the_loops_scratch_folder_is_ignored(self) -> None:
+        project = render()
+        subprocess.run(["git", "init", "-q", str(project)], check=True)
+        ignored = subprocess.run(["git", "-C", str(project), "check-ignore", "tmp/loop/report.md"], capture_output=True)
+        self.assertEqual(0, ignored.returncode)
+
 
 class RenovateGenerationTest(unittest.TestCase):
     def test_mise_projects_get_renovate_and_no_dependabot(self) -> None:
@@ -1872,6 +1908,12 @@ class RenovateGenerationTest(unittest.TestCase):
         tasks = tomllib.loads((project / "mise.toml").read_text())["tasks"]
         self.assertIn("deps:renovate", tasks)
         self.assertIn("^mise run agent:sync -- --refresh$", tasks["deps:renovate"]["run"])
+
+    def test_conda_tools_are_looked_up_in_conda_forge(self) -> None:
+        config = json.loads((render(include_mise=True) / "renovate.json").read_text())
+        [rule] = [rule for rule in config["packageRules"] if rule.get("matchDatasources") == ["conda"]]
+        self.assertEqual((["mise"], ["!/\\//"], "conda-forge/{{{packageName}}}"),
+                         (rule["matchManagers"], rule["matchPackageNames"], rule["overridePackageName"]))
 
     def test_the_apm_manager_reads_the_rendered_pin(self) -> None:
         project = render(include_mise=True, include_agent_layer=True)
