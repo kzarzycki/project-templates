@@ -53,7 +53,8 @@ Who owns this repository and answers the loop's questions (a GitHub handle).
 
 The commands that run this change where a person can see it working before
 review, and where the result is (a URL, a file, a command's output).
-A demo goes on the PR with `.agents/skills/demo/scripts/demo.sh`; when it refuses, stop and report.
+
+Keep this line: a demo goes on the PR through the `demo` skill's script; when it refuses, stop and report.
 
 ## Acceptance references
 
