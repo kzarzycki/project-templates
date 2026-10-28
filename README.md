@@ -538,7 +538,7 @@ edited: Copier removes a file the template stopped shipping without comparing
 its content. To keep your own, restore it from git in the update commit
 (`git checkout HEAD -- CODEOWNERS`).
 
-Updating to the next release moves the pack to `engineering-v0.24.4`. Since
+Updating to the next release moves the pack to `engineering-v0.25.0`. Since
 0.24.0 its `approvals.py`, `labels.py` and `board.py` read loop.md's and
 issue-tracker.md's settings from a YAML block under `## Settings` and refuse a
 file still on the line form (kzarzycki/agent-skills#344, #352). An older
@@ -546,7 +546,8 @@ reader finds no lines in the block and runs with no settings, so move both
 files in the same commit as the pack, after `mise run agent:sync`. 0.24.1 puts
 a `__pycache__` file in each skill's `scripts/`, so a project that ignores
 cache folders writes `__pycache__/` with the slash, as the python leaves'
-`.gitignore` does. The pack's 0.24.0 changelog maps every old line to its key:
+`.gitignore` does. 0.25.0 replaces `post_demo.sh` with `demo.sh`, so a
+project task calling `post_demo.sh` moves to `demo.sh`. The pack's 0.24.0 changelog maps every old line to its key:
 
 - loop.md: a `## Settings` heading with a `yaml` block in place of the
   `- spec:`, `- merge:` and `- risk:` lines, as a fresh render writes it.
