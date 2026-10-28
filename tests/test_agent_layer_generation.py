@@ -1299,6 +1299,8 @@ class AgentLayerGenerationTest(unittest.TestCase):
             ]}}},
             yaml.safe_load(re.sub(r"^# ?", "", bot[0], flags=re.MULTILINE)),
         )
+        # the one demo path, so an agent whose upload is refused stops rather than posting another way
+        self.assertIn("\n\nKeep this line: a demo goes on the PR through the `demo` skill's script; when it refuses, stop and report.\n", approvals_seed)
         for line in ("`auto: true`", "`signoff`", "`opt_out: true`", "`Engineering loop: off`", "`always: true`"):
             self.assertIn(line, approvals_seed)
         # board maps each loop column to the board column of its own name, as the pack's board.py reads it.
