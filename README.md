@@ -594,8 +594,9 @@ user token opens starts CI. A nightly scheduled agent runs it. Updates fall in t
 
 - **verify** (label `verify`, draft): the template (Renovate's `copier` manager, which
   trusts the template's tasks), the `apm.yml` packages pinned to a `<package>-vX.Y.Z`
-  tag (then `agent:sync --refresh` regenerates the lock and agent files), grouped into
-  one PR a night; and every major update, each its own PR. An agent reviews each before
+  tag (then `agent:sync --refresh` regenerates the lock and agent files), one PR a night
+  for the template and another for the packages, since copier refuses a tree another
+  manager already changed; and every major update, each its own PR. An agent reviews each before
   `loop:land`.
 - **routine**: patch and minor updates of tools, libraries and actions, one group a week
   after 3 days, with auto-merge on. A verifier reviews it too: its PRs are the developer's, and
