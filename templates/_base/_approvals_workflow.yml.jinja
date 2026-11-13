@@ -14,35 +14,40 @@
 # this job makes starts main's push workflows and the merge queue's CI, which one made with
 # github.token does not. Without the App it posts the status only and loop:land lands the PR.
 name: Approvals
+# Every trigger below runs main's copy of this file and checks out main, never the PR's code: this
+# job holds a write token, and a trigger that runs the PR's own copy of the workflow would let a PR
+# edit this file and post its own green status. `pull_request`, `pull_request_review` and
+# `merge_group` do run the PR's copy, so they never appear here with a token: the token-less
+# `approvals_relay.yml` listens to the last two and this job reacts to its completion.
 on:
-  pull_request:
+  # The PR's labels, body and head. The job checks out the default branch only and reads the PR
+  # through the API, so the PR's code never runs here.
+  pull_request_target: # zizmor: ignore[dangerous-triggers]
     types: [opened, synchronize, reopened, ready_for_review, edited, labeled, unlabeled]
-  # The verifier's verdict is a review: a new or dismissed one updates the status.
-  pull_request_review:
-    types: [submitted, dismissed]
-{% if include_ci %}  # A green `check` updates the status without a new push. This runs main's copy of the
-  # workflow and checks out main, never the PR's code.
+  # A review (the verifier's verdict) or a queue entry reaches here through the relay's completion,
+  # which runs main's copy of this workflow.
+{% if include_ci %}  # A green `check` updates the status without a new push, the same way.
   workflow_run: # zizmor: ignore[dangerous-triggers]
-    workflows: [CI]
+    workflows: [CI, Approvals relay]
     types: [completed]
-{% else %}  # approvals.py local-ci's record, a PR comment, updates the status without a new push. This
-  # runs main's copy of the workflow and checks out main, never the PR's code.
+{% else %}  workflow_run: # zizmor: ignore[dangerous-triggers]
+    workflows: [Approvals relay]
+    types: [completed]
+  # approvals.py local-ci's record, a PR comment, updates the status without a new push. This
+  # runs main's copy of the workflow.
   issue_comment:
     types: [created]
-{% endif %}  # The queue's commit gets success: a PR is queued only once its status was green.
-  merge_group:
-
+{% endif %}
 permissions: {}
 
-{# The job's condition; the concurrency group reads it too. #}{% if include_ci %}{% set runs %}{% raw %}github.event_name == 'merge_group'
-      || ((github.event_name == 'pull_request' || github.event_name == 'pull_request_review') && !github.event.pull_request.draft && github.actor != 'dependabot[bot]')
-      || (github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request'){% endraw %}{% endset %}{% else %}{% set runs %}{% raw %}github.event_name == 'merge_group'
-      || ((github.event_name == 'pull_request' || github.event_name == 'pull_request_review') && !github.event.pull_request.draft && github.actor != 'dependabot[bot]')
+{# The job's condition; the concurrency group reads it too. #}{% if include_ci %}{% set runs %}{% raw %}(github.event_name == 'pull_request_target' && !github.event.pull_request.draft && github.actor != 'dependabot[bot]')
+      || (github.event_name == 'workflow_run' && (github.event.workflow_run.event == 'pull_request' || github.event.workflow_run.name == 'Approvals relay')){% endraw %}{% endset %}{% else %}{% set runs %}{% raw %}(github.event_name == 'pull_request_target' && !github.event.pull_request.draft && github.actor != 'dependabot[bot]')
+      || github.event_name == 'workflow_run'
       || (github.event_name == 'issue_comment' && github.event.issue.pull_request && (github.event.comment.body == 'Local check passed' || startsWith(github.event.comment.body, fromJSON('"Local check passed\n"')) || startsWith(github.event.comment.body, fromJSON('"Local check passed\r\n"')))){% endraw %}{% endset %}{% endif %}concurrency:
   # An event the job skips gets a group of its own, so it never cancels a run that posts the status.
   group: >-
       {{ '${{ (' }}{{ runs }}{% raw %})
-      && format('approvals-{0}', {% endraw %}{% if include_ci %}{% raw %}github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number{% endraw %}{% else %}{% raw %}github.event.pull_request.number || github.event.issue.number{% endraw %}{% endif %}{% raw %} || github.sha)
+      && format('approvals-{0}', {% endraw %}{% if include_ci %}{% raw %}github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number{% endraw %}{% else %}{% raw %}github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number || github.event.issue.number{% endraw %}{% endif %}{% raw %} || github.event.workflow_run.head_sha || github.sha)
       || format('approvals-skipped-{0}', github.run_id) }}{% endraw %}
   cancel-in-progress: true
 
@@ -64,8 +69,10 @@ jobs:
       actions: read # approvals.py reads each check run's workflow (checkSuite.workflowRun)
       statuses: write # posts loop:approvals
     steps:
+      # main's code and policy on every trigger; the PR is read through the API.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: {% raw %}${{ github.event.repository.default_branch }}{% endraw %}
           persist-credentials: false
       # Optional: the App needs the same permissions as this job, on this repo.
       - id: app
@@ -86,10 +93,10 @@ jobs:
       - env:
           GH_TOKEN: {% raw %}${{ steps.app.outputs.token || github.token }}{% endraw %}
           APP_TOKEN: {% raw %}${{ steps.app.outputs.token != '' }}{% endraw %}
-          EVENT: {% raw %}${{ github.event_name }}{% endraw %}
+          EVENT: {% raw %}${{ github.event_name == 'workflow_run' && github.event.workflow_run.event || github.event_name }}{% endraw %}
           ACTION: {% raw %}${{ github.event.action }}{% endraw %}
-{% if include_ci %}          PR: {% raw %}${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number }}{% endraw %}{% else %}          PR: {% raw %}${{ github.event.pull_request.number || github.event.issue.number }}{% endraw %}{% endif %}
-          QUEUE_HEAD: {% raw %}${{ github.event.merge_group.head_sha }}{% endraw %}
+{% if include_ci %}          PR: {% raw %}${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number }}{% endraw %}{% else %}          PR: {% raw %}${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number || github.event.issue.number }}{% endraw %}{% endif %}
+          QUEUE_HEAD: {% raw %}${{ github.event.workflow_run.head_sha }}{% endraw %}
           RUN_URL: {% raw %}${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}{% endraw %}
           MISE_TASK_RUN_AUTO_INSTALL: "false"
         run: mise run ci:approvals

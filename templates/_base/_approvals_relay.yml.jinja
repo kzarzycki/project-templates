@@ -1,0 +1,19 @@
+# Carries a PR review and a merge-queue entry to the Approvals workflow. Both events run the PR's
+# own copy of the workflow file, so this one holds no token and no secret and does nothing: its
+# completion starts `approvals.yml` (workflow_run), which runs main's copy with the write token.
+name: Approvals relay
+on:
+  # The verifier's verdict is a review: a new or dismissed one updates the status.
+  pull_request_review:
+    types: [submitted, dismissed]
+  # The queue's commit gets success: a PR is queued only once its status was green.
+  merge_group:
+
+permissions: {}
+
+jobs:
+  relay:
+{% if github_repository %}    if: {% raw %}${{ {% endraw %}{{ repository_guard }}{% raw %}true }}{% endraw %}
+{% endif %}    runs-on: ubuntu-latest
+    steps:
+      - run: echo "relayed to the Approvals workflow"

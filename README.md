@@ -333,7 +333,7 @@ renders the workflows without the guard.
 A project without CI, for example a private repo with GitHub Actions off or one
 whose own workflows only release, answers `include_ci=false`. It then gets no CI
 workflow and no `.github/check-paths.yml`, and no `ci:parts` or `ci:check` task;
-no workflow but `approvals.yml` is written, so the repo's own workflows stay as
+no workflow but `approvals.yml` and `approvals_relay.yml` are written, so the repo's own workflows stay as
 they are. The ruleset requires only `loop:approvals`, and the seeded
 `docs/agents/loop.md` has `ci: false` under `loop` in its settings. The merge approval then stops looking for
 a green `check`. Its proof instead is
@@ -344,6 +344,11 @@ that head on the PR. So anything the project's CI enforced has to be in
 `mise run check:all` too, or it stops being enforced.
 The approvals workflow then reruns on that comment instead of on CI's completion,
 so `loop:approvals` turns green with no other event.
+
+The approvals workflow holds a write token, so it only runs main's copy of itself and
+checks out main on every trigger. `pull_request` would run the PR's own copy, so it uses
+`pull_request_target`. A review and a merge-queue entry have no such form, so the
+token-less `approvals_relay.yml` catches them and its completion starts the approvals run.
 
 ## Use it via Claude
 
