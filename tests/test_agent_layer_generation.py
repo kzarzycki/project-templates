@@ -39,7 +39,7 @@ def evaluate(expression: str, github: dict) -> object:
     parts = re.split(r"('(?:[^']|'')*')", expression.strip().removeprefix("${{").removesuffix("}}"))
     parts[1::2] = ["r" + literal for literal in parts[1::2]]  # Actions strings have no backslash escapes
     for index in range(0, len(parts), 2):  # outside string literals
-        code = re.sub(r"\bgithub(?:\.\w+)+", lambda match: f"ctx({match.group()!r})", parts[index])
+        code = re.sub(r"\bgithub(?:\.\w+(?:\[\d+\])?)+", lambda match: f"ctx({match.group()!r})", parts[index])
         parts[index] = code.replace("&&", " and ").replace("||", " or ").replace("!=", "\0").replace("!", " not ").replace("\0", "!=")
     return eval("(" + "".join(parts) + ")", {"__builtins__": {}}, functions)
 
@@ -47,7 +47,10 @@ def evaluate(expression: str, github: dict) -> object:
 def _lookup(github: dict, path: str) -> object:
     value: object = github
     for key in path.split(".")[1:]:
+        key, _, index = key.partition("[")  # `pull_requests[0]`
         value = value.get(key) if isinstance(value, dict) else None
+        if index:
+            value = value[int(index[:-1])] if isinstance(value, list) and value else None
     return value
 
 
@@ -1238,13 +1241,18 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertLess(approvals_task.index('post "$head" success "${first'), approvals_task.index("gh pr merge"))
         self.assertLess(approvals_task.index("autoMergeRequest"), approvals_task.index("gh pr merge"))
         on = approvals[True]  # PyYAML reads `on` as True
-        self.assertIn("labeled", on["pull_request"]["types"])
-        self.assertIn("synchronize", on["pull_request"]["types"])
-        self.assertIn("merge_group", on)
-        self.assertEqual({"types": ["submitted", "dismissed"]}, on["pull_request_review"])  # the verdict is a review
-        # A review event, like a PR event, never runs on a draft or for dependabot.
+        self.assertIn("labeled", on["pull_request_target"]["types"])
+        self.assertIn("synchronize", on["pull_request_target"]["types"])
+        # A review and a queue entry run the PR's copy of a workflow, so the token-less relay catches them.
+        for trigger in ("pull_request", "pull_request_review", "merge_group"):
+            self.assertNotIn(trigger, on)
+        relay = yaml.safe_load((project / ".github/workflows/approvals_relay.yml").read_text())
+        self.assertEqual({"types": ["submitted", "dismissed"]}, relay[True]["pull_request_review"])
+        self.assertIn("merge_group", relay[True])
+        self.assertEqual(["CI", "Approvals relay"], on["workflow_run"]["workflows"])
+        # A PR event never runs on a draft or for dependabot.
         self.assertIn(
-            "((github.event_name == 'pull_request' || github.event_name == 'pull_request_review')"
+            "(github.event_name == 'pull_request_target'"
             " && !github.event.pull_request.draft && github.actor != 'dependabot[bot]')",
             job["if"],
         )
@@ -1261,7 +1269,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertIn("actions/variables/APPROVALS_APP_CLIENT_ID", tasks["setup:github"]["run"])
         self.assertIn("actions/secrets/APPROVALS_APP_PRIVATE_KEY", tasks["setup:github"]["run"])
         ci_name = yaml.safe_load(workflow)["name"]
-        self.assertEqual({"workflows": [ci_name], "types": ["completed"]}, on["workflow_run"])
+        self.assertEqual({"workflows": [ci_name, "Approvals relay"], "types": ["completed"]}, on["workflow_run"])
         self.assertIn("context=loop:approvals", tasks["ci:approvals"]["run"])
         self.assertIn("issues/$PR/labels/approved:merge", tasks["ci:approvals"]["run"])
         self.assertEqual("merge-queue", tasks["setup:github"]["alias"])
@@ -1404,6 +1412,8 @@ class AgentLayerGenerationTest(unittest.TestCase):
 
                 # Every step that runs a command runs a mise task: the task is the check's one definition.
                 for workflow in (project / ".github/workflows").glob("*.yml"):
+                    if workflow.name == "approvals_relay.yml":
+                        continue  # holds no token, so it runs no task: a bare echo
                     for job_name, job in yaml.safe_load(workflow.read_text())["jobs"].items():
                         for step in job["steps"]:
                             if "run" in step:
@@ -1526,7 +1536,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         project = render(existing={".github/workflows/ship.yml": ship}, include_ci=False)
 
         self.assertEqual(ship, (project / ".github/workflows/ship.yml").read_bytes())
-        self.assertEqual(["approvals.yml", "ship.yml"], sorted(path.name for path in (project / ".github/workflows").iterdir()))
+        self.assertEqual(["approvals.yml", "approvals_relay.yml", "ship.yml"], sorted(path.name for path in (project / ".github/workflows").iterdir()))
         self.assertFalse((project / ".github/check-paths.yml").exists())
         self.assertTrue((project / "renovate.json").exists())  # not CI
         tasks = tomllib.loads((project / "mise.toml").read_text())["tasks"]
@@ -1543,7 +1553,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         text = (project / ".github/workflows/approvals.yml").read_text()
         approvals = yaml.safe_load(text)
         on = approvals[True]  # PyYAML reads `on` as True
-        self.assertNotIn("workflow_run", on)
+        self.assertEqual(["Approvals relay"], on["workflow_run"]["workflows"])
         self.assertEqual({"types": ["created"]}, on["issue_comment"])
         job = approvals["jobs"]["approvals"]
         # The job runs on a PR comment whose first line is local-ci's record, and on no other comment.
@@ -1559,23 +1569,22 @@ class AgentLayerGenerationTest(unittest.TestCase):
                 self.assertEqual(runs, bool(evaluate(job["if"], comment)))
         issue = {"event_name": "issue_comment", "event": {"issue": {"number": 17}, "comment": {"body": "Local check passed"}}}
         self.assertFalse(evaluate(job["if"], issue))
-        self.assertEqual("${{ github.event.pull_request.number || github.event.issue.number }}", job["steps"][-1]["env"]["PR"])
+        self.assertEqual("${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number || github.event.issue.number }}", job["steps"][-1]["env"]["PR"])
         # A run the job skips never cancels one that posts the status: only runs that post share a PR's group.
         pr = {"number": 17, "draft": False}
         events = {
             "local-ci record": ({"event_name": "issue_comment", "event": {"issue": {"number": 17, "pull_request": {"url": "x"}}, "comment": {"body": "Local check passed\nHead: abc"}}}, True),
-            "label": ({"event_name": "pull_request", "actor": "owner", "event": {"pull_request": pr}}, True),
-            "review": ({"event_name": "pull_request_review", "actor": "verifier", "event": {"pull_request": pr}}, True),
+            "label": ({"event_name": "pull_request_target", "actor": "owner", "event": {"pull_request": pr}}, True),
+            "review": ({"event_name": "workflow_run", "event": {"workflow_run": {"event": "pull_request_review", "name": "Approvals relay", "pull_requests": [pr]}}}, True),
             "other comment": ({"event_name": "issue_comment", "event": {"issue": {"number": 17, "pull_request": {"url": "x"}}, "comment": {"body": "Thanks, checking this now"}}}, False),
-            "draft label": ({"event_name": "pull_request", "actor": "owner", "event": {"pull_request": {"number": 17, "draft": True}}}, False),
-            "dependabot label": ({"event_name": "pull_request", "actor": "dependabot[bot]", "event": {"pull_request": pr}}, False),
+            "draft label": ({"event_name": "pull_request_target", "actor": "owner", "event": {"pull_request": {"number": 17, "draft": True}}}, False),
+            "dependabot label": ({"event_name": "pull_request_target", "actor": "dependabot[bot]", "event": {"pull_request": pr}}, False),
         }
         for name, (github, runs) in events.items():
             with self.subTest(event=name):
                 self.assertEqual(runs, bool(evaluate(job["if"], github)))
                 group = evaluate(approvals["concurrency"]["group"], {**github, "run_id": name})
                 self.assertEqual("approvals-17" if runs else f"approvals-skipped-{name}", group)
-        self.assertNotIn("workflow_run", text)
 
         # The project's own workflow linters, at its pinned versions, pass the rendered workflow.
         tools = tomllib.loads((project / "mise.toml").read_text())["tools"]
@@ -1718,16 +1727,41 @@ class AgentLayerGenerationTest(unittest.TestCase):
                                     self.assertEqual("", lines[edge], f"line {n + 1}: fence without a blank line")
                                 inside = not inside
 
+    def test_approvals_workflow_runs_main_only_and_triggers_that_run_the_pr_copy_hold_no_token(self) -> None:
+        # A PR can edit its own copy of a workflow file and run it, and a checkout without a ref
+        # takes the PR's merge commit: either would let a PR approve itself (#112).
+        for include_ci in (True, False):
+            with self.subTest(include_ci=include_ci):
+                project = render(include_ci=include_ci)
+                for path in sorted((project / ".github/workflows").glob("approvals*.yml")):
+                    text = path.read_text()
+                    workflow = yaml.safe_load(text)
+                    for job in workflow["jobs"].values():
+                        for step in job["steps"]:
+                            if step.get("uses", "").startswith("actions/checkout@"):
+                                self.assertEqual("${{ github.event.repository.default_branch }}", step["with"]["ref"], path.name)
+                    # GitHub runs the PR's copy of the workflow file on these events.
+                    pr_copy = {"pull_request", "pull_request_review", "merge_group"} & set(workflow[True])
+                    if pr_copy:
+                        self.assertEqual({}, workflow["permissions"], path.name)
+                        for job in workflow["jobs"].values():
+                            self.assertNotIn("permissions", job)
+                        for word in ("secrets.", "vars.", "github.token", "GH_TOKEN", "permissions: write"):
+                            self.assertNotIn(word, text, path.name)
+                    else:
+                        self.assertEqual("approvals.yml", path.name)
+                self.assertNotIn("pull_request", yaml.safe_load((project / ".github/workflows/approvals.yml").read_text())[True])
+
     def test_with_ci_a_skipped_approvals_run_cancels_nothing(self) -> None:
         # With CI on, a run whose job skips (a draft, dependabot) gets its own group, as without CI (#45)
         approvals = yaml.safe_load((render() / ".github/workflows/approvals.yml").read_text())
         job = approvals["jobs"]["approvals"]
         pr = {"number": 17, "draft": False}
         events = {
-            "label": ({"event_name": "pull_request", "actor": "owner", "event": {"pull_request": pr}}, True),
-            "review": ({"event_name": "pull_request_review", "actor": "verifier", "event": {"pull_request": pr}}, True),
-            "draft label": ({"event_name": "pull_request", "actor": "owner", "event": {"pull_request": {"number": 17, "draft": True}}}, False),
-            "dependabot label": ({"event_name": "pull_request", "actor": "dependabot[bot]", "event": {"pull_request": pr}}, False),
+            "label": ({"event_name": "pull_request_target", "actor": "owner", "event": {"pull_request": pr}}, True),
+            "review": ({"event_name": "workflow_run", "event": {"workflow_run": {"event": "pull_request_review", "name": "Approvals relay", "pull_requests": [pr]}}}, True),
+            "draft label": ({"event_name": "pull_request_target", "actor": "owner", "event": {"pull_request": {"number": 17, "draft": True}}}, False),
+            "dependabot label": ({"event_name": "pull_request_target", "actor": "dependabot[bot]", "event": {"pull_request": pr}}, False),
             "push run": ({"event_name": "workflow_run", "event": {"pull_request": pr, "workflow_run": {"event": "push"}}}, False),
         }
         for name, (github, runs) in events.items():
@@ -1735,7 +1769,9 @@ class AgentLayerGenerationTest(unittest.TestCase):
                 self.assertEqual(runs, bool(evaluate(job["if"], github)))
                 group = evaluate(approvals["concurrency"]["group"], {**github, "run_id": name})
                 self.assertEqual("approvals-17" if runs else f"approvals-skipped-{name}", group)
-        ci_completion = {"event_name": "workflow_run", "event": {"workflow_run": {"event": "pull_request"}}}
+        ci_completion = {"event_name": "workflow_run", "event": {"workflow_run": {"event": "pull_request", "name": "CI"}}}
+        queue_ci = {"event_name": "workflow_run", "event": {"workflow_run": {"event": "merge_group", "name": "CI"}}}
+        self.assertFalse(evaluate(job["if"], queue_ci))  # the queue's own CI run posts nothing; the relay's does
         self.assertTrue(evaluate(job["if"], ci_completion))
         self.assertIn("github.event.workflow_run.pull_requests[0].number", approvals["concurrency"]["group"])
 

@@ -127,7 +127,7 @@ jobs:
           grep -q 'run: mise run ci:approvals' .github/workflows/approvals.yml
           grep -q '^\[tasks."setup:github"\]$' mise.toml
           grep -q '^  merge_group:$' .github/workflows/ci.yml
-          grep -q '^  merge_group:$' .github/workflows/approvals.yml
+          grep -q '^  merge_group:$' .github/workflows/approvals_relay.yml
           test ! -e .github/workflows/gate.yml
           grep -Eq '^ *(- )?(repo: [^l]|rev:)' .pre-commit-config.yaml && exit 1
           python3 -m json.tool .github/rulesets/main.json >/dev/null
