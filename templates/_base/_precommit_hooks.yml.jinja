@@ -63,6 +63,15 @@
         entry: mise run lint:commit-msg --
         language: system
         stages: [commit-msg]
+      # A new worktree shares these hooks but not the dependencies or mise's trust, so its first
+      # checkout (git passes an all-zero previous HEAD) trusts the config and runs setup:dev.
+      - id: setup:worktree
+        name: setup:worktree
+        entry: sh -c 'case "$PRE_COMMIT_FROM_REF" in *[!0]*) exit 0 ;; esac; mise trust --quiet && mise run setup:dev'
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [post-checkout]
       # A push runs the changed tests and the branch's secret scan. The loop's proofs stay
       # off the push: a push is reversible and a draft can't merge.
       - id: test:changed
