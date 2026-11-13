@@ -47,7 +47,7 @@ permissions: {}
   # An event the job skips gets a group of its own, so it never cancels a run that posts the status.
   group: >-
       {{ '${{ (' }}{{ runs }}{% raw %})
-      && format('approvals-{0}', {% endraw %}{% if include_ci %}{% raw %}github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number{% endraw %}{% else %}{% raw %}github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number || github.event.issue.number{% endraw %}{% endif %}{% raw %} || github.sha)
+      && format('approvals-{0}', {% endraw %}{% if include_ci %}{% raw %}github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number{% endraw %}{% else %}{% raw %}github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number || github.event.issue.number{% endraw %}{% endif %}{% raw %} || github.event.workflow_run.head_sha || github.sha)
       || format('approvals-skipped-{0}', github.run_id) }}{% endraw %}
   cancel-in-progress: true
 

@@ -1773,6 +1773,10 @@ class AgentLayerGenerationTest(unittest.TestCase):
         queue_ci = {"event_name": "workflow_run", "event": {"workflow_run": {"event": "merge_group", "name": "CI"}}}
         self.assertFalse(evaluate(job["if"], queue_ci))  # the queue's own CI run posts nothing; the relay's does
         self.assertTrue(evaluate(job["if"], ci_completion))
+        # Two queue entries have no PR; each gets a group of its own, so one never cancels the other's status.
+        queued = lambda sha: {"event_name": "workflow_run", "sha": "main-sha", "event": {"workflow_run": {"event": "merge_group", "name": "Approvals relay", "head_sha": sha}}}
+        self.assertTrue(evaluate(job["if"], queued("q1")))
+        self.assertNotEqual(evaluate(approvals["concurrency"]["group"], queued("q1")), evaluate(approvals["concurrency"]["group"], queued("q2")))
         self.assertIn("github.event.workflow_run.pull_requests[0].number", approvals["concurrency"]["group"])
 
     def test_disabled_layer_leaves_no_agent_framework(self) -> None:
