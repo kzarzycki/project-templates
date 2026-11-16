@@ -1402,9 +1402,10 @@ class AgentLayerGenerationTest(unittest.TestCase):
                     "${{ github.base_ref || github.event.before }}",
                     jobs["part"]["steps"][-1]["env"]["BASE_REF"],
                 )
-                # The plan lists the changed files itself: no paths-filter action, no PR API read.
+                # The plan lists the changed files itself: no paths-filter action, no PR API read; it reads
+                # only Actions runs, to find a queue run of a push's commit.
                 plan = jobs["plan"]
-                self.assertEqual({"contents": "read"}, plan["permissions"])
+                self.assertEqual({"contents": "read", "actions": "read"}, plan["permissions"])
                 self.assertEqual([], [step["uses"] for step in plan["steps"] if "paths-filter" in step.get("uses", "")])
                 self.assertEqual(0, plan["steps"][0]["with"]["fetch-depth"])  # the base and the merge base
                 self.assertEqual(jobs["part"]["steps"][-1]["env"]["BASE_REF"], plan["steps"][-1]["env"]["BASE_REF"])
@@ -1441,7 +1442,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
                 self.assertEqual("check", jobs["check"].get("name", "check"))  # the check run's name, not just the key
                 self.assertEqual(15368, rules["required_status_checks"]["required_status_checks"][0]["integration_id"])  # GitHub Actions
                 self.assertIn("for context in loop:approvals gatekeeper", tasks["ci:approvals"]["run"])
-                self.assertNotIn("merge_queue", rules)  # the pack's land refuses a base that requires a queue
+                self.assertNotIn("merge_queue", rules)  # the default renders no queue (merge_queue: false)
                 for workflow in (project / ".github/workflows").glob("*.yml"):
                     self.assertNotIn("merge_group", workflow.read_text(), workflow.name)
                 self.assertEqual(["squash"], rules["pull_request"]["allowed_merge_methods"])
@@ -1467,6 +1468,21 @@ class AgentLayerGenerationTest(unittest.TestCase):
                 self.assertTrue(os.access(scripts / "check-symlinks.sh", os.X_OK))
                 self.assertIn(f"run = '{scripts.name}/files-or-repo ", (project / "mise.toml").read_text())
 
+    def test_ci_skips_a_push_the_queue_tested_whether_or_not_the_queue_was_answered(self) -> None:
+        # Only a merge_group run on the commit skips it, so a repo without a queue still tests every push to main.
+        queued, unqueued = (yaml.safe_load((render(merge_queue=answer) / ".github/workflows/ci.yml").read_text())["jobs"]
+                            for answer in (True, False))
+        for jobs in (queued, unqueued):  # BASE_REF names the queue entry's base only with a queue
+            jobs["plan"]["steps"][-1]["env"].pop("BASE_REF")
+        for job in ("plan", "check"):
+            self.assertEqual(queued[job], unqueued[job], job)
+        self.assertEqual(queued["part"]["if"], unqueued["part"]["if"])
+        jobs = queued
+        self.assertEqual("read", jobs["plan"]["permissions"]["actions"])
+        self.assertEqual("${{ github.token }}", jobs["plan"]["steps"][-1]["env"]["GH_TOKEN"])
+        self.assertEqual("${{ needs.plan.outputs.parts != '[]' }}", jobs["part"]["if"])
+        self.assertEqual("${{ needs.plan.outputs.parts }}", jobs["check"]["steps"][-1]["env"]["PLANNED"])
+
     def test_a_named_repository_guards_every_workflow_job_and_an_empty_one_changes_nothing(self) -> None:
         # A fork or mirror with Actions on would otherwise run CI and post loop:approvals statuses.
         for answers in ({}, {"include_mise": False}, {"include_ci": False}):
@@ -1483,7 +1499,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
             render(github_repository="o/r' || 'x")
 
     def test_merge_queue_true_alone_renders_the_queue_rule_and_merge_group_triggers(self) -> None:
-        # The pack's land refuses a queue, so the default has none; answering true keeps the old render.
+        # The default has no queue; answering true renders the queue rule and its triggers.
         default, queue = render(), render(merge_queue=True)
         ruleset = json.loads((default / ".github/rulesets/main.json").read_text())
         queued = json.loads((queue / ".github/rulesets/main.json").read_text())

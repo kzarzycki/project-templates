@@ -5,11 +5,13 @@
   # BASE_REF is the change's base, read by ci:parts and each part: a PR's base branch, a push's
   # previous commit{% if merge_queue %}, a queue entry's base commit{% endif %} (github.base_ref is set only on a PR).
 {%- set base_ref %}{% raw %}${{ github.base_ref || {% endraw %}{% if merge_queue %}{% raw %}github.event.merge_group.base_sha || {% endraw %}{% endif %}{% raw %}github.event.before }}{% endraw %}{% endset %}
+  # A push the merge queue already tested lists no part (ci:parts says how).
   plan:
     if: {% raw %}${{ {% endraw %}{{ repository_guard }}{% raw %}!github.event.pull_request.draft }}{% endraw %}
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      actions: read # to find the merge queue's run of a push's commit
     outputs:
       parts: {% raw %}${{ steps.parts.outputs.parts }}{% endraw %}
     steps:
@@ -23,13 +25,14 @@
       - id: parts
         env:
           BASE_REF: {{ base_ref }}
+          GH_TOKEN: {% raw %}${{ github.token }}{% endraw %}
           MISE_TASK_RUN_AUTO_INSTALL: "false"
         run: mise run ci:parts
 
   part:
     needs: plan
-{% if github_repository %}    if: {% raw %}${{ {% endraw %}{{ repository_guard }}{% raw %}success() }}{% endraw %}
-{% endif %}    name: {% raw %}${{ matrix.part }}{% endraw %}
+    if: {% raw %}${{ {% endraw %}{{ repository_guard }}{% raw %}needs.plan.outputs.parts != '[]' }}{% endraw %}
+    name: {% raw %}${{ matrix.part }}{% endraw %}
     runs-on: {{ part_runner | default('ubuntu-latest') }}
     # ponytail: one timeout for every part, the longest's; a per-part limit would be a second definition of the part.
     timeout-minutes: 45
@@ -70,6 +73,7 @@
       - env:
           PLAN: {% raw %}${{ needs.plan.result }}{% endraw %}
           PARTS: {% raw %}${{ needs.part.result }}{% endraw %}
+          PLANNED: {% raw %}${{ needs.plan.outputs.parts }}{% endraw %}
           GH_TOKEN: {% raw %}${{ github.token }}{% endraw %}
           MISE_TASK_RUN_AUTO_INSTALL: "false"
         run: mise run ci:check

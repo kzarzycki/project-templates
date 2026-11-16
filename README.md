@@ -299,22 +299,26 @@ combined tree, then merges each through GitHub, pinned to its head. It exits 0
 once the PR merged, 1 on a missing proof (the PR is left untouched) and 3 while
 it waits, for a pending check or for another land holding the lock: run it
 again, or pass `--wait` to return only once the PR merges or needs someone. It
-runs as you, so a merge it makes starts main's push workflows. It refuses a base
-whose rules require GitHub's merge queue, since the queue would merge each PR
-later, on a tree `land` never gated.
+runs as you, so a merge it makes starts main's push workflows. Where main
+requires GitHub's merge queue, it takes no lock and runs no gate: it enqueues
+each landable PR, pinned to its head, and the queue's `merge_group` CI run gates
+and merges it.
 
-Main lands through `loop:land`'s batch, not a merge queue. Generated CI skips
+By default main lands through `loop:land`'s batch, not a merge queue. Generated CI skips
 draft PRs (marking one ready starts it) and runs on every push to main, each in
 its own run, so a red main points at one merge; a push compares changed lines
-against the commit before it. With the loop on, `.github/rulesets/main.json` is
+against the commit before it. A push whose commit already has a passing
+`merge_group` run of the same workflow runs no part, since the merge queue lands
+exactly the commit it tested; the plan job looks that run up with `actions: read`,
+and on any lookup failure the path filters decide, as on any other push. With the loop on, `.github/rulesets/main.json` is
 the `loop-merge-queue` ruleset on main: changes only through a squashed PR with
 every review thread resolved, no bypass, and exactly two required names, CI's
 `check` job and the `loop:approvals` status. Its name stays `loop-merge-queue`,
 since `setup:github` finds its ruleset by that name, and a rename would leave the
 old one, queue included, in place. `merge_queue` defaults to false; answering
 true adds GitHub's merge queue (squash, all-green grouping) to the ruleset and a
-`merge_group` trigger to CI and the approvals relay, but the pack's `land`
-refuses that base, and GitHub offers merge queues only on organization-owned
+`merge_group` trigger to CI and the approvals relay, and the pack's `land` then
+lands through the queue; GitHub offers merge queues only on organization-owned
 repos. `mise run setup:github` creates that ruleset on GitHub, or updates it if
 one with that name exists, and sets the repository's `delete_branch_on_merge`
 to true, so a merged PR's branch is deleted; it leaves `allow_auto_merge` as it
