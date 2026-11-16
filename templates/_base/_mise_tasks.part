@@ -21,7 +21,7 @@ description = "Runs check:lint and check:unit: the fast set to run before every 
 depends = ["check:lint", "check:unit"]
 
 [tasks."check:all"]
-description = "Runs every check: part: the list GitHub and the merge queue run."
+description = "Runs every check: part: the list CI runs."
 depends = ["check:*"]
 
 [tasks."check:lint"]
@@ -246,7 +246,7 @@ run = [
 ]
 
 [tasks."loop:land"]
-description = "The one way an agent lands a PR: every merge proof, then ready and a squash merge pinned to the head, or auto-merge while required checks are pending. Exits 0 merged or auto-merge on, 1 on a missing proof, 3 while it waits; with --wait it returns only once the PR merges or needs someone."
+description = "The one way an agent lands PRs: under a lock, the pack's batch land gates every landable PR, this one included, as one batch on their combined tree, then merges each through GitHub pinned to its head. Exits 0 merged, 1 on a missing proof, 3 while it waits (a pending check, or the lock held by another land); with --wait it returns only once the PR merges or needs someone. It refuses a base whose rules require GitHub's merge queue."
 usage = '''
 arg "<pr>" help="the PR number"
 flag "--wait" help="wait until the PR merges or needs someone"
@@ -258,23 +258,23 @@ run = [
 ]
 
 [tasks."ci:approvals"]
-description = "CI's approvals step: posts loop:approvals merge's result as the loop:approvals commit status on the PR head (pending while it waits); success on a merge-queue commit; a push removes approved:merge first; on success, with the App's token, turns on auto-merge at the head unless the PR has a request or the repo has no auto-merge."
+description = "CI's approvals step: posts loop:approvals merge's result as the loop:approvals commit status on the PR head (pending while it waits){% if merge_queue %}; success on a merge-queue commit{% endif %}; a push removes approved:merge first. It never merges: mise run loop:land does."
 # A job ends only as success or failure, and GitHub counts a skipped job as passed, so the
-# result is a commit status, which main's ruleset requires. The workflow sets EVENT, ACTION,
-# PR, QUEUE_HEAD and RUN_URL.
+# result is a commit status, which main's ruleset requires. The workflow sets {% if merge_queue %}EVENT, {% endif %}ACTION,
+# PR, {% if merge_queue %}QUEUE_HEAD {% endif %}and RUN_URL.
 run = '''
 post() {
   gh api -X POST "repos/$GITHUB_REPOSITORY/statuses/$1" -f state="$2" -f context=loop:approvals \
     -f description="$(printf '%s' "$3" | cut -c1-140)" -f target_url="$RUN_URL" >/dev/null
   echo "loop:approvals: $2 on $1: $3"
 }
-if [ "$EVENT" = merge_group ]; then
+{% if merge_queue %}if [ "$EVENT" = merge_group ]; then
   # A PR is queued only with the status green on its head, so the queue's commit passes.
   post "$QUEUE_HEAD" success "checked on the PR before it was queued"
   exit 0
 fi
-[ -n "${PR:-}" ] || { echo "ci:approvals: no PR for this run; nothing to post"; exit 0; }
-pull="$(gh pr view "$PR" --json headRefOid,isDraft,author,autoMergeRequest --jq '[.headRefOid, .isDraft, .author.login, .autoMergeRequest != null] | @tsv')"
+{% endif %}[ -n "${PR:-}" ] || { echo "ci:approvals: no PR for this run; nothing to post"; exit 0; }
+pull="$(gh pr view "$PR" --json headRefOid,isDraft,author --jq '[.headRefOid, .isDraft, .author.login] | @tsv')"
 head="$(printf '%s' "$pull" | cut -f1)"
 if [ "$(printf '%s' "$pull" | cut -f2)" = true ]; then echo "ci:approvals: PR #$PR is a draft; nothing to post"; exit 0; fi
 if [ "$(printf '%s' "$pull" | cut -f3)" = "app/dependabot" ]; then
@@ -294,36 +294,15 @@ printf '%s\n' "$out"
 first="$(printf '%s\n' "$out" | sed -n 1p)"
 case "$code" in
   0) post "$head" success "${first:-every proof holds}" ;;
-  3) post "$head" pending "$first"; exit 0 ;;
+  3) post "$head" pending "$first" ;;
   *) post "$head" failure "${first:-loop:approvals exited $code}"; exit 1 ;;
 esac
-# Every proof holds on a ready PR (a draft returned above), so a PR made ready by hand lands with no agent
-# action, when the workflow runs with a GitHub App's token (APPROVALS_APP_CLIENT_ID). A request already
-# there is left alone.
-# Pinned to the head the proofs covered; gh merges at once when nothing is pending.
-if [ "$(printf '%s' "$pull" | cut -f4)" = true ]; then echo "ci:approvals: PR #$PR already has auto-merge on; left as is"; exit 0; fi
-# With github.token (no App) GitHub starts no workflow for the merge: a merge queue builds its commit
-# with no CI and waits out its timeout, and a direct merge starts none of main's push workflows. So the
-# job stops at the status, and mise run loop:land lands the PR with the agent's own token.
-if [ "${APP_TOKEN:-}" != true ]; then echo "ci:approvals: no App token, so mise run loop:land $PR lands PR #$PR"; exit 0; fi
-# On a repo without auto-merge (a private repo on GitHub Free cannot turn it on) and with no required
-# check pending, gh pr merge --auto merges at once with github.token: no push workflow starts on main
-# and loop:land's pinned merge is skipped. So the job stops at the status there, as it does when the
-# setting can't be read, and mise run loop:land lands the PR with the agent's own token.
-auto="$(gh api "repos/$GITHUB_REPOSITORY" --jq .allow_auto_merge)" || {
-  echo "::error::ci:approvals: could not read the repo's auto-merge setting; loop:approvals is still success, so mise run loop:land $PR lands PR #$PR"
-  exit 1
-}
-if [ "$auto" != true ]; then echo "ci:approvals: the repo has no auto-merge, so mise run loop:land $PR lands PR #$PR"; exit 0; fi
-gh pr merge "$PR" --auto --squash --match-head-commit "$head" || {
-  echo "::error::ci:approvals: could not turn on auto-merge for PR #$PR at $head; loop:approvals is still success, so mise run loop:land $PR lands it"
-  exit 1
-}
+# The job never merges: mise run loop:land gates every landable PR as one batch under a lock and merges
+# each with the agent's own token, so main's push workflows run on every merge.
 '''
 
 [tasks."setup:github"]
-alias = "merge-queue"
-description = "Writes GitHub settings (the ruleset, auto-merge, head branch deletion; on a plan without rulesets, squash-only merges and head branch deletion), then syncs the labels with the pack's labels.py, from the repo's files; runs no checks. --dry-run prints the label plan and writes nothing; --revert deletes the ruleset."
+description = "Writes GitHub settings (the ruleset and head branch deletion; on a plan without rulesets, squash-only merges and head branch deletion), then syncs the labels with the pack's labels.py, from the repo's files; runs no checks. --dry-run prints the label plan and writes nothing; --revert deletes the ruleset."
 usage = '''
 flag "--revert" help="Delete the loop-merge-queue ruleset; the repository settings are restored with the command apply printed"
 flag "--dry-run" help="Print what labels.py would change; write nothing to GitHub (no ruleset, settings or labels)"
@@ -348,7 +327,7 @@ elif [ "${usage_dry_run:-false}" = true ]; then
   echo "dry run: the ruleset and repository settings are left as they are"
   exec uv run "$labels" --dry-run
 fi
-# A private repo on GitHub Free has no rulesets and no auto-merge: GitHub answers the rules read with this 403,
+# A private repo on GitHub Free has no rulesets: GitHub answers the rules read with this 403,
 # the probe the pack's land uses. Any other error stops the task.
 free=false
 if ! probe="$(gh api 'repos/{owner}/{repo}/rules/branches/main' 2>&1 >/dev/null)"; then
@@ -356,7 +335,7 @@ if ! probe="$(gh api 'repos/{owner}/{repo}/rules/branches/main' 2>&1 >/dev/null)
 fi
 if [ "$free" = true ] && [ "${usage_revert:-false}" = true ]; then echo "no rulesets on this plan: nothing to revert"; exit 0; fi
 if [ "$free" = true ]; then
-  # Squash-only merges and head branch deletion are what Free allows; the ruleset and auto-merge are skipped.
+  # Squash-only merges and head branch deletion are what Free allows; the ruleset is skipped.
   # A standalone assignment, so a failed read stops the task before the PATCH loses the previous values.
   settings="$(gh api 'repos/{owner}/{repo}' --jq '.allow_merge_commit, .allow_rebase_merge, .allow_squash_merge, .delete_branch_on_merge')"
   set -- $settings
@@ -364,7 +343,7 @@ if [ "$free" = true ]; then
     -F allow_squash_merge=true -F delete_branch_on_merge=true >/dev/null
   echo "allow_merge_commit was $1, allow_rebase_merge was $2, allow_squash_merge was $3, delete_branch_on_merge was $4;" \
     "restore: gh api -X PATCH 'repos/{owner}/{repo}' -F allow_merge_commit=$1 -F allow_rebase_merge=$2 -F allow_squash_merge=$3 -F delete_branch_on_merge=$4"
-  echo "GitHub enforces nothing on main here (this plan has no rulesets or auto-merge): no ruleset applied, mise run loop:land is the only gate"
+  echo "GitHub enforces nothing on main here (this plan has no rulesets): no ruleset applied, mise run loop:land is the only gate"
 else
   id="$(gh api --paginate 'repos/{owner}/{repo}/rulesets' --jq '.[] | select(.source_type == "Repository" and .name == "loop-merge-queue") | .id')"
   if [ "${usage_revert:-false}" = true ]; then
@@ -379,24 +358,11 @@ else
   else
     gh api -X POST 'repos/{owner}/{repo}/rulesets' --input .github/rulesets/main.json --jq '"created ruleset loop-merge-queue (\(.id))"'
   fi
-  # Auto-merge lets a ready PR merge once its checks pass; GitHub deletes the merged head branch.
-  auto="$(gh api 'repos/{owner}/{repo}' --jq .allow_auto_merge)"
+  # GitHub deletes the merged head branch. allow_auto_merge is left as it is: loop:land merges directly.
   delete="$(gh api 'repos/{owner}/{repo}' --jq .delete_branch_on_merge)"
-  gh api -X PATCH 'repos/{owner}/{repo}' -F allow_auto_merge=true -F delete_branch_on_merge=true >/dev/null
-  echo "allow_auto_merge was $auto, delete_branch_on_merge was $delete, both now true; restore: gh api -X PATCH 'repos/{owner}/{repo}' -F allow_auto_merge=$auto -F delete_branch_on_merge=$delete"
+  gh api -X PATCH 'repos/{owner}/{repo}' -F delete_branch_on_merge=true >/dev/null
+  echo "delete_branch_on_merge was $delete, now true; restore: gh api -X PATCH 'repos/{owner}/{repo}' -F delete_branch_on_merge=$delete"
   echo "revert the ruleset: mise run setup:github --revert"
-fi
-# The approvals workflow's token: a merge it makes starts main's push workflows only with an App's.
-if gh api 'repos/{owner}/{repo}/actions/variables/APPROVALS_APP_CLIENT_ID' >/dev/null 2>&1; then
-  if gh api 'repos/{owner}/{repo}/actions/secrets/APPROVALS_APP_PRIVATE_KEY' >/dev/null 2>&1; then
-    echo "approvals workflow: runs with the GitHub App APPROVALS_APP_CLIENT_ID names"
-  else
-    echo "approvals workflow: APPROVALS_APP_CLIENT_ID is set but the secret APPROVALS_APP_PRIVATE_KEY is not, so every run fails; set it"
-  fi
-else
-  echo "approvals workflow: runs with github.token, so a merge it makes starts no push workflow on main;" \
-    "to change that, set the repo variable APPROVALS_APP_CLIENT_ID and the secret APPROVALS_APP_PRIVATE_KEY for a GitHub App" \
-    "with Contents, Pull requests and Commit statuses write and Issues, Checks and Actions read, installed on this repo"
 fi
 uv run "$labels"
 '''
