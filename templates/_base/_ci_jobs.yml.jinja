@@ -51,9 +51,9 @@
       - run: mise run setup:dev
       - env:
           PART: {% raw %}${{ matrix.part }}{% endraw %}
-          # A push compares against the commit before it, a queue entry against the queue's
-          # base commit; github.base_ref is set only on a PR.
-          BASE_REF: {% raw %}${{ github.base_ref || github.event.merge_group.base_sha || github.event.before }}{% endraw %}
+          # A push compares against the commit before it{% if merge_queue %}, a queue entry against the queue's
+          # base commit{% endif %}; github.base_ref is set only on a PR.
+          BASE_REF: {% raw %}${{ github.base_ref || {% endraw %}{% if merge_queue %}{% raw %}github.event.merge_group.base_sha || {% endraw %}{% endif %}{% raw %}github.event.before }}{% endraw %}
         run: mise run "$PART"
 
   check:
