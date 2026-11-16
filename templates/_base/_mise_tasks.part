@@ -173,14 +173,20 @@ def git(*args):
 
 
 def read_filters(text):
-    # ponytail: the YAML subset this file is written in (part keys over block lists of globs); any
-    # other line fails the plan, since a misread filter would skip a part silently.
+    # ponytail: the YAML subset this file is written in (part keys over block lists of globs, or a
+    # one-line flow list); any other line fails the plan, since a misread filter would skip a part silently.
     filters, globs = {}, None
     for number, line in enumerate(text.splitlines(), 1):
         bare = re.sub(r"(^|\s)#.*", "", line).strip()
-        key = re.fullmatch(r"[\x22\x27]?(check:[\w:-]+)[\x22\x27]?\s*:", bare)
+        key = re.fullmatch(r"[\x22\x27]?(check:[\w:-]+)[\x22\x27]?\s*:(?:\s*\[(.*)\])?", bare)
         item = re.fullmatch(r"-\s+([\x22\x27]?)(.+?)\1", bare)
-        if key:
+        if key and key.group(2) is not None:
+            flow = [re.fullmatch(r"([\x22\x27]?)(.+?)\1", glob.strip()) for glob in key.group(2).split(",") if glob.strip()]
+            if not all(flow):
+                sys.exit(f"{paths}:{number}: a flow list item this reader cannot read: {line}")
+            filters.setdefault(key.group(1), []).extend(glob.group(2) for glob in flow)
+            globs = None
+        elif key:
             globs = filters.setdefault(key.group(1), [])
         elif item and globs is not None:
             globs.append(item.group(2))

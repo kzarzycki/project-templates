@@ -1066,8 +1066,21 @@ class AgentMiseTasksTest(unittest.TestCase):
                 self.change_from(base, edits)
                 self.assertEqual(expected, self.ci_parts(base))
 
+    def test_ci_parts_reads_a_one_line_flow_list_as_dorny_did(self) -> None:
+        (self.project / ".github/check-paths.yml").write_text('"check:unit": ["src/**", \'!src/**/*.md\']\n')
+        base = self.ci_parts_repo()
+
+        for name, edits, expected in (
+            ("a source file", {"src/a.py": "x = 1\n"}, ["check:agents", "check:lint", "check:secrets", "check:unit"]),
+            ("an excluded Markdown file under src", {"src/notes.md": "x\n"},
+             ["check:agents", "check:lint", "check:secrets"]),
+        ):
+            with self.subTest(name):
+                self.change_from(base, edits)
+                self.assertEqual(expected, self.ci_parts(base))
+
     def test_ci_parts_fails_on_a_filter_line_it_cannot_read(self) -> None:
-        (self.project / ".github/check-paths.yml").write_text('"check:unit": ["src/**"]\n')
+        (self.project / ".github/check-paths.yml").write_text('"check:unit": &unit\n  - "src/**"\n')
         base = self.ci_parts_repo()
 
         self.env["BASE_REF"] = base

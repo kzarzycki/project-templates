@@ -88,6 +88,11 @@ the part when it matches one of its globs and none of its `!` globs:
   - "!LICENSE"
 ```
 
+`ci:parts` reads the file without a YAML library, so it takes the forms above:
+a part key over a block list, or a one-line flow list (`"check:unit": ["src/**"]`).
+Any other line, an anchor or a multi-line value for example, fails the `plan`
+job with the line's number, rather than skipping a part on a misread filter.
+
 The rendered filters give the test part and `check:agents` everything but prose
 in this way, so a file nobody listed still runs the tests. `check:lint` and
 `check:secrets` have no filter: they run on every change, since a README is
@@ -101,7 +106,9 @@ whose `source` is `editable` or `virtual`), `package.json` (`version`) and
 out of the changed files when, parsed at the merge base and at the head, they
 differ only in those keys. A file missing on either side, one that fails to
 parse, or a change to any other key counts as changed. So a release bump with
-its changelog runs only `check:lint` and `check:secrets`. In a mise monorepo root, which names its own tasks `//:<task>`,
+its changelog runs only `check:lint` and `check:secrets`.
+
+In a mise monorepo root, which names its own tasks `//:<task>`,
 the parts are the root's own `check:` tasks. The aggregate `check` job passes only when the plan and every
 part passed, and names a failed part with the command that reruns it. A project
 adds a check as a `check:<name>` task in `mise.toml`; CI picks it up with no
@@ -602,7 +609,8 @@ Updating to the next release brings the path filters in
 `.github/check-paths.yml`, and CI's `plan` job matches them itself, without
 `dorny/paths-filter` and its `pull-requests: read` permission. If you edited the
 file, `copier update` shows a conflict: keep your entries, which work as before
-(the same globs, plus `!` to exclude). Your build files get the version-only rule
+(the same globs, plus `!` to exclude) when written as block lists or one-line
+flow lists; `ci:parts` names any other line it can't read. Your build files get the version-only rule
 with no edit. Filters now apply on every event CI runs on, so a push to main or
 a queue entry also skips a part whose files nothing touched.
 
