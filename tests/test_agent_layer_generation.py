@@ -1402,7 +1402,20 @@ class AgentLayerGenerationTest(unittest.TestCase):
                     "${{ github.base_ref || github.event.before }}",
                     jobs["part"]["steps"][-1]["env"]["BASE_REF"],
                 )
-                yaml.safe_load((project / ".github/check-paths.yml").read_text())  # paths-filter reads it
+                # The plan lists the changed files itself: no paths-filter action, no PR API read.
+                plan = jobs["plan"]
+                self.assertEqual({"contents": "read"}, plan["permissions"])
+                self.assertEqual([], [step["uses"] for step in plan["steps"] if "paths-filter" in step.get("uses", "")])
+                self.assertEqual(0, plan["steps"][0]["with"]["fetch-depth"])  # the base and the merge base
+                self.assertEqual(jobs["part"]["steps"][-1]["env"]["BASE_REF"], plan["steps"][-1]["env"]["BASE_REF"])
+                # The test part and check:agents skip prose; check:lint and check:secrets always run.
+                code = ["**", "!**/*.md", "!docs/**", "!LICENSE"]
+                agents = ["**", "!README.md", "!CHANGELOG.md", "!docs/**", "!LICENSE"]
+                tests = {"data/dbt": {"check:unit": ["**", "!*.md", "!docs/**", "!LICENSE"]},
+                         "ai/skills": {"check:unit": agents}, "ai/mcp": {"check:smoke": code},
+                         "authoring/content": {}}.get(project_type, {"check:unit": code})
+                self.assertEqual({**tests, "check:agents": agents},
+                                 yaml.safe_load((project / ".github/check-paths.yml").read_text()))
 
                 # The tracker's components as the pack's labels.py reads them: each an `area:` label with its text.
                 tracker = settings((project / "docs/agents/issue-tracker.md").read_text())

@@ -67,10 +67,41 @@ lives once, in `mise.toml` `[tools]` or the toolchain's lock file:
 only stashes unstaged changes and passes the staged files.
 
 Generated CI runs the same tasks. A `plan` job runs `mise run ci:parts`, which
-lists the `check:` parts (all but `check:all`) this change needs:
-`.github/check-paths.yml` maps a part to the paths that run it, and a part it
-does not name always runs. A matrix job named after each part runs
-`mise run <part>`. In a mise monorepo root, which names its own tasks `//:<task>`,
+lists the `check:` parts (all but `check:all`) this change needs. It lists the
+changed files with `git diff --name-only <base>...HEAD`: the base is a PR's
+base branch, a push's previous commit or a queue entry's base commit. A part
+named in `.github/check-paths.yml` runs only when a changed file matches its
+filter, and a part the file does not name always runs. With no base to compare
+with (a new branch's first push, a commit the checkout lacks, or `BASE_REF`
+unset when run locally) every part runs. A matrix job named after each part runs
+`mise run <part>`.
+
+A filter is a part's name over a list of globs: `**` matches across folders,
+`*` within one folder, and a glob starting with `!` excludes. A file counts for
+the part when it matches one of its globs and none of its `!` globs:
+
+```yaml
+"check:unit":
+  - "**"
+  - "!**/*.md"
+  - "!docs/**"
+  - "!LICENSE"
+```
+
+The rendered filters give the test part and `check:agents` everything but prose
+in this way, so a file nobody listed still runs the tests. `check:lint` and
+`check:secrets` have no filter: they run on every change, since a README is
+where a pasted key lands. A content project's `check:unit` has none either,
+since its link check reads every Markdown file.
+
+A version-only edit of a build file is no change. `pyproject.toml`
+(`project.version`), `uv.lock` (the `version` of the project's own packages,
+whose `source` is `editable` or `virtual`), `package.json` (`version`) and
+`package-lock.json` (the top-level `version` and `packages[""].version`) drop
+out of the changed files when, parsed at the merge base and at the head, they
+differ only in those keys. A file missing on either side, one that fails to
+parse, or a change to any other key counts as changed. So a release bump with
+its changelog runs only `check:lint` and `check:secrets`. In a mise monorepo root, which names its own tasks `//:<task>`,
 the parts are the root's own `check:` tasks. The aggregate `check` job passes only when the plan and every
 part passed, and names a failed part with the command that reruns it. A project
 adds a check as a `check:<name>` task in `mise.toml`; CI picks it up with no
@@ -566,6 +597,14 @@ The approvals workflow never merges any more: its optional GitHub App token
 `contents` permission drops to `read`, so delete the variable, the secret and
 the App if nothing else uses them. `setup:github` no longer turns on
 `allow_auto_merge`, and its `merge-queue` alias goes: run `mise run setup:github`.
+
+Updating to the next release brings the path filters in
+`.github/check-paths.yml`, and CI's `plan` job matches them itself, without
+`dorny/paths-filter` and its `pull-requests: read` permission. If you edited the
+file, `copier update` shows a conflict: keep your entries, which work as before
+(the same globs, plus `!` to exclude). Your build files get the version-only rule
+with no edit. Filters now apply on every event CI runs on, so a push to main or
+a queue entry also skips a part whose files nothing touched.
 
 Updating to v0.10.0 moved the pack to `^0.21.0` (a caret on 0.x:
 `^0.18.0` never takes 0.19.0, nor `^0.20.0` 0.21.0); run

@@ -57,7 +57,6 @@ class VersionContractTest(unittest.TestCase):
             "lycheeverse/lychee-action": "e7477775783ea5526144ba13e8db5eec57747ce8",  # pragma: allowlist secret
             "hashicorp/setup-terraform": "dfe3c3f87815947d99a8997f908cb6525fc44e9e",  # pragma: allowlist secret
             "terraform-linters/setup-tflint": "6e1e0642c0289bd619021bf6b34e3c08ed1e005a",  # pragma: allowlist secret
-            "dorny/paths-filter": "ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d",  # pragma: allowlist secret
         }
         workflow_sources = [ROOT / ".github/workflows/ci.yml"]
         workflow_sources.extend((ROOT / "templates").rglob("*.yml.jinja"))
