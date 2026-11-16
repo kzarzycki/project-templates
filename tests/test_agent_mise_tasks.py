@@ -976,6 +976,8 @@ class AgentMiseTasksTest(unittest.TestCase):
         base = self.ci_parts_repo()
         everything = ["check:agents", "check:lint", "check:secrets", "check:unit"]
         prose = ["check:lint", "check:secrets"]
+        module = (self.project / "src/agent_layer_test/__init__.py").read_text()
+        self.assertTrue(module)  # git detects a rename only of a file with content
         bump = {"pyproject.toml": self.edit("pyproject.toml", 'version = "0.1.0"', 'version = "0.2.0"'),
                 "uv.lock": self.PYTHON_LOCK.replace('version = "0.1.0"', 'version = "0.2.0"'),
                 "CHANGELOG.md": "# Changelog\n\n## 0.2.0\n"}
@@ -988,6 +990,8 @@ class AgentMiseTasksTest(unittest.TestCase):
             ("dependency added", dependency, everything),
             ("src changed", {"src/agent_layer_test/__init__.py": "VALUE = 2\n"}, everything),
             ("a test file changed", {"tests/test_new.py": "def test_it():\n    pass\n"}, everything),
+            ("a file moved out of src into docs", {"src/agent_layer_test/__init__.py": None,
+                                                   "docs/moved.py": module}, everything),
             ("docs only", {"docs/notes.md": "notes\n", "docs/diagram.svg": "<svg/>\n"}, prose),
             ("a nested Markdown file", {"src/agent_layer_test/NOTES.md": "notes\n"}, ["check:agents", *prose]),
             ("version and another key", {**bump, "pyproject.toml": bump["pyproject.toml"].replace(
