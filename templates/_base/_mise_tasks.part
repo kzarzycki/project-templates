@@ -154,8 +154,7 @@ description = "Prints the check: parts this change needs, for CI's matrix."
 run = '''
 base=""
 if [ -n "${BASE_REF:-}" ]; then
-{% include "templates/_base/_diff_base.part" %}  git rev-parse -q --verify "$base^{commit}" >/dev/null || base=""
-fi
+{% include "templates/_base/_diff_base.part" %}fi
 mise tasks ls --json | BASE="$base" python3 -c '
 import json, os, re, subprocess, sys
 from pathlib import Path
@@ -233,14 +232,14 @@ def version_only(path, merge_base):
 filters = read_filters(paths.read_text()) if paths.exists() else {}
 base, changed = os.environ.get("BASE", ""), None
 if not base:
-    print("every part runs: no base commit to compare with (BASE_REF unset, all zeros or not in this checkout)", file=sys.stderr)
+    print("every part runs: BASE_REF is unset, so there is no base to compare with", file=sys.stderr)
 else:
     try:
         merge_base = git("merge-base", base, "HEAD").strip()
         # --no-renames: a file moved out of a folder counts for that folder too.
         changed = [path for path in git("diff", "-z", "--no-renames", "--name-only", f"{base}...HEAD").split("\0") if path]
     except subprocess.CalledProcessError:
-        print(f"every part runs: {base} and HEAD have no merge base in this checkout", file=sys.stderr)
+        print(f"every part runs: {base} is not in this checkout or shares no history with HEAD", file=sys.stderr)
 if changed is not None:
     for path in [path for path in changed if version_only(path, merge_base)]:
         print(f"{path}: only the project version changed, not counted", file=sys.stderr)

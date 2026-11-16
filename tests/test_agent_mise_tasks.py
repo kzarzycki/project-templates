@@ -1017,6 +1017,7 @@ class AgentMiseTasksTest(unittest.TestCase):
                 "packages": {"": {"name": "agent-layer-test", "version": "0.1.0"},
                              "node_modules/vitest": {"version": "4.0.0"}}}
         (self.project / "package-lock.json").write_text(json.dumps(lock, indent=2))
+        (self.project / "src/release.json").write_text('{"version": "1"}\n')
         base = self.ci_parts_repo()
 
         def locked(**changes: object) -> str:
@@ -1037,7 +1038,8 @@ class AgentMiseTasksTest(unittest.TestCase):
             ("a dependency's version", {**bump, "package-lock.json": locked(
                 **{"version": "0.2.0", "root//version": "0.2.0", "root/node_modules+vitest/version": "4.1.0"})},
              everything),
-            ("package.json name", {"package.json": self.edit("package.json", '"version": "0.1.0"',
+            ("another JSON file's version", {"src/release.json": '{"version": "2"}\n'}, everything),
+            ("another package.json key", {"package.json": self.edit("package.json", '"version": "0.1.0"',
                                                               '"version": "0.1.0", "license": "MIT"')}, everything),
         ):
             with self.subTest(name):
