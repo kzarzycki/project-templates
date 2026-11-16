@@ -181,10 +181,13 @@ def read_filters(text):
         key = re.fullmatch(r"[\x22\x27]?(check:[\w:-]+)[\x22\x27]?\s*:(?:\s*\[(.*)\])?", bare)
         item = re.fullmatch(r"-\s+([\x22\x27]?)(.+?)\1", bare)
         if key and key.group(2) is not None:
-            flow = [re.fullmatch(r"([\x22\x27]?)(.+?)\1", glob.strip()) for glob in key.group(2).split(",") if glob.strip()]
+            # An item is one quoted string with no comma, or a plain one that YAML reads as a string (no
+            # leading * alias or & anchor, no brackets or quotes); anything else fails, nested or split lists too.
+            flow = [re.fullmatch(r"\x22([^\x22,]*)\x22|\x27([^\x27,]*)\x27|([^\x22\x27\[\]&*\s][^\x22\x27\[\],]*)", glob.strip())
+                    for glob in key.group(2).split(",") if glob.strip()]
             if not all(flow):
                 sys.exit(f"{paths}:{number}: a flow list item this reader cannot read: {line}")
-            filters.setdefault(key.group(1), []).extend(glob.group(2) for glob in flow)
+            filters.setdefault(key.group(1), []).extend(next(g for g in glob.groups() if g is not None) for glob in flow)
             globs = None
         elif key:
             globs = filters.setdefault(key.group(1), [])

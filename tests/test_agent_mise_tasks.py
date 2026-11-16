@@ -1080,14 +1080,21 @@ class AgentMiseTasksTest(unittest.TestCase):
                 self.assertEqual(expected, self.ci_parts(base))
 
     def test_ci_parts_fails_on_a_filter_line_it_cannot_read(self) -> None:
-        (self.project / ".github/check-paths.yml").write_text('"check:unit": &unit\n  - "src/**"\n')
         base = self.ci_parts_repo()
-
         self.env["BASE_REF"] = base
-        result = self.run_task("ci:parts")
+        for name, text in (
+            ("an anchor", '"check:unit": &unit\n  - "src/**"\n'),
+            ("a comma inside a quoted flow item", '"check:unit": ["a,b/**"]\n'),
+            ("a nested flow list", '"check:unit": [["src/**"]]\n'),
+            ("an alias as a flow item", '"check:unit": [*u]\n'),
+        ):
+            with self.subTest(name):
+                (self.project / ".github/check-paths.yml").write_text(text)
 
-        self.assertNotEqual(0, result.returncode)
-        self.assertIn("check-paths.yml:1:", result.stderr)
+                result = self.run_task("ci:parts")
+
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn("check-paths.yml:1:", result.stderr)
 
     def test_ci_parts_in_a_monorepo_root_lists_the_roots_own_parts_by_their_bare_names(self) -> None:
         (self.bin / "mise").symlink_to(MISE)
