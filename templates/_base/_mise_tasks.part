@@ -166,7 +166,9 @@ def tested_by_the_queue():
         found = subprocess.run(["gh", "api", query, "--jq", ".total_count"], capture_output=True, text=True, timeout=60)
     except (OSError, subprocess.TimeoutExpired):
         return False
-    return found.returncode == 0 and found.stdout.strip() not in ("", "0")
+    # Only a positive count is a found run: null, an error text or a negative number is a failed lookup.
+    count = found.stdout.strip()
+    return found.returncode == 0 and re.fullmatch("[0-9]+", count) is not None and int(count) > 0
 
 
 # A mise monorepo root lists its own tasks as //:<task>, and CI runs them by the bare name.

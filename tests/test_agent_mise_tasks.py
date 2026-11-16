@@ -950,6 +950,8 @@ class AgentMiseTasksTest(unittest.TestCase):
         everything = ["check:agents", "check:lint", "check:secrets", "check:unit"]
         # A wrong skip leaves main untested, so anything but a found run, the lookup failing included, runs every part.
         for event, count, expected in (("push", "1", []), ("push", "0", everything), ("push", "", everything),
+                                       ("push", "null", everything), ("push", "false", everything),
+                                       ("push", "-1", everything), ("push", "error", everything),
                                        ("merge_group", "1", everything), ("pull_request", "1", everything)):
             with self.subTest(event=event, count=count):
                 self.env.update({"GITHUB_EVENT_NAME": event, "GH_COUNT": count})
