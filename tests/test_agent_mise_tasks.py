@@ -996,11 +996,11 @@ class AgentMiseTasksTest(unittest.TestCase):
                 (self.bin / "github.json").unlink(missing_ok=True)
                 result, github = self.approvals_run(code)
                 self.assertEqual(exit_code, result.returncode, result.stdout + result.stderr)
-                [status] = github["statuses"]
                 self.assertEqual(
-                    {"sha": "abc123", "state": state, "context": "loop:approvals",
-                     "description": f"approvals said {code}", "target_url": "https://example.com/run"},
-                    status,
+                    [{"sha": "abc123", "state": state, "context": context,
+                      "description": f"approvals said {code}", "target_url": "https://example.com/run"}
+                     for context in ("loop:approvals", "gatekeeper")],
+                    github["statuses"],
                 )
                 self.assertEqual([], github["edits"])  # the status only: no merge, whatever the result
 
@@ -1012,7 +1012,7 @@ class AgentMiseTasksTest(unittest.TestCase):
                 self.fake_github(pr=["abc123", "false", "owner"], allow_auto_merge=auto)
                 result, github = self.approvals_run(0)
                 self.assertEqual(0, result.returncode, result.stdout + result.stderr)
-                self.assertEqual([("abc123", "success")], [(s["sha"], s["state"]) for s in github["statuses"]])
+                self.assertEqual([("abc123", "success")] * 2, [(s["sha"], s["state"]) for s in github["statuses"]])
                 self.assertEqual([], github["edits"])  # the fake gh records every `gh pr merge` here
                 self.assertNotIn("auto-merge", result.stdout + result.stderr)
         self.assertNotIn("gh pr merge", (self.project / "mise.toml").read_text())
@@ -1040,7 +1040,7 @@ class AgentMiseTasksTest(unittest.TestCase):
                 result, github = self.approvals_run(3, ACTION="synchronize")
                 self.assertEqual(code, result.returncode, result.stdout + result.stderr)
                 self.assertEqual([["DELETE", "repos/o/r/issues/7/labels/approved:merge"]], github["edits"])
-                self.assertEqual(states, [status["state"] for status in github["statuses"]])
+                self.assertEqual(states * 2, [status["state"] for status in github["statuses"]])
         # Only the label being absent is tolerated; any other failure is printed and fails the job.
         self.assertIn("could not remove approved:merge", result.stderr)
         self.assertIn("HTTP 403", result.stderr)
@@ -1052,7 +1052,7 @@ class AgentMiseTasksTest(unittest.TestCase):
 
         self.fake_github(pr=["abc123", "false", "app/dependabot"])
         _, dependabot = self.approvals_run(2)
-        self.assertEqual([("abc123", "success")], [(s["sha"], s["state"]) for s in dependabot["statuses"]])
+        self.assertEqual([("abc123", "success")] * 2, [(s["sha"], s["state"]) for s in dependabot["statuses"]])
 
         self.fake_github(pr=["abc123", "true", "owner"])
         draft, github = self.approvals_run(2)
@@ -1063,7 +1063,7 @@ class AgentMiseTasksTest(unittest.TestCase):
         self.env["MISE_TRUSTED_CONFIG_PATHS"] = str(self.project)
         (self.bin / "github.json").unlink()
         _, queued = self.approvals_run(2, EVENT="merge_group", QUEUE_HEAD="q1", PR="")
-        self.assertEqual([("q1", "success")], [(s["sha"], s["state"]) for s in queued["statuses"]])
+        self.assertEqual([("q1", "success")] * 2, [(s["sha"], s["state"]) for s in queued["statuses"]])
 
     def test_check_passes_in_a_generated_python_project_without_pre_commit(self) -> None:
         # Real toolchain: the project's mise tools, installed. pre-commit is hidden from mise and

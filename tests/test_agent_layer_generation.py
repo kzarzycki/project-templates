@@ -1265,7 +1265,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
             self.assertNotIn(word, tasks["setup:github"]["run"])
         ci_name = yaml.safe_load(workflow)["name"]
         self.assertEqual({"workflows": [ci_name, "Approvals relay"], "types": ["completed"]}, on["workflow_run"])
-        self.assertIn("context=loop:approvals", tasks["ci:approvals"]["run"])
+        self.assertIn("for context in loop:approvals gatekeeper", tasks["ci:approvals"]["run"])
         self.assertIn("issues/$PR/labels/approved:merge", tasks["ci:approvals"]["run"])
         self.assertNotIn("alias", tasks["setup:github"])  # `merge-queue` went with the queue
         self.assertIn("-F delete_branch_on_merge=true", tasks["setup:github"]["run"])
@@ -1427,7 +1427,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
                 self.assertEqual(["check", "loop:approvals"], required)
                 self.assertEqual("check", jobs["check"].get("name", "check"))  # the check run's name, not just the key
                 self.assertEqual(15368, rules["required_status_checks"]["required_status_checks"][0]["integration_id"])  # GitHub Actions
-                self.assertIn("context=loop:approvals", tasks["ci:approvals"]["run"])
+                self.assertIn("for context in loop:approvals gatekeeper", tasks["ci:approvals"]["run"])
                 self.assertNotIn("merge_queue", rules)  # the pack's land refuses a base that requires a queue
                 for workflow in (project / ".github/workflows").glob("*.yml"):
                     self.assertNotIn("merge_group", workflow.read_text(), workflow.name)
