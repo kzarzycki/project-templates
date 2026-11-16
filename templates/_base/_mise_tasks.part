@@ -258,15 +258,18 @@ run = [
 ]
 
 [tasks."ci:approvals"]
-description = "CI's approvals step: posts loop:approvals merge's result as the loop:approvals commit status on the PR head (pending while it waits){% if merge_queue %}; success on a merge-queue commit{% endif %}; a push removes approved:merge first. It never merges: mise run loop:land does."
+description = "CI's approvals step: posts loop:approvals merge's result as the loop:approvals and gatekeeper commit statuses (same state, description and link) on the PR head (pending while it waits){% if merge_queue %}; success on a merge-queue commit{% endif %}; a push removes approved:merge first. It never merges: mise run loop:land does."
 # A job ends only as success or failure, and GitHub counts a skipped job as passed, so the
-# result is a commit status, which main's ruleset requires. The workflow sets {% if merge_queue %}EVENT, {% endif %}ACTION,
+# result is a commit status, which main's ruleset requires. It is posted as `loop:approvals` (what rulesets
+# require) and as `gatekeeper` (the gatekeeper's new name, posted for one release line). The workflow sets {% if merge_queue %}EVENT, {% endif %}ACTION,
 # PR, {% if merge_queue %}QUEUE_HEAD {% endif %}and RUN_URL.
 run = '''
 post() {
-  gh api -X POST "repos/$GITHUB_REPOSITORY/statuses/$1" -f state="$2" -f context=loop:approvals \
-    -f description="$(printf '%s' "$3" | cut -c1-140)" -f target_url="$RUN_URL" >/dev/null
-  echo "loop:approvals: $2 on $1: $3"
+  for context in loop:approvals gatekeeper; do
+    gh api -X POST "repos/$GITHUB_REPOSITORY/statuses/$1" -f state="$2" -f context="$context" \
+      -f description="$(printf '%s' "$3" | cut -c1-140)" -f target_url="$RUN_URL" >/dev/null
+  done
+  echo "loop:approvals, gatekeeper: $2 on $1: $3"
 }
 {% if merge_queue %}if [ "$EVENT" = merge_group ]; then
   # A PR is queued only with the status green on its head, so the queue's commit passes.
