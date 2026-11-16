@@ -88,7 +88,7 @@ merge_queue:
   type: bool
   default: false
   when: "{{ include_mise and include_agent_layer and include_engineering_workflow and engineering_loop }}"
-  help: "Render GitHub's merge queue on main? The engineering pack's `loop:land` refuses a base whose rules require a queue, since the queue would merge each PR on a tree land never gated; GitHub offers one only on organization-owned repos."
+  help: "Render GitHub's merge queue on main? The engineering pack's `loop:land` then enqueues each landable PR, pinned to its head, and the queue's CI run gates it; without a queue, `land` gates each batch itself. GitHub offers a queue only on organization-owned repos."
 
 include_fnox:
   type: bool
