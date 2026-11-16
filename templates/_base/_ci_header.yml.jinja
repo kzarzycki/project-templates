@@ -4,13 +4,13 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main, master]
-  # A merge queue runs the required checks on each PR combined with main.
+{% if merge_queue %}  # A merge queue runs the required checks on each PR combined with main.
   merge_group:
-
+{% endif %}
 permissions:
   contents: read
 
-# A PR's newer push cancels its older run. Every push to main and every queue entry keeps
+# A PR's newer push cancels its older run. Every push to main{% if merge_queue %} and every queue entry{% endif %} keeps
 # its own run, so a red main can be pinned to the merge that caused it.
 concurrency:
   group: {% raw %}ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}{% endraw %}

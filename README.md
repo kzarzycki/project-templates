@@ -238,20 +238,13 @@ every merge. § Approvals explains three settings the seed leaves off:
 `.github/workflows/approvals.yml` workflow posts the merge result as the
 `loop:approvals` commit status on the PR head: pending while it waits for CI's
 `check` or a label a rule asks for, failure when a proof is missing, success once every proof
-holds. It reruns when a label or the PR body changes and when CI completes, and
-posts success on a merge-queue commit, since a PR is queued only once its status
-was green. On success on a ready PR that has no auto-merge request yet, and when
-the workflow runs with the optional GitHub App's token (`APPROVALS_APP_CLIENT_ID`), it turns
-auto-merge on, pinned to the head
-(`--match-head-commit`), so a PR made ready by hand lands with no agent action;
-the job needs `contents: write` and `pull-requests: write` for that, and `actions: read` to read each check run's workflow (without it GitHub refuses the merge check's query). It never
-replaces an existing request, and it turns nothing on when the repo's `allow_auto_merge`
-is not `true` or can't be read: there, with no required check pending, `gh pr merge --auto`
-would merge at once with `GITHUB_TOKEN`, so no push workflow would run on main. Without
-the App token it turns nothing on either: GitHub starts no workflow for an event `GITHUB_TOKEN`
-makes, so a merge queue would build the group commit with no CI and wait out its timeout. In
-each case the job stops at the status and `mise run loop:land <pr>` queues or merges the PR
-with the agent's own token. GitHub's free plan has no protection for private repos, so there the
+holds. It reruns when a label or the PR body changes and when CI completes. It
+only posts the status and never merges, so its job reads `contents` and writes
+only statuses, issues (`risk:high`) and pull requests (removing `approved:merge`
+on a push); `actions: read` lets it read each check run's workflow (without it
+GitHub refuses the merge check's query). With `merge_queue=true` it also posts
+success on a merge-queue commit, since a PR is queued only once its status was
+green. GitHub's free plan has no protection for private repos, so there the
 status is only a mark (pending while it waits, red on a missing proof), not a
 block: it catches a forgotten step, not a deliberate one.
 
@@ -261,58 +254,41 @@ engineer, so each request is a notification nobody needs to act on. Keep paths
 to a team with a push ruleset (a `file_path_restriction` rule with the team as
 its bypass) instead, and ask someone for a review by name when it needs one.
 
-`mise run loop:land <pr>` is the one way an agent lands a PR: it runs the pack's
-`approvals.py land`, which checks every merge proof, then marks the PR ready and
-squash-merges it pinned to its head, or turns auto-merge on while only required
-checks are pending. It exits 0 once the PR merged or auto-merge is on, 1 on a
-missing proof (the PR is left untouched) and 3 while it waits: run it again, or
-pass `--wait` to return only once the PR merges or needs someone. It
-runs as you, so a merge it makes starts main's push workflows.
+`mise run loop:land <pr>` is the one way an agent lands a PR. It runs the pack's
+`approvals.py land` (engineering-v0.26.1 and later), the batch land: under a lock,
+it gates every landable PR, the named one included, as one batch on their
+combined tree, then merges each through GitHub, pinned to its head. It exits 0
+once the PR merged, 1 on a missing proof (the PR is left untouched) and 3 while
+it waits, for a pending check or for another land holding the lock: run it
+again, or pass `--wait` to return only once the PR merges or needs someone. It
+runs as you, so a merge it makes starts main's push workflows. It refuses a base
+whose rules require GitHub's merge queue, since the queue would merge each PR
+later, on a tree `land` never gated.
 
-By default the approvals workflow only posts the status, and `loop:land` lands
-the PR: GitHub starts no workflow for an event the workflow's `GITHUB_TOKEN`
-causes, so a merge it made would start no push workflow on main (CI's push run,
-Pages, tags). To have the workflow land a PR made ready by hand too, give it a
-GitHub App's token, whose merge starts them:
-
-1. Create a GitHub App with repository permissions Contents: write, Pull requests:
-   write, Commit statuses: write, Issues: write, Checks: read and Actions: read, and install it on
-   the repo.
-2. Set the repo variable `APPROVALS_APP_CLIENT_ID` to the App's client ID and the
-   secret `APPROVALS_APP_PRIVATE_KEY` to a private key it generated
-   (`gh variable set`, `gh secret set`).
-
-With the variable set, the workflow runs everything with the App's token and,
-on success, turns auto-merge on where the repo allows it and the PR has no
-request (the paragraph above); without it, it posts the status with `GITHUB_TOKEN` and
-turns nothing on. `mise run setup:github` prints which one the repo uses.
-
-Where GitHub offers rulesets and merge queues, main lands through a queue.
-Generated CI skips draft PRs (marking one ready starts it) and runs on every push
-to main and every `merge_group` entry, each in its own run, so a red main points
-at one merge. A push compares changed lines against the commit before it, a
-queue entry against the queue's base. With the loop on,
-`.github/rulesets/main.json` is the `loop-merge-queue` ruleset on main: changes
-only through a squashed PR with every review thread resolved, no bypass, and a merge queue (squash, all-green
-grouping) that requires exactly two names, CI's `check` job and the
-`loop:approvals` status. GitHub offers merge queues only on organization-owned
-repos, so a user-owned repo answers `merge_queue=false`: the ruleset then has no
-queue and keeps every other rule, and auto-merge lands the PR once both names
-are green. Its name stays `loop-merge-queue`, since `setup:github` finds its
-ruleset by that name. `mise run setup:github` (alias `merge-queue`) creates
-that ruleset on GitHub, or updates it if one with that name exists, and sets
-the repository's `allow_auto_merge` and `delete_branch_on_merge` to true, so
-`mise run loop:land <n>` (or, with the App token, the approvals workflow) queues
-the PR once both names are green, or without a queue merges it, and its branch is deleted after the merge. It never reads or changes another ruleset: GitHub
-applies every active ruleset on a branch, so the repo's own rules on main keep
-applying alongside it. The task prints both settings' previous values and the
-`gh api -X PATCH` command that restores them. `mise run setup:github --revert`
+Main lands through `loop:land`'s batch, not a merge queue. Generated CI skips
+draft PRs (marking one ready starts it) and runs on every push to main, each in
+its own run, so a red main points at one merge; a push compares changed lines
+against the commit before it. With the loop on, `.github/rulesets/main.json` is
+the `loop-merge-queue` ruleset on main: changes only through a squashed PR with
+every review thread resolved, no bypass, and exactly two required names, CI's
+`check` job and the `loop:approvals` status. Its name stays `loop-merge-queue`,
+since `setup:github` finds its ruleset by that name, and a rename would leave the
+old one, queue included, in place. `merge_queue` defaults to false; answering
+true adds GitHub's merge queue (squash, all-green grouping) to the ruleset and a
+`merge_group` trigger to CI and the approvals relay, but the pack's `land`
+refuses that base, and GitHub offers merge queues only on organization-owned
+repos. `mise run setup:github` creates that ruleset on GitHub, or updates it if
+one with that name exists, and sets the repository's `delete_branch_on_merge`
+to true, so a merged PR's branch is deleted; it leaves `allow_auto_merge` as it
+is, since `land` does not use it. It never reads or changes another ruleset:
+GitHub applies every active ruleset on a branch, so the repo's own rules on main
+keep applying alongside it. The task prints the setting's previous value and the
+`gh api -X PATCH` command that restores it. `mise run setup:github --revert`
 deletes the `loop-merge-queue` ruleset, found by name; when it is already gone,
 there is nothing to do. If GitHub rejects the ruleset, the task stops before it
-changes the settings. A private repo on GitHub Free has no rulesets and no
-auto-merge: the task first reads the rules on main, and when GitHub answers that
-read with its 403 naming the plan (the probe `land` uses), it skips the ruleset
-and auto-merge, sets squash-only merges (`allow_merge_commit` and
+changes the settings. A private repo on GitHub Free has no rulesets: the task
+first reads the rules on main, and when GitHub answers that read with its 403
+naming the plan (the probe `land` uses), it skips the ruleset, sets squash-only merges (`allow_merge_commit` and
 `allow_rebase_merge` false, `allow_squash_merge` true) and
 `delete_branch_on_merge`, prints their restore command and that GitHub enforces
 nothing on main, so `loop:land`'s proofs are the only gate. Any other error on
@@ -347,8 +323,9 @@ so `loop:approvals` turns green with no other event.
 
 The approvals workflow holds a write token, so it only runs main's copy of itself and
 checks out main on every trigger. `pull_request` would run the PR's own copy, so it uses
-`pull_request_target`. A review and a merge-queue entry have no such form, so the
-token-less `approvals_relay.yml` catches them and its completion starts the approvals run.
+`pull_request_target`. A review (and, with `merge_queue=true`, a merge-queue entry) has no
+such form, so the token-less `approvals_relay.yml` catches it and its completion starts the
+approvals run.
 
 ## Use it via Claude
 
@@ -577,6 +554,18 @@ project task calling `post_demo.sh` moves to `demo.sh`. The pack's 0.24.0 change
   it from the update, a vendored `CLAUDE.md` takes it by hand.
 - The tasks call the scripts with `uv run`, which installs their PyYAML, and
   the approvals workflow installs `uv` through mise.
+
+Updating to the next release moves the pack to `engineering-v0.26.1`, whose
+`approvals.py land` gates every landable PR as one batch under a lock and refuses
+a base whose rules require GitHub's merge queue (kzarzycki/agent-skills#653).
+So `merge_queue` now defaults to false: an organization repo that took the old
+default answers false (or keeps `true` and lands outside `loop:land`), then runs
+`mise run setup:github` to drop the queue from the `loop-merge-queue` ruleset.
+The approvals workflow never merges any more: its optional GitHub App token
+(`APPROVALS_APP_CLIENT_ID`, `APPROVALS_APP_PRIVATE_KEY`) goes, and its job's
+`contents` permission drops to `read`, so delete the variable, the secret and
+the App if nothing else uses them. `setup:github` no longer turns on
+`allow_auto_merge`, and its `merge-queue` alias goes: run `mise run setup:github`.
 
 Updating to v0.10.0 moved the pack to `^0.21.0` (a caret on 0.x:
 `^0.18.0` never takes 0.19.0, nor `^0.20.0` 0.21.0); run

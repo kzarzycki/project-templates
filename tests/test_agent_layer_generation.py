@@ -401,7 +401,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
             [
                 {
                     "git": "kzarzycki/agent-skills/engineering",
-                    "ref": "engineering-v0.25.0",
+                    "ref": "engineering-v0.26.1",
                 }
             ],
             yaml.safe_load(apm)["dependencies"]["apm"],
@@ -452,7 +452,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         manifest = (project / "apm.yml").read_text()
         answers = (project / ".copier-answers.yml").read_text()
         self.assertEqual(1, manifest.count("git: kzarzycki/agent-skills/engineering"))
-        self.assertIn("ref: engineering-v0.25.0", manifest)
+        self.assertIn("ref: engineering-v0.26.1", manifest)
         self.assertIn("include_engineering_workflow: true", answers)
         self.assertNotIn("engineering_capability_source", answers)
         self.assertNotIn("engineering_capability_ref", answers)
@@ -1222,10 +1222,10 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertEqual("mise run ci:approvals", job["steps"][-1]["run"])
         self.assertEqual({"install_args": "uv"}, job["steps"][-2]["with"])  # uv runs approvals.py with its PyYAML
         self.assertEqual("write", job["permissions"]["statuses"])  # posts loop:approvals
-        # The least that turns auto-merge on: write on contents and pull requests, read on the rest.
+        # The job never merges, so it only reads contents.
         self.assertEqual(
             {
-                "contents": "write",
+                "contents": "read",
                 "issues": "write",
                 "pull-requests": "write",
                 "checks": "read",
@@ -1235,20 +1235,20 @@ class AgentLayerGenerationTest(unittest.TestCase):
             job["permissions"],
         )
         self.assertEqual({}, approvals["permissions"])
-        # Auto-merge is pinned to the head the proofs covered, and only after a success, never on a request.
+        # The job posts the status and never merges: loop:land gates every landable PR as one batch.
         approvals_task = tasks["ci:approvals"]["run"]
-        self.assertIn('gh pr merge "$PR" --auto --squash --match-head-commit "$head"', approvals_task)
-        self.assertLess(approvals_task.index('post "$head" success "${first'), approvals_task.index("gh pr merge"))
-        self.assertLess(approvals_task.index("autoMergeRequest"), approvals_task.index("gh pr merge"))
+        for word in ("gh pr merge", "autoMergeRequest", "allow_auto_merge", "APP_TOKEN", "merge_group"):
+            self.assertNotIn(word, approvals_task)
+        self.assertIn("It never merges", tasks["ci:approvals"]["description"])
         on = approvals[True]  # PyYAML reads `on` as True
         self.assertIn("labeled", on["pull_request_target"]["types"])
         self.assertIn("synchronize", on["pull_request_target"]["types"])
-        # A review and a queue entry run the PR's copy of a workflow, so the token-less relay catches them.
+        # A review runs the PR's copy of a workflow, so the token-less relay catches it; no queue by default.
         for trigger in ("pull_request", "pull_request_review", "merge_group"):
             self.assertNotIn(trigger, on)
         relay = yaml.safe_load((project / ".github/workflows/approvals_relay.yml").read_text())
         self.assertEqual({"types": ["submitted", "dismissed"]}, relay[True]["pull_request_review"])
-        self.assertIn("merge_group", relay[True])
+        self.assertNotIn("merge_group", relay[True])
         self.assertEqual(["CI", "Approvals relay"], on["workflow_run"]["workflows"])
         # A PR event never runs on a draft or for dependabot.
         self.assertIn(
@@ -1256,24 +1256,25 @@ class AgentLayerGenerationTest(unittest.TestCase):
             " && !github.event.pull_request.draft && github.actor != 'dependabot[bot]')",
             job["if"],
         )
-        # The token is github.token unless the repo names a GitHub App, whose token gets this job's permissions.
-        app = next(step for step in job["steps"] if step.get("id") == "app")
-        self.assertEqual("${{ vars.APPROVALS_APP_CLIENT_ID != '' }}", app["if"])
-        self.assertEqual("${{ secrets.APPROVALS_APP_PRIVATE_KEY }}", app["with"]["private-key"])
-        self.assertEqual(
-            {name.removeprefix("permission-"): value for name, value in app["with"].items() if name.startswith("permission-")},
-            job["permissions"],
-        )
-        self.assertEqual("${{ steps.app.outputs.token || github.token }}", job["steps"][-1]["env"]["GH_TOKEN"])
-        self.assertEqual("${{ steps.app.outputs.token != '' }}", job["steps"][-1]["env"]["APP_TOKEN"])
-        self.assertIn("actions/variables/APPROVALS_APP_CLIENT_ID", tasks["setup:github"]["run"])
-        self.assertIn("actions/secrets/APPROVALS_APP_PRIVATE_KEY", tasks["setup:github"]["run"])
+        # The optional GitHub App token went with the merge it made: the job runs with github.token only.
+        self.assertEqual([], [step for step in job["steps"] if "create-github-app-token" in step.get("uses", "")])
+        self.assertEqual({"GH_TOKEN": "${{ github.token }}"}, {k: v for k, v in job["steps"][-1]["env"].items() if "TOKEN" in k})
+        approvals_text = (project / ".github/workflows/approvals.yml").read_text()
+        for word in ("APPROVALS_APP", "auto-merge", "merge_group"):
+            self.assertNotIn(word, approvals_text)
+            self.assertNotIn(word, tasks["setup:github"]["run"])
         ci_name = yaml.safe_load(workflow)["name"]
         self.assertEqual({"workflows": [ci_name, "Approvals relay"], "types": ["completed"]}, on["workflow_run"])
         self.assertIn("context=loop:approvals", tasks["ci:approvals"]["run"])
         self.assertIn("issues/$PR/labels/approved:merge", tasks["ci:approvals"]["run"])
-        self.assertEqual("merge-queue", tasks["setup:github"]["alias"])
-        self.assertIn("-F allow_auto_merge=true -F delete_branch_on_merge=true", tasks["setup:github"]["run"])
+        self.assertNotIn("alias", tasks["setup:github"])  # `merge-queue` went with the queue
+        self.assertIn("-F delete_branch_on_merge=true", tasks["setup:github"]["run"])
+        self.assertNotIn("allow_auto_merge=", tasks["setup:github"]["run"])  # left as it is
+        land = tasks["loop:land"]["description"]
+        for words in ("batch", "lock", "Exits 0 merged", "3 while it waits", "merge queue"):
+            self.assertIn(words, land)
+        self.assertNotIn("auto-merge", land)
+        self.assertEqual("Runs every check: part: the list CI runs.", tasks["check:all"]["description"])
         self.assertIn("labels=.agents/skills/engineering-loop/scripts/labels.py", tasks["setup:github"]["run"])
         self.assertIn(".worktrees/", (project / ".gitignore").read_text().splitlines())
         hooks = {
@@ -1353,7 +1354,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
             (project / ".apm/instructions/project.instructions.md").read_text(),
         )
 
-    def test_every_leaf_lands_through_a_merge_queue_requiring_its_own_jobs(self) -> None:
+    def test_every_leaf_lands_through_a_ruleset_requiring_its_own_jobs(self) -> None:
         contract = {
             "check", "check:all", "check:lint", "check:unit", "check:secrets", "check:agents",
             "test:fast", "test:unit", "test:changed", "ci:parts", "ci:check", "ci:approvals",
@@ -1361,7 +1362,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         }
         aliases = {
             "check:lint": ["lint", "fmt"], "test:fast": "test", "setup:dev": "bootstrap",
-            "loop:approvals": "gate", "setup:github": "merge-queue", "agent:sync": "agent-sync",
+            "loop:approvals": "gate", "setup:github": None, "agent:sync": "agent-sync",
             "agent:claude": "agent-claude", "agent:codex": "agent-codex",
         }
         for project_type, answers in LEAVES:
@@ -1378,7 +1379,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
 
                 ci = yaml.safe_load((project / ".github/workflows/ci.yml").read_text())
                 self.assertIn("ready_for_review", ci[True]["pull_request"]["types"])
-                self.assertIn("merge_group", ci[True])
+                self.assertNotIn("merge_group", ci[True])
                 self.assertEqual(
                     "ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}",
                     ci["concurrency"]["group"],
@@ -1398,7 +1399,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
                 # a stale uv.lock fails the part rather than being rewritten by setup:dev (#29)
                 self.assertEqual("1", jobs["part"]["env"]["UV_LOCKED"])
                 self.assertEqual(
-                    "${{ github.base_ref || github.event.merge_group.base_sha || github.event.before }}",
+                    "${{ github.base_ref || github.event.before }}",
                     jobs["part"]["steps"][-1]["env"]["BASE_REF"],
                 )
                 yaml.safe_load((project / ".github/check-paths.yml").read_text())  # paths-filter reads it
@@ -1427,8 +1428,9 @@ class AgentLayerGenerationTest(unittest.TestCase):
                 self.assertEqual("check", jobs["check"].get("name", "check"))  # the check run's name, not just the key
                 self.assertEqual(15368, rules["required_status_checks"]["required_status_checks"][0]["integration_id"])  # GitHub Actions
                 self.assertIn("context=loop:approvals", tasks["ci:approvals"]["run"])
-                self.assertEqual("SQUASH", rules["merge_queue"]["merge_method"])
-                self.assertEqual("ALLGREEN", rules["merge_queue"]["grouping_strategy"])
+                self.assertNotIn("merge_queue", rules)  # the pack's land refuses a base that requires a queue
+                for workflow in (project / ".github/workflows").glob("*.yml"):
+                    self.assertNotIn("merge_group", workflow.read_text(), workflow.name)
                 self.assertEqual(["squash"], rules["pull_request"]["allowed_merge_methods"])
                 self.assertTrue(rules["pull_request"]["required_review_thread_resolution"])  # an open thread blocks the merge
                 self.assertEqual([], ruleset["bypass_actors"])
@@ -1467,17 +1469,36 @@ class AgentLayerGenerationTest(unittest.TestCase):
         with self.assertRaises(subprocess.CalledProcessError):
             render(github_repository="o/r' || 'x")
 
-    def test_without_a_merge_queue_the_ruleset_keeps_every_other_rule(self) -> None:
-        # GitHub offers merge queues only on organization-owned repos; every leaf includes the one ruleset template.
-        queued = json.loads((render() / ".github/rulesets/main.json").read_text())
-        ruleset = json.loads((render(merge_queue=False) / ".github/rulesets/main.json").read_text())
+    def test_merge_queue_true_alone_renders_the_queue_rule_and_merge_group_triggers(self) -> None:
+        # The pack's land refuses a queue, so the default has none; answering true keeps the old render.
+        default, queue = render(), render(merge_queue=True)
+        ruleset = json.loads((default / ".github/rulesets/main.json").read_text())
+        queued = json.loads((queue / ".github/rulesets/main.json").read_text())
 
         self.assertEqual("loop-merge-queue", ruleset["name"])  # setup:github finds its ruleset by this name
+        self.assertEqual("loop-merge-queue", queued["name"])
         self.assertEqual(
             {**queued, "rules": [rule for rule in queued["rules"] if rule["type"] != "merge_queue"]}, ruleset
         )
         self.assertEqual(["deletion", "non_fast_forward", "pull_request", "required_status_checks"],
                          [rule["type"] for rule in ruleset["rules"]])
+        rules = {rule["type"]: rule.get("parameters") for rule in queued["rules"]}
+        self.assertEqual("SQUASH", rules["merge_queue"]["merge_method"])
+        self.assertEqual("ALLGREEN", rules["merge_queue"]["grouping_strategy"])
+
+        for name in ("ci.yml", "approvals_relay.yml"):
+            with self.subTest(workflow=name):
+                self.assertNotIn("merge_group", yaml.safe_load((default / ".github/workflows" / name).read_text())[True])
+                self.assertIn("merge_group", yaml.safe_load((queue / ".github/workflows" / name).read_text())[True])
+        ci = yaml.safe_load((queue / ".github/workflows/ci.yml").read_text())
+        self.assertEqual("${{ github.base_ref || github.event.merge_group.base_sha || github.event.before }}",
+                         ci["jobs"]["part"]["steps"][-1]["env"]["BASE_REF"])
+        tasks = tomllib.loads((queue / "mise.toml").read_text())["tasks"]
+        self.assertIn('if [ "$EVENT" = merge_group ]', tasks["ci:approvals"]["run"])
+        self.assertNotIn("gh pr merge", tasks["ci:approvals"]["run"])
+        # Without the loop the question is never asked, and its default leaves CI without a queue trigger.
+        bare = render(engineering_loop=False)
+        self.assertNotIn("merge_group", (bare / ".github/workflows/ci.yml").read_text())
 
     def test_node_coverage_gate_compares_against_the_commit_ci_passes(self) -> None:
         project = render("software/node")
@@ -2017,7 +2038,7 @@ class RenovateGenerationTest(unittest.TestCase):
         manager = json.loads((project / "renovate.json").read_text())["customManagers"][0]
         # Renovate's matchStrings are ECMAScript; this one uses nothing Python's re reads differently.
         found = re.search(manager["matchStrings"][0].replace("(?<", "(?P<"), (project / "apm.yml").read_text())
-        self.assertEqual(("kzarzycki/agent-skills", "engineering", "0.25.0"),
+        self.assertEqual(("kzarzycki/agent-skills", "engineering", "0.26.1"),
                          (found["packageName"], found["package"], found["currentValue"]))
 
     def test_without_the_agent_layer_renovate_has_no_apm_manager_or_task(self) -> None:
