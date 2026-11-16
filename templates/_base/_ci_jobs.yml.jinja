@@ -2,31 +2,29 @@
   # parts this change needs, the matrix runs each as a job named after it, and the aggregate
   # `check` is the one check main's ruleset requires. Add a part in mise.toml, not here.
   # A draft runs nothing until ready_for_review; a push or a queue entry has no PR, so it always runs.
+  # BASE_REF is the change's base, read by ci:parts and each part: a PR's base branch, a push's
+  # previous commit{% if merge_queue %}, a queue entry's base commit{% endif %} (github.base_ref is set only on a PR).
+{%- set base_ref %}{% raw %}${{ github.base_ref || {% endraw %}{% if merge_queue %}{% raw %}github.event.merge_group.base_sha || {% endraw %}{% endif %}{% raw %}github.event.before }}{% endraw %}{% endset %}
   # A push the merge queue already tested lists no part (ci:parts says how).
   plan:
     if: {% raw %}${{ {% endraw %}{{ repository_guard }}{% raw %}!github.event.pull_request.draft }}{% endraw %}
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: read # paths-filter lists a PR's files through the API
       actions: read # to find the merge queue's run of a push's commit
     outputs:
       parts: {% raw %}${{ steps.parts.outputs.parts }}{% endraw %}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
+          fetch-depth: 0 # the base and the merge base, on every event
           persist-credentials: false
-      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
-        id: filter
-        with:
-          filters: .github/check-paths.yml
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           install: false # listing the parts needs only mise and python3, which the runner has
       - id: parts
         env:
-          CHANGES: {% raw %}${{ steps.filter.outputs.changes }}{% endraw %}
+          BASE_REF: {{ base_ref }}
           GH_TOKEN: {% raw %}${{ github.token }}{% endraw %}
           MISE_TASK_RUN_AUTO_INSTALL: "false"
         run: mise run ci:parts
@@ -54,9 +52,7 @@
       - run: mise run setup:dev
       - env:
           PART: {% raw %}${{ matrix.part }}{% endraw %}
-          # A push compares against the commit before it{% if merge_queue %}, a queue entry against the queue's
-          # base commit{% endif %}; github.base_ref is set only on a PR.
-          BASE_REF: {% raw %}${{ github.base_ref || {% endraw %}{% if merge_queue %}{% raw %}github.event.merge_group.base_sha || {% endraw %}{% endif %}{% raw %}github.event.before }}{% endraw %}
+          BASE_REF: {{ base_ref }}
         run: mise run "$PART"
 
   check:

@@ -1,0 +1,36 @@
+# Path filters for the check: parts (mise.toml), read by `mise run ci:parts` in CI's plan job.
+# A part listed here runs only when the change touches a file that matches one of its globs and
+# none of its `!` globs; a part not listed runs on every change. `**` matches across folders,
+# `*` within one. check:lint and check:secrets have no filter, so the matrix is never empty and a
+# key pasted into a README is still scanned.
+#
+# A version-only edit of pyproject.toml, uv.lock, package.json or package-lock.json (the project's
+# own version and nothing else) is no change at all, so a release bump runs only the unfiltered parts.
+#
+# The test filters are everything but prose, so a file nobody listed here still runs the tests.
+{% set test_part = 'check:smoke' if project_type == 'ai/mcp' else 'check:unit' -%}
+{% if project_type == 'data/dbt' -%}
+{# dbt parse reads the docs blocks in models/**/*.md: only top-folder Markdown is prose. -#}
+{% set test_skip = ['!*.md', '!docs/**', '!LICENSE'] -%}
+{% elif project_type == 'ai/skills' -%}
+{# Its test validates SKILL.md. -#}
+{% set test_skip = ['!README.md', '!CHANGELOG.md', '!docs/**', '!LICENSE'] -%}
+{% else -%}
+{% set test_skip = ['!**/*.md', '!docs/**', '!LICENSE'] -%}
+{% endif -%}
+{% set filters = [] -%}
+{# authoring/content's check:unit checks the links in every Markdown file, so it has no filter. -#}
+{% if project_type != 'authoring/content' -%}
+{% set filters = filters + [(test_part, test_skip)] -%}
+{% endif -%}
+{# agent:sync --frozen checks generated Markdown such as CLAUDE.md and the skills under .claude/. -#}
+{% if include_agent_layer and agent_layer_mode != 'vendored' -%}
+{% set filters = filters + [('check:agents', ['!README.md', '!CHANGELOG.md', '!docs/**', '!LICENSE'])] -%}
+{% endif -%}
+{% for part, skip in filters %}
+"{{ part }}":
+  - "**"
+{% for glob in skip %}  - "{{ glob }}"
+{% endfor -%}
+{% else %}{}
+{% endfor -%}

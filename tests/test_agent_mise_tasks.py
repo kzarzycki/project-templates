@@ -915,30 +915,186 @@ class AgentMiseTasksTest(unittest.TestCase):
         raced = self.run_task("setup:github", "--revert")  # another run deleted it between list and DELETE
         self.assertEqual(0, raced.returncode, raced.stderr)
 
-    def test_ci_parts_lists_every_check_part_but_check_all_and_honours_path_filters(self) -> None:
+    def ci_parts(self, base: str | None) -> list[str]:
+        """ci:parts with BASE_REF set to base (unset when None); the parts it lists."""
+        self.env.pop("BASE_REF", None)
+        if base is not None:
+            self.env["BASE_REF"] = base
+        result = self.run_task("ci:parts")
+        self.assertEqual(0, result.returncode, result.stderr)
+        return json.loads(result.stdout)
+
+    def ci_parts_repo(self) -> str:
+        """The project as a git repo with mise and a python3 that has tomllib on PATH; the first commit's SHA."""
         (self.bin / "mise").symlink_to(MISE)
+        (self.bin / "python3").symlink_to(sys.executable)  # macOS's /usr/bin/python3 3.9 has no tomllib
+        self.initialize_git()
+        return self.git("rev-parse", "HEAD")
+
+    def git(self, *arguments: str) -> str:
+        return subprocess.run(["git", "-c", "user.name=Test", "-c", "user.email=test@example.com", *arguments],
+                              cwd=self.project, check=True, capture_output=True, text=True).stdout.strip()
+
+    def change_from(self, base: str, edits: dict[str, str | None]) -> None:
+        """Checks out a branch at base and commits edits on it: a path's new text, or None to delete it."""
+        self.git("checkout", "-q", "-B", "change", base)
+        for name, text in edits.items():
+            if text is None:
+                (self.project / name).unlink()
+            else:
+                (self.project / name).parent.mkdir(parents=True, exist_ok=True)
+                (self.project / name).write_text(text)
+        self.git("add", "-A")
+        self.git("commit", "--no-verify", "--allow-empty", "-qm", "change")
+
+    def edit(self, name: str, old: str, new: str) -> str:
+        text = (self.project / name).read_text()
+        self.assertIn(old, text)
+        return text.replace(old, new, 1)
+
+    PYTHON_LOCK = (
+        'version = 1\nrequires-python = ">=3.14"\n\n'
+        '[[package]]\nname = "agent-layer-test"\nversion = "0.1.0"\nsource = { editable = "." }\n'
+        'dependencies = []\n\n'
+        '[[package]]\nname = "pytest"\nversion = "9.1.0"\nsource = { registry = "https://pypi.org/simple" }\n'
+    )
+
+    def test_ci_parts_runs_every_part_without_a_base_it_can_compare_with(self) -> None:
         output = self.bin / "github-output"
         self.env["GITHUB_OUTPUT"] = str(output)
         everything = ["check:agents", "check:lint", "check:secrets", "check:unit"]
+        self.ci_parts_repo()
+        self.change_from("HEAD", {"README.md": "# changed\n"})
 
-        result = self.run_task("ci:parts")
-        self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual(everything, json.loads(result.stdout))
-        self.assertEqual(f"parts={json.dumps(everything)}\n", output.read_text())
+        for base in (None, "", "0" * 40, "1" * 40, "main"):  # main: no origin/main in this checkout
+            with self.subTest(base=base):
+                self.assertEqual(everything, self.ci_parts(base))
+        self.assertEqual(f"parts={json.dumps(everything)}\n", output.read_text().splitlines(keepends=True)[-1])
 
-        (self.project / ".github/check-paths.yml").write_text('"check:unit":\n  - "src/**"\n')
-        for changes, expected in (
-            ("[]", ["check:agents", "check:lint", "check:secrets"]),
-            ('["check:unit"]', everything),
-            (None, everything),  # no CHANGES: run locally, a filtered part counts as matched
+    def test_ci_parts_selects_parts_by_the_files_changed_since_the_merge_base(self) -> None:
+        (self.project / "uv.lock").write_text(self.PYTHON_LOCK)
+        base = self.ci_parts_repo()
+        everything = ["check:agents", "check:lint", "check:secrets", "check:unit"]
+        prose = ["check:lint", "check:secrets"]
+        module = (self.project / "src/agent_layer_test/__init__.py").read_text()
+        self.assertTrue(module)  # git detects a rename only of a file with content
+        bump = {"pyproject.toml": self.edit("pyproject.toml", 'version = "0.1.0"', 'version = "0.2.0"'),
+                "uv.lock": self.PYTHON_LOCK.replace('version = "0.1.0"', 'version = "0.2.0"'),
+                "CHANGELOG.md": "# Changelog\n\n## 0.2.0\n"}
+        dependency = {"pyproject.toml": self.edit("pyproject.toml", "dependencies = []", 'dependencies = ["idna>=3"]'),
+                      "uv.lock": self.PYTHON_LOCK.replace("dependencies = []", 'dependencies = [{ name = "idna" }]')
+                      + '\n[[package]]\nname = "idna"\nversion = "3.10"\nsource = { registry = "https://pypi.org/simple" }\n'}
+        for name, edits, expected in (
+            ("README only", {"README.md": "# changed\n"}, prose),
+            ("version bump", bump, prose),
+            ("dependency added", dependency, everything),
+            ("src changed", {"src/agent_layer_test/__init__.py": "VALUE = 2\n"}, everything),
+            ("a test file changed", {"tests/test_new.py": "def test_it():\n    pass\n"}, everything),
+            ("a file moved out of src into docs", {"src/agent_layer_test/__init__.py": None,
+                                                   "docs/moved.py": module}, everything),
+            ("docs only", {"docs/notes.md": "notes\n", "docs/diagram.svg": "<svg/>\n"}, prose),
+            ("a nested Markdown file", {"src/agent_layer_test/NOTES.md": "notes\n"}, ["check:agents", *prose]),
+            ("version and another key", {**bump, "pyproject.toml": bump["pyproject.toml"].replace(
+                'description = "', 'description = "Now ')}, everything),
+            ("version of a dependency", {"uv.lock": self.PYTHON_LOCK.replace('"9.1.0"', '"9.2.0"')}, everything),
+            ("lock that fails to parse", {"uv.lock": self.PYTHON_LOCK + "[[package\n"}, everything),
+            ("lock deleted", {"uv.lock": None}, everything),
+            ("pyproject added in a subfolder", {"sub/pyproject.toml": '[project]\nname = "s"\nversion = "1"\n'},
+             everything),
         ):
-            with self.subTest(changes=changes):
-                self.env.pop("CHANGES", None)
-                if changes is not None:
-                    self.env["CHANGES"] = changes
+            with self.subTest(name):
+                self.change_from(base, edits)
+                self.assertEqual(expected, self.ci_parts(base))
+
+        self.git("update-ref", "refs/remotes/origin/main", base)  # a PR: BASE_REF is its base branch
+        self.change_from(base, {"README.md": "# changed\n"})
+        self.assertEqual(prose, self.ci_parts("main"))
+
+    def test_ci_parts_drops_a_node_version_bump(self) -> None:
+        self.project = render("software/node", include_mise=True, include_agent_layer=True, include_fnox=True)
+        self.env["MISE_TRUSTED_CONFIG_PATHS"] = str(self.project)
+        lock = {"name": "agent-layer-test", "version": "0.1.0", "lockfileVersion": 3, "requires": True,
+                "packages": {"": {"name": "agent-layer-test", "version": "0.1.0"},
+                             "node_modules/vitest": {"version": "4.0.0"}}}
+        (self.project / "package-lock.json").write_text(json.dumps(lock, indent=2))
+        (self.project / "src/release.json").write_text('{"version": "1"}\n')
+        base = self.ci_parts_repo()
+
+        def locked(**changes: object) -> str:
+            changed = json.loads(json.dumps(lock))
+            for path, value in changes.items():
+                *parents, key = path.split("/")
+                target = changed
+                for parent in parents:
+                    target = target["packages"][parent.replace("+", "/")] if parent != "root" else target
+                target[key] = value
+            return json.dumps(changed, indent=2)
+
+        bump = {"package.json": self.edit("package.json", '"version": "0.1.0"', '"version": "0.2.0"'),
+                "package-lock.json": locked(**{"version": "0.2.0", "root//version": "0.2.0"})}
+        everything = ["check:agents", "check:lint", "check:secrets", "check:unit"]
+        for name, edits, expected in (
+            ("version bump", bump, ["check:lint", "check:secrets"]),
+            ("a dependency's version", {**bump, "package-lock.json": locked(
+                **{"version": "0.2.0", "root//version": "0.2.0", "root/node_modules+vitest/version": "4.1.0"})},
+             everything),
+            ("another JSON file's version", {"src/release.json": '{"version": "2"}\n'}, everything),
+            ("another package.json key", {"package.json": self.edit("package.json", '"version": "0.1.0"',
+                                                              '"version": "0.1.0", "license": "MIT"')}, everything),
+        ):
+            with self.subTest(name):
+                self.change_from(base, edits)
+                self.assertEqual(expected, self.ci_parts(base))
+
+    def test_ci_parts_globs_exclude_with_bang_and_star_stays_in_one_folder(self) -> None:
+        (self.project / ".github/check-paths.yml").write_text(
+            "# a comment\n"
+            '"check:unit":\n  - "src/**"\n  - mise.toml # a plain path\n  - "!src/**/*.md"\n'
+            "check:agents:\n  - '*.toml'\n"
+        )
+        base = self.ci_parts_repo()
+        for name, edits, expected in (
+            ("dir/** matches below it", {"src/a/b/c.py": "x\n"}, ["check:lint", "check:secrets", "check:unit"]),
+            ("! excludes what a glob matched", {"src/a/NOTES.md": "x\n"}, ["check:lint", "check:secrets"]),
+            ("a plain path", {"mise.toml": self.edit("mise.toml", "[tasks", "# edited\n[tasks")},
+             ["check:agents", "check:lint", "check:secrets", "check:unit"]),
+            ("* stays within one folder", {"sub/x.toml": "x = 1\n"}, ["check:lint", "check:secrets"]),
+            ("* at the top", {"x.toml": "x = 1\n"}, ["check:agents", "check:lint", "check:secrets"]),
+            ("nothing changed", {}, ["check:lint", "check:secrets"]),
+        ):
+            with self.subTest(name):
+                self.change_from(base, edits)
+                self.assertEqual(expected, self.ci_parts(base))
+
+    def test_ci_parts_reads_a_one_line_flow_list_as_dorny_did(self) -> None:
+        (self.project / ".github/check-paths.yml").write_text('"check:unit": ["src/**", \'!src/**/*.md\']\n')
+        base = self.ci_parts_repo()
+
+        for name, edits, expected in (
+            ("a source file", {"src/a.py": "x = 1\n"}, ["check:agents", "check:lint", "check:secrets", "check:unit"]),
+            ("an excluded Markdown file under src", {"src/notes.md": "x\n"},
+             ["check:agents", "check:lint", "check:secrets"]),
+        ):
+            with self.subTest(name):
+                self.change_from(base, edits)
+                self.assertEqual(expected, self.ci_parts(base))
+
+    def test_ci_parts_fails_on_a_filter_line_it_cannot_read(self) -> None:
+        base = self.ci_parts_repo()
+        self.env["BASE_REF"] = base
+        for name, text in (
+            ("an anchor", '"check:unit": &unit\n  - "src/**"\n'),
+            ("a comma inside a quoted flow item", '"check:unit": ["a,b/**"]\n'),
+            ("a nested flow list", '"check:unit": [["src/**"]]\n'),
+            ("an alias as a flow item", '"check:unit": [*u]\n'),
+        ):
+            with self.subTest(name):
+                (self.project / ".github/check-paths.yml").write_text(text)
+
                 result = self.run_task("ci:parts")
-                self.assertEqual(0, result.returncode, result.stderr)
-                self.assertEqual(expected, json.loads(result.stdout))
+
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn("check-paths.yml:1:", result.stderr)
 
     def test_ci_parts_on_a_push_the_merge_queue_tested_lists_no_part(self) -> None:
         (self.bin / "mise").symlink_to(MISE)

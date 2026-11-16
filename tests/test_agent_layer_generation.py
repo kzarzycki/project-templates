@@ -1402,7 +1402,21 @@ class AgentLayerGenerationTest(unittest.TestCase):
                     "${{ github.base_ref || github.event.before }}",
                     jobs["part"]["steps"][-1]["env"]["BASE_REF"],
                 )
-                yaml.safe_load((project / ".github/check-paths.yml").read_text())  # paths-filter reads it
+                # The plan lists the changed files itself: no paths-filter action, no PR API read; it reads
+                # only Actions runs, to find a queue run of a push's commit.
+                plan = jobs["plan"]
+                self.assertEqual({"contents": "read", "actions": "read"}, plan["permissions"])
+                self.assertEqual([], [step["uses"] for step in plan["steps"] if "paths-filter" in step.get("uses", "")])
+                self.assertEqual(0, plan["steps"][0]["with"]["fetch-depth"])  # the base and the merge base
+                self.assertEqual(jobs["part"]["steps"][-1]["env"]["BASE_REF"], plan["steps"][-1]["env"]["BASE_REF"])
+                # The test part and check:agents skip prose; check:lint and check:secrets always run.
+                code = ["**", "!**/*.md", "!docs/**", "!LICENSE"]
+                agents = ["**", "!README.md", "!CHANGELOG.md", "!docs/**", "!LICENSE"]
+                tests = {"data/dbt": {"check:unit": ["**", "!*.md", "!docs/**", "!LICENSE"]},
+                         "ai/skills": {"check:unit": agents}, "ai/mcp": {"check:smoke": code},
+                         "authoring/content": {}}.get(project_type, {"check:unit": code})
+                self.assertEqual({**tests, "check:agents": agents},
+                                 yaml.safe_load((project / ".github/check-paths.yml").read_text()))
 
                 # The tracker's components as the pack's labels.py reads them: each an `area:` label with its text.
                 tracker = settings((project / "docs/agents/issue-tracker.md").read_text())
@@ -1458,6 +1472,8 @@ class AgentLayerGenerationTest(unittest.TestCase):
         # Only a merge_group run on the commit skips it, so a repo without a queue still tests every push to main.
         queued, unqueued = (yaml.safe_load((render(merge_queue=answer) / ".github/workflows/ci.yml").read_text())["jobs"]
                             for answer in (True, False))
+        for jobs in (queued, unqueued):  # BASE_REF names the queue entry's base only with a queue
+            jobs["plan"]["steps"][-1]["env"].pop("BASE_REF")
         for job in ("plan", "check"):
             self.assertEqual(queued[job], unqueued[job], job)
         self.assertEqual(queued["part"]["if"], unqueued["part"]["if"])

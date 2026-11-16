@@ -147,13 +147,17 @@ run = "{{ scripts_dir }}/check-symlinks.sh"
 {% if include_ci %}
 [tasks."ci:parts"]
 description = "Prints the check: parts this change needs, for CI's matrix."
-# A part with a key in .github/check-paths.yml runs only when its filter matched: CHANGES is the
-# keys that matched, as JSON (dorny/paths-filter's `changes`). Without CHANGES every part runs.
-# In GitHub Actions it also writes the list to the step's output and summary. A push lists no part
-# when a merge_group run of this workflow already passed on its commit: a merge queue lands the
-# commit it tested, so the push would repeat it. Any other push, or a failed lookup, runs every part.
+# BASE_REF is the change's base, as check:secrets reads it. A part with a key in
+# .github/check-paths.yml runs only when a file changed since the merge base matches its filter;
+# without a usable base (none set, as when run locally, all zeros, or a commit the checkout lacks)
+# every part runs. A push lists no part when a merge_group run of this workflow already passed on its
+# commit: a merge queue lands the commit it tested, so the push would repeat it; any other push, or a
+# failed lookup, goes by the filters. In GitHub Actions it also writes the list to the step's output and summary.
 run = '''
-mise tasks ls --json | python3 -c '
+base=""
+if [ -n "${BASE_REF:-}" ]; then
+{% include "templates/_base/_diff_base.part" %}fi
+mise tasks ls --json | BASE="$base" python3 -c '
 import json, os, re, subprocess, sys
 from pathlib import Path
 
@@ -175,11 +179,98 @@ def tested_by_the_queue():
 names = [t["name"].removeprefix("//:") for t in json.load(sys.stdin)]
 parts = sorted(name for name in names if name.startswith("check:") and name != "check:all")
 paths = Path(".github/check-paths.yml")
-key = re.compile(r"^[\x22\x27]?(check:[\w:-]+)[\x22\x27]?[ \t]*:(?:[ \t]|$)", re.MULTILINE)
-filtered = set(key.findall(paths.read_text())) if paths.exists() else set()
-changes = os.environ.get("CHANGES")
-matched = set(json.loads(changes or "[]")) if changes is not None else set(filtered)
-run = [part for part in parts if part not in filtered or part in matched]
+# The project version alone may change in these files: a release bump is no change to test.
+VERSION_FILES = ("pyproject.toml", "uv.lock", "package.json", "package-lock.json")
+GLOB = {"**/": "(?:.*/)?", "/**": "/.*", "**": ".*", "*": "[^/]*"}
+
+
+def git(*args):
+    return os.fsdecode(subprocess.run(["git", *args], capture_output=True, check=True).stdout)
+
+
+def read_filters(text):
+    # ponytail: the YAML subset this file is written in (part keys over block lists of globs, or a
+    # one-line flow list); any other line fails the plan, since a misread filter would skip a part silently.
+    filters, globs = {}, None
+    for number, line in enumerate(text.splitlines(), 1):
+        bare = re.sub(r"(^|\s)#.*", "", line).strip()
+        key = re.fullmatch(r"[\x22\x27]?(check:[\w:-]+)[\x22\x27]?\s*:(?:\s*\[(.*)\])?", bare)
+        item = re.fullmatch(r"-\s+([\x22\x27]?)(.+?)\1", bare)
+        if key and key.group(2) is not None:
+            # An item is one quoted string with no comma, or a plain one that YAML reads as a string (no
+            # leading * alias or & anchor, no brackets or quotes); anything else fails, nested or split lists too.
+            flow = [re.fullmatch(r"\x22([^\x22,]*)\x22|\x27([^\x27,]*)\x27|([^\x22\x27\[\]&*\s][^\x22\x27\[\],]*)", glob.strip())
+                    for glob in key.group(2).split(",") if glob.strip()]
+            if not all(flow):
+                sys.exit(f"{paths}:{number}: a flow list item this reader cannot read: {line}")
+            filters.setdefault(key.group(1), []).extend(next(g for g in glob.groups() if g is not None) for glob in flow)
+            globs = None
+        elif key:
+            globs = filters.setdefault(key.group(1), [])
+        elif item and globs is not None:
+            globs.append(item.group(2))
+        elif bare not in ("", "{}"):
+            sys.exit(f"{paths}:{number}: neither a check: part key nor a glob under one: {line}")
+    return filters
+
+
+def pattern(glob):
+    # ponytail: ** and * only; braces, classes and ? match themselves.
+    return re.compile("".join(GLOB.get(piece, re.escape(piece)) for piece in re.split(r"(\*\*/|/\*\*$|\*\*|\*)", glob)))
+
+
+def matches(path, globs):
+    hit = [glob for glob in globs if pattern(glob.removeprefix("!")).fullmatch(path)]
+    return any(not glob.startswith("!") for glob in hit) and not any(glob.startswith("!") for glob in hit)
+
+
+def without_own_version(name, text):
+    if name in ("pyproject.toml", "uv.lock"):
+        import tomllib  # Python 3.11+; without it the file counts as changed
+        data = tomllib.loads(text)
+    else:
+        data = json.loads(text)
+    if name == "pyproject.toml":
+        data.get("project", {}).pop("version", None)
+    elif name == "uv.lock":
+        for package in data.get("package", []):
+            if {"editable", "virtual"} & set(package.get("source", {})):
+                package.pop("version", None)
+    else:
+        data.pop("version", None)
+        if name == "package-lock.json":
+            data.get("packages", {}).get("", {}).pop("version", None)
+    return data
+
+
+def version_only(path, merge_base):
+    name = path.rsplit("/", 1)[-1]
+    if name not in VERSION_FILES:
+        return False
+    try:  # a file missing on either side or that fails to parse counts as changed
+        old, new = (without_own_version(name, git("show", f"{rev}:{path}")) for rev in (merge_base, "HEAD"))
+        return old == new
+    except Exception:
+        return False
+
+
+filters = read_filters(paths.read_text()) if paths.exists() else {}
+base, changed = os.environ.get("BASE", ""), None
+if not base:
+    print("every part runs: BASE_REF is unset, so there is no base to compare with", file=sys.stderr)
+else:
+    try:
+        merge_base = git("merge-base", base, "HEAD").strip()
+        # --no-renames: a file moved out of a folder counts for that folder too.
+        changed = [path for path in git("diff", "-z", "--no-renames", "--name-only", f"{base}...HEAD").split("\0") if path]
+    except subprocess.CalledProcessError:
+        print(f"every part runs: {base} is not in this checkout or shares no history with HEAD", file=sys.stderr)
+if changed is not None:
+    for path in [path for path in changed if version_only(path, merge_base)]:
+        print(f"{path}: only the project version changed, not counted", file=sys.stderr)
+        changed.remove(path)
+run = [part for part in parts
+       if part not in filters or changed is None or any(matches(path, filters[part]) for path in changed)]
 skipped = [part for part in parts if part not in run]
 queued = os.environ.get("GITHUB_EVENT_NAME") == "push" and tested_by_the_queue()
 if queued:
