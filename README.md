@@ -609,6 +609,13 @@ The approvals workflow never merges any more: its optional GitHub App token
 the App if nothing else uses them. `setup:github` no longer turns on
 `allow_auto_merge`, and its `merge-queue` alias goes: run `mise run setup:github`.
 
+Updating to the next release moves the pack to `engineering-v0.27.0`. On a base
+whose ruleset has a `merge_queue` rule, its `land` enqueues each landable PR,
+pinned to its head, and the queue's CI run gates it; on any other base it lands
+the batch as before (kzarzycki/agent-skills#1114). Its gatekeeper is
+`scripts/gatekeeper.py`; `approvals.py` stays for one release line as a shim
+that runs the same verbs, so the `loop:` tasks need no edit.
+
 Updating to the next release brings the path filters in
 `.github/check-paths.yml`, and CI's `plan` job matches them itself, without
 `dorny/paths-filter` and its `pull-requests: read` permission. If you edited the
