@@ -52,7 +52,10 @@ lives once, in `mise.toml` `[tools]` or the toolchain's lock file:
 - `check:unit` runs the tests through `scripts/gate-slot`, which holds one of the
   host's `GATE_SLOTS` (default 1) so parallel agents' gates queue instead of
   overloading one machine, and exports `GATE_JOBS` (the free cores) for a
-  parallel runner (`pytest -n "$GATE_JOBS"`); the content template's `check:unit`, a link check bound by the network rather than the host, runs without one. It runs them with diff coverage against `origin/$BASE_REF`
+  parallel runner (`pytest -n "$GATE_JOBS"`). Under a run that already holds a
+  slot and names it in `LOOP_GATE_SLOT_HELD`, as the loop's `local-ci` and
+  `land` do and `gate-slot` itself does, it takes none, so a gate never waits on
+  its own parent. The content template's `check:unit`, a link check bound by the network rather than the host, runs without one. It runs them with diff coverage against `origin/$BASE_REF`
   (default `main`) once that branch exists. `test:fast` (alias `test`),
   `test:unit` and `test:changed` (the pre-push hook) run the tests alone.
 - `check:secrets` scans the branch's commits with gitleaks.
