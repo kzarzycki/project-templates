@@ -61,12 +61,16 @@ class GateSlotTest(unittest.TestCase):
         self.held()
         self.env["LOOP_GATE_SLOT_HELD"] = str(Path(self.cache, "engineering-loop", "gate.1.lock"))
         try:
-            inner = subprocess.run([str(GATE_SLOT), "true"], env=self.env, capture_output=True, text=True, timeout=2)
+            # the loop joins paths with os.path.join, so a cache dir ending in a slash still names the same lock
+            for cache in (self.cache, self.cache + "/"):
+                with self.subTest(cache=cache):
+                    inner = subprocess.run([str(GATE_SLOT), "true"], env={**self.env, "XDG_CACHE_HOME": cache},
+                                           capture_output=True, text=True, timeout=2)
+                    self.assertEqual(inner.returncode, 0, inner.stderr)
+                    self.assertNotIn("waiting", inner.stderr)
         finally:
             os.killpg(holder.pid, signal.SIGKILL)
             holder.communicate(timeout=10)
-        self.assertEqual(inner.returncode, 0, inner.stderr)
-        self.assertNotIn("waiting", inner.stderr)
 
     def test_a_slot_of_another_directory_does_not_count(self) -> None:
         holder = self.start("sleep", "30")

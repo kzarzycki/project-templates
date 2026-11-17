@@ -25,7 +25,10 @@ exec perl -MFcntl=:flock -e '
   my ($dir, $slots, @command) = @ARGV;
   $^F = 1023;
   my ($said, $held);
-  $held = 1 if ($ENV{LOOP_GATE_SLOT_HELD} // "") =~ m{\A\Q$dir\E/gate\.[0-9]+\.lock\z};
+  # Repeated slashes count as one on both sides: the loop builds the path with os.path.join, which writes no
+  # "//" for an XDG_CACHE_HOME or HOME ending in a slash, as this script would.
+  my ($want, $named) = map { (my $path = $_) =~ s{/+}{/}g; $path } $dir, $ENV{LOOP_GATE_SLOT_HELD} // "";
+  $held = 1 if $named =~ m{\A\Q$want\E/gate\.[0-9]+\.lock\z};
   until ($held) {
     for my $i (1 .. $slots) {
       open(my $fh, ">>", "$dir/gate.$i.lock") or die "gate-slot: $dir/gate.$i.lock: $!\n";
