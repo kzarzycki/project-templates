@@ -15,6 +15,8 @@ import yaml
 
 
 ROOT = Path(__file__).resolve().parents[1]
+# The pack release the template pins by default; tests read it here so a bump touches copier.yml only.
+PACK_REF = yaml.safe_load((ROOT / "copier.yml").read_text())["engineering_capability_ref"]["default"]
 MISE = shutil.which("mise")
 assert MISE is not None
 
@@ -401,7 +403,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
             [
                 {
                     "git": "kzarzycki/agent-skills/engineering",
-                    "ref": "engineering-v0.26.1",
+                    "ref": PACK_REF,
                 }
             ],
             yaml.safe_load(apm)["dependencies"]["apm"],
@@ -452,7 +454,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         manifest = (project / "apm.yml").read_text()
         answers = (project / ".copier-answers.yml").read_text()
         self.assertEqual(1, manifest.count("git: kzarzycki/agent-skills/engineering"))
-        self.assertIn("ref: engineering-v0.26.1", manifest)
+        self.assertIn(f"ref: {PACK_REF}", manifest)
         self.assertIn("include_engineering_workflow: true", answers)
         self.assertNotIn("engineering_capability_source", answers)
         self.assertNotIn("engineering_capability_ref", answers)
@@ -2067,7 +2069,7 @@ class RenovateGenerationTest(unittest.TestCase):
         manager = json.loads((project / "renovate.json").read_text())["customManagers"][0]
         # Renovate's matchStrings are ECMAScript; this one uses nothing Python's re reads differently.
         found = re.search(manager["matchStrings"][0].replace("(?<", "(?P<"), (project / "apm.yml").read_text())
-        self.assertEqual(("kzarzycki/agent-skills", "engineering", "0.26.1"),
+        self.assertEqual(("kzarzycki/agent-skills", "engineering", PACK_REF.removeprefix("engineering-v")),
                          (found["packageName"], found["package"], found["currentValue"]))
 
     def test_without_the_agent_layer_renovate_has_no_apm_manager_or_task(self) -> None:
