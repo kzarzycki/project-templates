@@ -609,6 +609,37 @@ The approvals workflow never merges any more: its optional GitHub App token
 the App if nothing else uses them. `setup:github` no longer turns on
 `allow_auto_merge`, and its `merge-queue` alias goes: run `mise run setup:github`.
 
+A project that keeps `merge_queue: true` and updates from a release before
+v0.13.0 lands the update in two PRs. The update PR can't pass the queue on its
+own:
+
+- On a queue entry, GitHub runs the PR's copy of `approvals.yml`, and that copy
+  no longer listens to `merge_group`. The token-less `approvals_relay.yml`
+  takes queue entries instead.
+- The relay's completion runs main's old copy, because a `workflow_run`
+  trigger always runs the default branch's file. That old copy acts only on
+  CI's `pull_request` runs.
+- So nothing posts `loop:approvals` on the queue's commit, and the queue drops
+  the entry when its timeout runs out.
+
+The way through:
+
+1. The update PR makes three edits to the new
+   `.github/workflows/approvals.yml`. On its queue entry, this copy checks out
+   main and runs main's old `ci:approvals`, which posts success on the queue's
+   commit.
+   - Under `on:`, add `merge_group:`.
+   - In the `concurrency` group and in the job's `if:`, put
+     `github.event_name == 'merge_group' ||` before
+     `(github.event_name == 'pull_request_target'`.
+   - Set `QUEUE_HEAD` to
+     `${{ github.event.workflow_run.head_sha || github.event.merge_group.head_sha }}`.
+2. Once the update PR lands, the next PR removes the three edits, so the file
+   matches a fresh render. The removal is required: while main's copy listens
+   to `merge_group`, every queue entry runs the PR's own copy with a write
+   token, so a PR could edit that copy to post its own green status. Its queue
+   entry goes through the relay to main's copy.
+
 Updating to the next release moves the pack to `engineering-v0.27.0`. On a base
 whose ruleset has a `merge_queue` rule, its `land` enqueues each landable PR,
 pinned to its head, and the queue's CI run gates it; on any other base it lands
