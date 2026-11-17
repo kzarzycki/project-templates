@@ -450,6 +450,16 @@ claude
 {% endif -%}
 """
 
+[tasks."claude-cloud:setup"]
+description = "Incubating, not proven yet: creates or updates your own claude-cloud environment from .claude/claude-cloud-environment.json and pins this checkout to it."
+run = """
+command -v python3 >/dev/null || { echo "error: python3 is required; run 'mise install'" >&2; exit 127; }
+command -v claude >/dev/null || { echo "error: claude is required; install Claude Code and add 'claude' to PATH" >&2; exit 127; }
+script=.agents/skills/orchestrating-agents/scripts/claude_cloud.py
+test -f "$script" || { echo "error: $script is missing; run 'mise run agent:sync' with a pack that ships it" >&2; exit 1; }
+python3 "$script" setup
+"""
+
 [tasks."agent:codex"]
 alias = "agent-codex"
 {% if include_fnox -%}
