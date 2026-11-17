@@ -21,6 +21,7 @@ class GateSlotTest(unittest.TestCase):
         self.cache = tempfile.mkdtemp(prefix="gate-slot-test-")
         self.env = {**os.environ, "XDG_CACHE_HOME": self.cache}
         self.env.pop("GATE_SLOTS", None)
+        self.env.pop("LOOP_GATE_SLOT_HELD", None)
         self.env.pop("LC_ALL", None)  # the fake uptime keys on it: a runner's own LC_ALL=C would hide the override
 
     def start(self, *command: str) -> subprocess.Popen[str]:
@@ -53,6 +54,40 @@ class GateSlotTest(unittest.TestCase):
         self.assertEqual(marks.read_text().split(), ["start", "end", "start", "end"])
         self.assertIn(f"gate-slot: waiting for a host gate slot (held by pid {first.pid})", second_err)
         self.assertNotIn("waiting", first_err)
+
+    def test_a_gate_under_a_holder_of_its_slot_runs_without_waiting(self) -> None:
+        # the loop's local-ci and land hold the slot around a gate step and name it in LOOP_GATE_SLOT_HELD
+        holder = self.start("sleep", "30")
+        self.held()
+        self.env["LOOP_GATE_SLOT_HELD"] = str(Path(self.cache, "engineering-loop", "gate.1.lock"))
+        try:
+            inner = subprocess.run([str(GATE_SLOT), "true"], env=self.env, capture_output=True, text=True, timeout=2)
+        finally:
+            os.killpg(holder.pid, signal.SIGKILL)
+            holder.communicate(timeout=10)
+        self.assertEqual(inner.returncode, 0, inner.stderr)
+        self.assertNotIn("waiting", inner.stderr)
+
+    def test_a_slot_of_another_directory_does_not_count(self) -> None:
+        holder = self.start("sleep", "30")
+        self.held()
+        self.env["LOOP_GATE_SLOT_HELD"] = str(Path(self.cache, "elsewhere", "gate.1.lock"))
+        waiter = self.start("true")
+        try:
+            with self.assertRaises(subprocess.TimeoutExpired):
+                waiter.communicate(timeout=2)
+        finally:
+            for process in (holder, waiter):
+                os.killpg(process.pid, signal.SIGKILL)
+                process.communicate(timeout=10)
+
+    def test_nested_gate_slots_run(self) -> None:
+        out = subprocess.run(
+            [str(GATE_SLOT), str(GATE_SLOT), "sh", "-c", 'echo "$LOOP_GATE_SLOT_HELD"'],
+            env=self.env, capture_output=True, text=True, timeout=5,
+        )
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertEqual(out.stdout.strip(), str(Path(self.cache, "engineering-loop", "gate.1.lock")))
 
     def test_a_killed_holder_frees_its_slot(self) -> None:
         holder = self.start("sleep", "60")

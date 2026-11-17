@@ -9,6 +9,9 @@
 # itself when the command exits, however it exits. GATE_JOBS, exported to the command, is the cores
 # free when it starts (online cores minus the 1-minute load average, at least 1): a parallel runner
 # reads it, e.g. `pytest -n "$GATE_JOBS"`, instead of adding a worker per core on a loaded host.
+# LOOP_GATE_SLOT_HELD names the slot a run already holds: the loop's local-ci and land set it around each
+# gate step, and gate-slot sets it for its command. Under a slot of its own directory gate-slot takes no
+# lock, since it would wait on its own parent forever.
 set -euo pipefail
 
 [ $# -gt 0 ] || { echo "usage: gate-slot COMMAND [ARG...]" >&2; exit 2; }
@@ -22,11 +25,12 @@ exec perl -MFcntl=:flock -e '
   my ($dir, $slots, @command) = @ARGV;
   $^F = 1023;
   my ($said, $held);
+  $held = 1 if ($ENV{LOOP_GATE_SLOT_HELD} // "") =~ m{\A\Q$dir\E/gate\.[0-9]+\.lock\z};
   until ($held) {
     for my $i (1 .. $slots) {
       open(my $fh, ">>", "$dir/gate.$i.lock") or die "gate-slot: $dir/gate.$i.lock: $!\n";
       if (flock($fh, LOCK_EX | LOCK_NB)) {
-        truncate($fh, 0); syswrite($fh, "$$\n"); $held = $fh; last;
+        truncate($fh, 0); syswrite($fh, "$$\n"); $held = $fh; $ENV{LOOP_GATE_SLOT_HELD} = "$dir/gate.$i.lock"; last;
       }
     }
     next if $held;
