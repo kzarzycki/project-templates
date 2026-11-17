@@ -635,8 +635,10 @@ The way through:
    - Set `QUEUE_HEAD` to
      `${{ github.event.workflow_run.head_sha || github.event.merge_group.head_sha }}`.
 2. Once the update PR lands, the next PR removes the three edits, so the file
-   matches a fresh render. Its queue entry goes through the relay to main's
-   new copy.
+   matches a fresh render. The removal is required: while main's copy listens
+   to `merge_group`, every queue entry runs the PR's own copy with a write
+   token, so a PR could edit that copy to post its own green status. Its queue
+   entry goes through the relay to main's copy.
 
 Updating to the next release moves the pack to `engineering-v0.27.0`. On a base
 whose ruleset has a `merge_queue` rule, its `land` enqueues each landable PR,
