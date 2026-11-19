@@ -22,8 +22,8 @@
           persist-credentials: false
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
-          install: false # listing the parts needs only mise and python3, which the runner has{% if loop_enabled %}; ci:narrowed also needs uv
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+          install: false # listing the parts needs only mise and python3, which the runner has{% if loop_enabled %}; ci:narrowed also needs uv{% endif %}
+{% if loop_enabled %}      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
       # A PR or a push is narrowed when loop.md names an `Affected tests:` command and not `Gate: full`: the
       # `affected` job then runs in place of the parts. The nightly and a queue entry keep the full parts.
       - id: mode

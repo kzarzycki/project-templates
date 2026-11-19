@@ -298,5 +298,23 @@ class NarrowedCiTest(unittest.TestCase):
                 self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
 
+    def test_a_loop_off_workflow_of_every_template_passes_actionlint_and_zizmor(self) -> None:
+        seen = set()
+        for project_type, answers in LEAVES:
+            project = render(project_type, engineering_loop=False, **answers)
+            if not (project / ".github/workflows/ci.yml").exists():
+                continue
+            seen.add(project_type)
+            tools = tomllib.loads((project / "mise.toml").read_text())["tools"]
+            for linter, args in (("actionlint", ()), ("zizmor", ("--offline",))):
+                with self.subTest(template=project_type, linter=linter):
+                    result = subprocess.run(
+                        [MISE, "exec", f"{linter}@{tools[linter]}", "--", linter, *args, ".github/workflows/ci.yml"],
+                        cwd=project, capture_output=True, text=True,
+                    )
+                    self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertGreaterEqual(len(seen), 3)
+
+
 if __name__ == "__main__":
     unittest.main()
