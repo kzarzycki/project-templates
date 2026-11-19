@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import tomllib
 import unittest
@@ -22,7 +23,18 @@ SCRIPTS = Path(".agents/skills/engineering-loop/scripts")
 # The pack's reader of loop.md (gatekeeper.py at the pinned release: AFFECTED, FULL_GATE, narrowing), as far as
 # ci:narrowed uses it; the tests run the task against it, so its grammar is the pack's, not the task's.
 GATEKEEPER = '''\
+#!/usr/bin/env -S uv run -q --script
+# /// script
+# requires-python = ">=3.9"
+# dependencies = ["PyYAML==6.0.3"]
+# ///
 import re
+import sys
+
+try:
+    import yaml  # the real module's import-time dependency: a python3 without PyYAML exits here
+except ImportError:
+    sys.exit("gatekeeper.py needs PyYAML")
 
 AFFECTED = re.compile(r"^Affected tests:[ \\t]*(.+?)[ \\t]*$", re.MULTILINE)
 FULL_GATE = re.compile(r"^Gate:[ \\t]*`?full`?[ \\t]*$", re.MULTILINE)
@@ -56,9 +68,13 @@ def git(cwd: Path, *args: str) -> str:
     return result.stdout.strip()
 
 
+# what a task needs from the caller's environment to run uv and reach its package index
+KEEP = {"PATH", "HOME", "TMPDIR", "SSL_CERT_FILE", "HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "REQUESTS_CA_BUNDLE"}
+
+
 def sh(script: str, cwd: Path, **env: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(["sh", "-c", script], cwd=cwd, capture_output=True, text=True,
-                          env={"PATH": os.environ["PATH"], **env})
+                          env={**{k: v for k, v in os.environ.items() if k in KEEP or k.startswith("UV_")}, **env})
 
 
 class NarrowedCiTest(unittest.TestCase):
@@ -100,6 +116,8 @@ class NarrowedCiTest(unittest.TestCase):
                 mode = next(index for index, step in enumerate(steps) if step.get("id") == "mode")
                 parts = next(index for index, step in enumerate(steps) if step.get("id") == "parts")
                 self.assertEqual("mise run ci:narrowed", steps[mode]["run"])
+                # ci:narrowed runs the pack under uv.
+                self.assertTrue([step for step in steps[:mode] if step.get("uses", "").startswith("astral-sh/setup-uv@")])
                 self.assertLess(mode, parts)
                 # A narrowed run lists no part: the step is skipped, and the output falls back to an empty
                 # list, since part's fromJSON('') would fail on the unset output.
@@ -118,7 +136,8 @@ class NarrowedCiTest(unittest.TestCase):
         self.assertIn("merge_group", ci[True])
         self.assertEqual("mise run ci:narrowed", next(s for s in ci["jobs"]["plan"]["steps"] if s.get("id") == "mode")["run"])
 
-    def narrowed(self, event: str, base: str | None, head: str | None, pack: bool = True) -> str:
+    def narrowed(self, event: str, base: str | None, head: str | None, pack: bool = True,
+                 env: dict[str, str] | None = None) -> str:
         """`ci:narrowed`'s answer in a repository whose HEAD^1 holds loop.md `base` and whose HEAD holds `head`."""
         project = render("software/python") if "ci:narrowed" not in _TASKS else Path()
         repo = Path(tempfile.mkdtemp(prefix="narrowed-repo-"))
@@ -136,8 +155,9 @@ class NarrowedCiTest(unittest.TestCase):
             (repo / "touch").write_text(str(text))
             git(repo, "add", "-A")
             git(repo, "commit", "-q", "--allow-empty", "-m", "x")
-        result = sh(task(project, "ci:narrowed"), repo, GITHUB_EVENT_NAME=event)
+        result = sh(task(project, "ci:narrowed"), repo, GITHUB_EVENT_NAME=event, **(env or {}))
         self.assertEqual(0, result.returncode, result.stderr)
+        self.last_stderr = result.stderr
         found = re.fullmatch(r"narrowed=(true|false)\n", result.stdout)
         self.assertIsNotNone(found, result.stdout)
         return found[1]
@@ -176,6 +196,25 @@ class NarrowedCiTest(unittest.TestCase):
             with self.subTest(event=event):
                 self.assertEqual("false", self.narrowed(event, line, line))
         self.assertEqual("false", self.narrowed("pull_request", line, line, pack=False))
+
+    def test_a_python3_without_pyyaml_still_narrows_and_a_failing_pack_warns(self) -> None:
+        line = "Affected tests: mise run check-fast\n"
+        # The first python3 on PATH cannot import yaml, as on a runner image, a mise python or a clean venv.
+        bin_dir = Path(tempfile.mkdtemp(prefix="no-yaml-"))
+        self.addCleanup(shutil.rmtree, bin_dir, True)
+        (bin_dir / "yaml.py").write_text("raise ImportError('no PyYAML here')\n")
+        (bin_dir / "python3").write_text(f'#!/bin/sh\nPYTHONPATH="{bin_dir}" exec "{sys.executable}" "$@"\n')
+        (bin_dir / "python3").chmod(0o755)
+        path = f"{bin_dir}:{os.environ['PATH']}"
+        probe = subprocess.run(["python3", "-c", "import yaml"], env={"PATH": path}, capture_output=True)
+        self.assertNotEqual(0, probe.returncode)  # the premise
+        for event in ("pull_request", "push"):
+            with self.subTest(event=event):
+                self.assertEqual("true", self.narrowed(event, line, line, env={"PATH": path}))
+                self.assertNotIn("::warning::", self.last_stderr)
+        # A pack that cannot answer runs the full check, and says why.
+        self.assertEqual("false", self.narrowed("push", line, line, pack=False))
+        self.assertIn("::warning::ci:narrowed ran the full check", self.last_stderr)
 
     def check(self, **env: str) -> subprocess.CompletedProcess[str]:
         run = task(render("software/python") if "ci:check" not in _TASKS else Path(), "ci:check")
