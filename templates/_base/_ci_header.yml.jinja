@@ -6,6 +6,9 @@ on:
     branches: [main, master]
 {% if merge_queue %}  # A merge queue runs the required checks on each PR combined with main.
   merge_group:
+{% endif %}{% if loop_enabled %}  # The full check on main, since a PR or a push may run only the tests it affects (loop.md `Affected tests:`).
+  schedule:
+    - cron: "41 3 * * *"
 {% endif %}
 permissions:
   contents: read

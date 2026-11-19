@@ -295,8 +295,9 @@ if os.environ.get("GITHUB_STEP_SUMMARY"):
 [tasks."ci:check"]
 description = "CI's aggregate check: fails unless the plan and every part passed, naming each failed part and the command that reruns it."
 # PLAN and PARTS are the plan and matrix jobs' results, PLANNED the plan's parts: none skips the
-# matrix. Locally `mise run check` is only the fast set, so a failed part names its own command.
+# matrix. AFFECTED is the narrowed job's result, which runs in place of the parts and is skipped otherwise. Locally `mise run check` is only the fast set, so a failed part names its own command.
 run = '''
+case "${AFFECTED:-}" in failure|cancelled) echo "::error::the narrowed run (affected-tests) was ${AFFECTED}"; exit 1 ;; esac
 if [ "${PLAN:-}" = success ] && [ "${PARTS:-}" = success ]; then echo "every check: part passed"; exit 0; fi
 if [ "${PLAN:-}" = success ] && [ "${PARTS:-}" = skipped ] && [ "${PLANNED:-}" = "[]" ]; then echo "the plan listed no check: part"; exit 0; fi
 echo "::error::plan: ${PLAN:-unknown}, parts: ${PARTS:-unknown}"
@@ -306,7 +307,31 @@ for part in $failed; do
 done
 exit 1
 '''
-{% endif -%}
+{% if loop_enabled %}
+[tasks."ci:narrowed"]
+description = "Says in CI's step output whether a PR or a push runs the narrowed check: loop.md names an `Affected tests:` command and not `Gate: full`."
+# Any other event (the nightly, a merge queue entry) runs the full parts.
+run = '''
+narrowed=false
+case "${GITHUB_EVENT_NAME:-}" in
+  pull_request|push)
+    if grep -Eq '^[[:space:]]*Affected tests:' docs/agents/loop.md 2>/dev/null \
+      && ! grep -Eq '^[[:space:]]*Gate: full' docs/agents/loop.md 2>/dev/null; then narrowed=true; fi ;;
+esac
+echo "narrowed=$narrowed"
+if [ -n "${GITHUB_OUTPUT:-}" ]; then echo "narrowed=$narrowed" >> "$GITHUB_OUTPUT"; fi
+'''
+
+[tasks."ci:last-green"]
+description = "Prints the head commit of the newest earlier scheduled run of this workflow that passed, else the repository's first commit; for the nightly's red report."
+run = '''
+workflow="${GITHUB_WORKFLOW_REF%%@*}"; workflow="${workflow##*/}"
+found="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?event=schedule&status=success&per_page=1" --jq '.workflow_runs[0].head_sha // empty')" || found=""
+[ -n "$found" ] || found="$(git rev-list --max-parents=0 "${GITHUB_SHA:-HEAD}" | tail -n 1)"
+echo "$found"
+if [ -n "${GITHUB_OUTPUT:-}" ]; then echo "sha=$found" >> "$GITHUB_OUTPUT"; fi
+'''
+{% endif %}{% endif -%}
 [tasks."deps:renovate"]
 description = "Runs Renovate (renovate.json) on this repo with your gh login: opens or updates its dependency PRs. `-- --branch <name>` instead dry-runs that branch with this checkout's renovate.json and opens nothing. Needs gh logged in with the repo and workflow scopes."
 # Self-hosted with the developer's own token, so it needs no org admin: the PRs are theirs, and a PR
