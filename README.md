@@ -79,6 +79,16 @@ with (a new branch's first push, a commit the checkout lacks, or `BASE_REF`
 unset when run locally) every part runs. A matrix job named after each part runs
 `mise run <part>`.
 
+With the engineering loop on, a PR or a push to main runs narrowed when
+`docs/agents/loop.md` has an `Affected tests: <command>` line and no `Gate: full`
+line: an `affected` job runs the pack's `approvals.py affected-tests` in place of
+the parts, against `HEAD^1` on a PR (the first parent of the merge commit
+`actions/checkout` makes, so main as it is now) and against the push's previous
+commit on main. A new project has no such line, so its CI runs the parts as
+above. A merge queue entry and the nightly (a `schedule` trigger) always run
+the parts; a red nightly runs the pack's `nightly.py red`, which opens one issue
+naming the merges since the last green nightly.
+
 A filter is a part's name over a list of globs: `**` matches across folders,
 `*` within one folder, and a glob starting with `!` excludes. A file counts for
 the part when it matches one of its globs and none of its `!` globs:

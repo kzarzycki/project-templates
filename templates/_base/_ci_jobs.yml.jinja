@@ -13,17 +13,26 @@
       contents: read
       actions: read # to find the merge queue's run of a push's commit
     outputs:
-      parts: {% raw %}${{ steps.parts.outputs.parts }}{% endraw %}
-    steps:
+      parts: {% raw %}${{ steps.parts.outputs.parts || '[]' }}{% endraw %}
+{% if loop_enabled %}      narrowed: {% raw %}${{ steps.mode.outputs.narrowed }}{% endraw %}
+{% endif %}    steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0 # the base and the merge base, on every event
           persist-credentials: false
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
-          install: false # listing the parts needs only mise and python3, which the runner has
-      - id: parts
+          install: false # listing the parts needs only mise and python3, which the runner has{% if loop_enabled %}; ci:narrowed also needs uv{% endif %}
+{% if loop_enabled %}      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      # A PR or a push is narrowed when loop.md names an `Affected tests:` command and not `Gate: full`: the
+      # `affected` job then runs in place of the parts. The nightly and a queue entry keep the full parts.
+      - id: mode
         env:
+          MISE_TASK_RUN_AUTO_INSTALL: "false"
+        run: mise run ci:narrowed
+{% endif %}      - id: parts
+{% if loop_enabled %}        if: {% raw %}${{ steps.mode.outputs.narrowed != 'true' }}{% endraw %}
+{% endif %}        env:
           BASE_REF: {{ base_ref }}
           GH_TOKEN: {% raw %}${{ github.token }}{% endraw %}
           MISE_TASK_RUN_AUTO_INSTALL: "false"
@@ -54,9 +63,69 @@
           PART: {% raw %}${{ matrix.part }}{% endraw %}
           BASE_REF: {{ base_ref }}
         run: mise run "$PART"
+{% if loop_enabled %}
+  # The narrowed run, in place of the parts: the tests this change affects plus the project's cheap
+  # whole-repo checks. affected-tests runs the full `mise run check` itself for a base git can't resolve
+  # (the all-zeros SHA of a new branch) and when loop.md has no `Affected tests:` line.
+  affected:
+    needs: plan
+    if: {% raw %}${{ {% endraw %}{{ repository_guard }}{% raw %}needs.plan.outputs.narrowed == 'true' }}{% endraw %}
+    runs-on: {{ part_runner | default('ubuntu-latest') }}
+    timeout-minutes: 45
+    env:
+      UV_LOCKED: "1" # a uv sync fails on a stale uv.lock instead of rewriting it
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the diff against the base
+          persist-credentials: false
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+      - run: mise run setup:dev
+      # The checkout's HEAD is the PR merged into main as it is now, so its first parent is main's current
+      # tip. github.event.pull_request.base.sha is main when the PR opened and selects every test once main moves.
+      - name: Affected tests (pull request)
+        if: {% raw %}${{ github.event_name == 'pull_request' }}{% endraw %}
+        run: uv run .agents/skills/engineering-loop/scripts/approvals.py affected-tests --base HEAD^1
+      - name: Affected tests (push to main)
+        if: {% raw %}${{ github.event_name == 'push' }}{% endraw %}
+        env:
+          BEFORE: {% raw %}${{ github.event.before }}{% endraw %}
+        run: uv run .agents/skills/engineering-loop/scripts/approvals.py affected-tests --base "$BEFORE"
 
+  # A red nightly opens one issue listing the merges since the last green nightly (the pack's nightly.py).
+  nightly-red:
+    needs: check
+    if: {% raw %}${{ {% endraw %}{{ repository_guard }}{% raw %}always() && github.event_name == 'schedule' && needs.check.result == 'failure' }}{% endraw %}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read # to find the last green nightly
+      pull-requests: read # to find each merge's PR
+      issues: write # to open or comment on the issue
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the history between the last green commit and this one
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          install: false # ci:last-green needs only gh and git, which the runner has
+      - id: green
+        env:
+          GH_TOKEN: {% raw %}${{ github.token }}{% endraw %}
+          MISE_TASK_RUN_AUTO_INSTALL: "false"
+        run: mise run ci:last-green
+      - name: Open or update the nightly issue
+        env:
+          GH_TOKEN: {% raw %}${{ github.token }}{% endraw %}
+          LAST_GREEN: {% raw %}${{ steps.green.outputs.sha }}{% endraw %}
+          RED: {% raw %}${{ github.sha }}{% endraw %}
+          RUN_URL: {% raw %}${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}{% endraw %}
+        run: uv run .agents/skills/engineering-loop/scripts/nightly.py red --last-green "$LAST_GREEN" --red "$RED" --run "$RUN_URL"
+{% endif %}
   check:
-    needs: [plan, part]
+    needs: [plan, part{% if loop_enabled %}, affected{% endif %}]
     # Always, so the required check reports even when the plan or a part failed or was cancelled.
     if: {% raw %}${{ {% endraw %}{{ repository_guard }}{% raw %}always() && !github.event.pull_request.draft }}{% endraw %}
     runs-on: ubuntu-latest
@@ -74,6 +143,7 @@
           PLAN: {% raw %}${{ needs.plan.result }}{% endraw %}
           PARTS: {% raw %}${{ needs.part.result }}{% endraw %}
           PLANNED: {% raw %}${{ needs.plan.outputs.parts }}{% endraw %}
-          GH_TOKEN: {% raw %}${{ github.token }}{% endraw %}
+{% if loop_enabled %}          AFFECTED: {% raw %}${{ needs.affected.result }}{% endraw %}
+{% endif %}          GH_TOKEN: {% raw %}${{ github.token }}{% endraw %}
           MISE_TASK_RUN_AUTO_INSTALL: "false"
         run: mise run ci:check

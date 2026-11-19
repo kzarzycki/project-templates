@@ -114,6 +114,14 @@ what it means to keep, such as `.github/rulesets/**`.
 records on the head. A check that reads environment variables names them in
 `local_ci_env`, one per line.
 {% endif %}
+{% if include_ci %}
+CI narrows a pull request's and a push to main's check when this file has an
+`Affected tests: <command>` line (your selector, which this seed leaves out): the
+`affected` job runs `approvals.py affected-tests` in place of the check: parts,
+and a nightly run of the full parts opens an issue naming the merges since the
+last green when it ends red. The line `Gate: full` returns every gate to the
+full check, so a project with a weak selector can keep it while the selector is fixed.
+{% endif %}
 ## Risk criteria
 
 Optional. What makes a change risky here beyond the `risk` rule, in words,

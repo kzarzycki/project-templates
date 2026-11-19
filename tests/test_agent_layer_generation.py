@@ -1204,7 +1204,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertIn("mise run --skip-tools agent:sync -- --frozen", tasks["check:agents"]["run"])
         self.assertEqual("mise run --skip-tools --jobs 1 --continue-on-error 'lint:*'", tasks["check:lint"]["run"])
         workflow = (project / ".github/workflows/ci.yml").read_text()
-        self.assertEqual(["plan", "part", "check"], list(yaml.safe_load(workflow)["jobs"]))
+        self.assertEqual(["plan", "part", "affected", "nightly-red", "check"], list(yaml.safe_load(workflow)["jobs"]))
         self.assertNotIn("pytest", workflow)
         approvals_run = tasks["loop:approvals"]["run"]
         self.assertEqual("gate", tasks["loop:approvals"]["alias"])
@@ -1388,14 +1388,16 @@ class AgentLayerGenerationTest(unittest.TestCase):
                 )
                 self.assertEqual("${{ github.event_name == 'pull_request' }}", ci["concurrency"]["cancel-in-progress"])
                 jobs = ci["jobs"]
-                self.assertEqual(["plan", "part", "check"], list(jobs))
-                # Only the parts run the project's checks; an Apple project's need Xcode.
-                runners = {"plan": "ubuntu-latest", "check": "ubuntu-latest",
-                           "part": "macos-latest" if project_type == "apple/xcode" else "ubuntu-latest"}
+                # `affected` and `nightly-red` are the loop's narrowed run and red-nightly report (test_narrowed_ci).
+                self.assertEqual(["plan", "part", "affected", "nightly-red", "check"], list(jobs))
+                # Only the parts and the narrowed run run the project's checks; an Apple project's need Xcode.
+                runner = "macos-latest" if project_type == "apple/xcode" else "ubuntu-latest"
+                runners = {"plan": "ubuntu-latest", "check": "ubuntu-latest", "nightly-red": "ubuntu-latest",
+                           "part": runner, "affected": runner}
                 self.assertEqual(runners, {name: job["runs-on"] for name, job in jobs.items()})
                 self.assertEqual("${{ !github.event.pull_request.draft }}", jobs["plan"]["if"])
                 self.assertEqual("${{ always() && !github.event.pull_request.draft }}", jobs["check"]["if"])
-                self.assertEqual(["plan", "part"], jobs["check"]["needs"])
+                self.assertEqual(["plan", "part", "affected"], jobs["check"]["needs"])
                 self.assertEqual("${{ fromJSON(needs.plan.outputs.parts) }}", jobs["part"]["strategy"]["matrix"]["part"])
                 self.assertEqual("${{ matrix.part }}", jobs["part"]["name"])
                 # a stale uv.lock fails the part rather than being rewritten by setup:dev (#29)
@@ -1434,7 +1436,8 @@ class AgentLayerGenerationTest(unittest.TestCase):
                     for job_name, job in yaml.safe_load(workflow.read_text())["jobs"].items():
                         for step in job["steps"]:
                             if "run" in step:
-                                self.assertRegex(step["run"], r"^mise run \S+$", f"{workflow.name} {job_name}")
+                                # The one exception: the pack's own scripts, which the loop's narrowed and nightly steps call.
+                                self.assertRegex(step["run"], r"^(mise run \S+|uv run \.agents/skills/engineering-loop/scripts/\S+\.py [^\n]+)$", f"{workflow.name} {job_name}")
 
                 # The ruleset's two names: CI's aggregate job and the status the approvals step posts.
                 ruleset = json.loads((project / ".github/rulesets/main.json").read_text())
