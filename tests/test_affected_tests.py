@@ -65,8 +65,9 @@ class CliTests(unittest.TestCase):
             (clone / "templates").mkdir(exist_ok=True)
             (clone / "templates/t.txt").write_text("t\n")
             commit("template")
+            old_tip = git("rev-parse", "HEAD").stdout.strip()
             git("reset", "-q", "--hard", tip)
-            self.assertEqual(select(git("rev-parse", "HEAD").stdout.strip()), ["tests.test_version_contract"])
+            self.assertEqual(select(old_tip), ALL)
             # a rename out of templates/ lists the old path too
             (clone / "templates").mkdir(exist_ok=True)
             (clone / "templates/m.txt").write_text("m\n" * 20)
