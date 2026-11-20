@@ -47,7 +47,7 @@ class CliTests(unittest.TestCase):
             subprocess.run(["git", "clone", "-q", str(at.ROOT), str(clone)], check=True)
             (clone / "scripts").mkdir(exist_ok=True)
             (clone / "scripts/affected_tests.py").write_text((at.ROOT / "scripts/affected_tests.py").read_text())
-            commit = lambda m: (git("add", "-A"), git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", m))  # noqa: E731
+            commit = lambda m: (git("add", "-A"), git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", m))  # noqa: E731
             commit("script")
             base = git("rev-parse", "HEAD").stdout.strip()
             (clone / "README.md").write_text("x\n")
