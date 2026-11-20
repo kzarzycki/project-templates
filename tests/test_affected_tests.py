@@ -14,7 +14,11 @@ ALL = at.all_modules()
 
 class SelectTests(unittest.TestCase):
     def test_docs_only_runs_the_version_contract(self):
-        self.assertEqual(at.select(["README.md", "docs/knowledge/gotchas.md"]), ["tests.test_version_contract"])
+        self.assertEqual(at.select(["docs/knowledge/gotchas.md", ".gitignore"]), ["tests.test_version_contract"])
+
+    def test_readme_and_examples_run_everything(self):
+        for path in ("README.md", "examples/agent-layer-mvp/apm.yml"):
+            self.assertEqual(at.select([path]), ALL, path)
 
     def test_one_test_file_runs_itself(self):
         self.assertEqual(at.select(["tests/test_gate_slot.py"]), ["tests.test_gate_slot"])
@@ -50,11 +54,27 @@ class CliTests(unittest.TestCase):
             commit = lambda m: (git("add", "-A"), git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", m))  # noqa: E731
             commit("script")
             base = git("rev-parse", "HEAD").stdout.strip()
-            (clone / "README.md").write_text("x\n")
+            select = lambda b: subprocess.run([sys.executable, str(clone / "scripts/affected_tests.py"), b],  # noqa: E731
+                                              capture_output=True, text=True, check=True).stdout.split()
+            (clone / "docs").mkdir(exist_ok=True)
+            (clone / "docs/x.md").write_text("x\n")
             commit("docs")
-            out = subprocess.run([sys.executable, str(clone / "scripts/affected_tests.py"), base],
-                                 capture_output=True, text=True, check=True).stdout.split()
-            self.assertEqual(out, ["tests.test_version_contract"])
+            self.assertEqual(select(base), ["tests.test_version_contract"])
+            tip = git("rev-parse", "HEAD").stdout.strip()
+            # a rollback: the old tip is a descendant, and the endpoint diff still shows the change
+            (clone / "templates").mkdir(exist_ok=True)
+            (clone / "templates/t.txt").write_text("t\n")
+            commit("template")
+            git("reset", "-q", "--hard", tip)
+            self.assertEqual(select(git("rev-parse", "HEAD").stdout.strip()), ["tests.test_version_contract"])
+            # a rename out of templates/ lists the old path too
+            (clone / "templates").mkdir(exist_ok=True)
+            (clone / "templates/m.txt").write_text("m\n" * 20)
+            commit("add")
+            before = git("rev-parse", "HEAD").stdout.strip()
+            git("mv", "templates/m.txt", "docs/m.txt")
+            commit("move")
+            self.assertEqual(select(before), ALL)
 
 
 if __name__ == "__main__":

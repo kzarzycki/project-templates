@@ -19,9 +19,10 @@ ALL = (
     "scripts/affected_tests.py", ".github/", "tests/conftest.py", "tests/fixtures/",
     "tests/test_agent_layer_generation.py",  # its render() helper is imported by the other tests
     "copier.yml", "_post_gen.sh", "templates/", "skills/",
+    "README.md", "examples/",  # test_agent_layer_generation asserts on both
 )
 # The tests that read these files; nothing else in the suite looks at them.
-CHEAP = ("docs/", "README.md", ".claude-plugin/", ".gitignore", "examples/")
+CHEAP = ("docs/", ".claude-plugin/", ".gitignore")
 
 
 def all_modules() -> list[str]:
@@ -44,7 +45,9 @@ def select(changed: list[str]) -> list[str]:
 
 
 def changed_files(base: str) -> list[str] | None:
-    done = subprocess.run(["git", "-C", str(ROOT), "diff", "--name-only", f"{base}...HEAD"],
+    # Two-dot (endpoints), so a rollback or force push shows what changed; --no-renames lists
+    # both paths of a move, so a template moved into docs/ still selects every module.
+    done = subprocess.run(["git", "-C", str(ROOT), "diff", "--name-only", "--no-renames", base, "HEAD"],
                           capture_output=True, text=True)
     return done.stdout.split() if done.returncode == 0 else None
 
