@@ -4,6 +4,9 @@ on:
   pull_request:
   push:
     branches: [main]
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -19,6 +22,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           version: "0.11.29"
@@ -27,17 +31,29 @@ jobs:
           install: false
       - name: Install root test tools
         run: uv tool install copier==9.17.0 && uv tool install pre-commit==4.6.0
+      - name: Select the root tests this change touches
+        id: select
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          # A PR diffs against its base, a push to main against the previous tip.
+          # A nightly or manual run has no base, so the selector picks every module.
+          base=""
+          [ "$EVENT" = pull_request ] && base="$PR_BASE"
+          [ "$EVENT" = push ] && base="$PUSH_BEFORE"
+          modules=$(python3 scripts/affected_tests.py "$base" | tr '\n' ' ')
+          echo "modules=$modules" >> "$GITHUB_OUTPUT"
+          echo "Running: $modules"
       - name: Run root unittest suite
+        env:
+          MODULES: ${{ steps.select.outputs.modules }}
+        # MODULES is the selector's own output, a list of tests.<name> words
         run: >-
           mise exec github:microsoft/apm@0.33.0 --
           uv run --with PyYAML==6.0.3 --
-          python3 -m unittest
-          tests.test_agent_layer_generation
-          tests.test_agent_mise_tasks
-          tests.test_bootstrap_local_source
-          tests.test_gate_slot
-          tests.test_narrowed_ci
-          tests.test_version_contract
+          python3 -m unittest $MODULES
       - name: Install example tools
         working-directory: examples/agent-layer-mvp
         run: mise install
@@ -143,3 +159,27 @@ jobs:
       - name: List the generated CI's parts
         working-directory: _out/ci-proj
         run: mise run ci:parts
+
+  nightly-red:
+    # A scheduled or manual run that fails opens one nightly-red issue, or comments on the open one.
+    needs: [verify, generate]
+    if: ${{ always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && contains(needs.*.result, 'failure') }}
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update the nightly-red issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          body="The full suite is red at ${SHA}. Run: ${RUN_URL}"
+          gh label create nightly-red --color B60205 --description "The nightly full run failed" 2>/dev/null || true
+          open=$(gh issue list --label nightly-red --state open --json number --jq '.[0].number // empty')
+          if [ -n "$open" ]; then
+            gh issue comment "$open" --body "$body"
+          else
+            gh issue create --label nightly-red --title "Nightly full run is red at ${SHA:0:7}" --body "$body"
+          fi
