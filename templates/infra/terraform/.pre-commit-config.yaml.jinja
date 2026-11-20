@@ -1,5 +1,5 @@
 # Managed by Copier — edit the template, then `copier update`.
-default_install_hook_types: [pre-commit, commit-msg, pre-push]
+default_install_hook_types: [pre-commit, commit-msg, pre-push, post-checkout]
 {% if include_mise -%}
 # A hook runs at the pre-commit stage unless it names its stage.
 default_stages: [pre-commit]
