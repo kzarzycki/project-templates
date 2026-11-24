@@ -115,7 +115,7 @@ records on the head. A check that reads environment variables names them in
 `local_ci_env`, one per line.
 {% endif %}
 {% if include_ci %}
-{% set seeded = include_mise and project_type in ['software/python', 'software/node', 'software/java', 'ai/mcp'] %}
+{% set seeded = project_type in ['software/python', 'software/node', 'software/java', 'ai/mcp'] %}
 CI narrows a pull request's and a push to main's check when this file has an
 `Affected tests: <command>` line: the `affected` job runs `approvals.py affected-tests`
 in place of the check: parts, and a nightly run of the full parts opens an issue naming

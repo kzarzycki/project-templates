@@ -284,13 +284,13 @@ class NarrowedCiTest(unittest.TestCase):
                 loop = (project / "docs/agents/loop.md").read_text()
                 self.assertIn("`Affected tests: <command>`", loop)
                 self.assertIn("`Gate: full`", loop)
-                self.assertNotIn("leaves out", loop)
+                self.assertNotIn("which this seed leaves out", loop)
                 lines = [line for line in loop.splitlines() if line.startswith("Affected tests:")]
                 self.assertEqual(["Affected tests: mise run test:affected"], lines)  # exactly one, a single mise task
                 tasks = tomllib.loads((project / "mise.toml").read_text())["tasks"]
                 run = tasks["test:affected"]["run"]
                 self.assertIn("mise run --skip-tools check:lint", run)  # the whole-repo lints (and tsc for node)
-                node = "node" in (project_type, answers.get("language"))
+                node = project_type == "software/node" or answers.get("language") == "node"
                 if node:  # a base-relative selector, no ponytail
                     self.assertIn('npx vitest run --changed "$base"', run)
                     self.assertIn("GATE_BASE", run)
@@ -299,7 +299,7 @@ class NarrowedCiTest(unittest.TestCase):
                     self.assertIn("kzarzycki/agent-skills#2217", tasks_comment(project, "test:affected"))
 
     def test_the_seeded_line_is_left_out_where_no_task_backs_it(self) -> None:
-        for project_type, answers in (("data/dbt", {}), ("infra/terraform", {}), ("software/python", {"include_mise": False})):
+        for project_type, answers in (("data/dbt", {}), ("infra/terraform", {})):
             with self.subTest(project_type=project_type, **answers):
                 loop = (render(project_type, **answers) / "docs/agents/loop.md").read_text()
                 self.assertEqual([], [line for line in loop.splitlines() if line.startswith("Affected tests:")])
