@@ -87,7 +87,7 @@ class NarrowedCiTest(unittest.TestCase):
                 pull_request = runs["Affected tests (pull request)"]
                 push = runs["Affected tests (push to main)"]
                 self.assertEqual(f"uv run {AFFECTED} --base HEAD^1", pull_request["run"])
-                self.assertEqual("${{ github.event_name == 'pull_request' && steps.record.outputs.recorded != 'true' }}", pull_request["if"])
+                self.assertEqual("${{ github.event_name == 'pull_request' && steps.record.outcome != 'success' }}", pull_request["if"])
                 self.assertEqual("${{ github.event.before }}", push["env"]["BEFORE"])
                 self.assertEqual(f'uv run {AFFECTED} --base "$BEFORE"', push["run"])
                 checkout = jobs["affected"]["steps"][0]
@@ -302,45 +302,26 @@ class NarrowedCiTest(unittest.TestCase):
                         text = step.get("uses", "") + step.get("run", "")
                         if any(text.startswith(mark) or text == mark for mark in skipped):
                             self.assertGreater(index, record, text)
-                            self.assertIn("steps.record.outputs.recorded != 'true'", step["if"], text)
-                    # only a pass record skips: push, queue and nightly runs never set the output
-                    self.assertNotIn("recorded=true", asked["run"].split("then")[0])
-                    self.assertEqual(1, asked["run"].count('echo "recorded=true"'))
+                            self.assertIn("steps.record.outcome != 'success'", step["if"], text)
 
-    def gate_record(self, steps: list[dict], code: int | None) -> tuple[str, str]:
-        """Runs the `record` step's script with a gate-record that exits `code` (None: no gatekeeper), and
-        returns its GITHUB_OUTPUT and its output."""
-        script = next(step["run"] for step in steps if step.get("id") == "record")
-        with tempfile.TemporaryDirectory() as tmp:
-            bin_dir = Path(tmp) / "bin"
-            bin_dir.mkdir()
-            uv = bin_dir / "uv"
-            # a missing gatekeeper is `uv run <missing script>` failing, which is exit 2
-            uv.write_text(f"#!/bin/sh\n{'echo recorded: x as loop-gate/y; ' if code == 0 else ''}exit {2 if code is None else code}\n")
-            uv.chmod(0o755)
-            out = Path(tmp) / "out"
-            out.touch()
-            result = subprocess.run(
-                ["bash", "-eo", "pipefail", "-c", script],
-                env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HEAD_SHA": "abc",
-                     "GATE_COMMAND": "mise run check:all", "GITHUB_OUTPUT": str(out)},
-                capture_output=True, text=True,
-            )
-            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
-            return out.read_text(), result.stdout
-
-    def test_a_step_is_skipped_only_on_exit_0_and_runs_on_no_record_or_any_error(self) -> None:
+    def test_a_step_is_skipped_only_when_gate_record_exits_0(self) -> None:
         for job in ("part", "affected"):
             steps, _ = self.record_steps("software/python", job)
             with self.subTest(job=job):
-                output, said = self.gate_record(steps, 0)
-                self.assertEqual("recorded=true\n", output)
-                self.assertIn("recorded: x as loop-gate/y", said)  # the record is named
-                self.assertIn("covers this head's tree", said)
-                for code in (1, 2, 127, None):  # no record, an error, a missing gatekeeper
-                    output, said = self.gate_record(steps, code)
-                    self.assertEqual("", output, code)
-                    self.assertIn("no pass record", said)
+                asked = next(step for step in steps if step.get("id") == "record")
+                # the step's own exit is the answer: 0 a record (named in its log), 1 or an error (a missing
+                # gatekeeper is `uv run` of a missing script) fails it, which continue-on-error lets through
+                self.assertTrue(asked["continue-on-error"])
+                self.assertEqual(
+                    'uv run .agents/skills/gatekeeper/scripts/approvals.py gate-record "$HEAD_SHA" -- "$GATE_COMMAND"',
+                    asked["run"],
+                )
+                # outcome is the step's result before continue-on-error: `failure` on exit 1 or an error, and
+                # `skipped` off a PR, so only `success` skips
+                skipping = [step for step in steps if "steps.record.outcome != 'success'" in step.get("if", "")]
+                self.assertGreaterEqual(len(skipping), 3)
+                self.assertNotIn("steps.record.conclusion", yaml.safe_dump(steps))
+                self.assertNotIn("recorded", yaml.safe_dump(steps))
 
     def test_push_merge_group_and_schedule_runs_never_ask_and_run_every_step(self) -> None:
         for job in ("part", "affected"):
@@ -350,9 +331,9 @@ class NarrowedCiTest(unittest.TestCase):
                     self.assertEqual("${{ github.event_name == 'pull_request' }}", step["if"])
                 else:
                     # an output set only by the PR-only step is empty elsewhere, so the step runs
-                    self.assertIn(step.get("if"), (None, "${{ steps.record.outputs.recorded != 'true' }}",
+                    self.assertIn(step.get("if"), (None, "${{ steps.record.outcome != 'success' }}",
                                                    "${{ github.event_name == 'push' }}",
-                                                   "${{ github.event_name == 'pull_request' && steps.record.outputs.recorded != 'true' }}"))
+                                                   "${{ github.event_name == 'pull_request' && steps.record.outcome != 'success' }}"))
 
     def test_the_plan_and_check_jobs_stay_unchanged(self) -> None:
         ci, text = workflow("software/python")

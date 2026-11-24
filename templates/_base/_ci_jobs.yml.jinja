@@ -57,31 +57,26 @@
           fetch-depth: 0
           persist-credentials: false
 {% if loop_enabled %}      # A pull request skips the steps below that a pass record of the gate on the head's tree covers (the worker's
-      # `local-ci --record`). gate-record exits 0 only for a record, which it names; exit 1, any error or a missing
-      # gatekeeper runs the steps. It asks about the PR head, not the test merge commit this job checks out.
+      # `local-ci --record`). gate-record exits 0 only for a record, which it names in the step's log; exit 1, any error or a missing
+      # gatekeeper fails the step (continue-on-error), and the steps run. It asks about the PR head, not the test merge commit this job checks out.
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         if: {% raw %}${{ github.event_name == 'pull_request' }}{% endraw %}
       - id: record
         if: {% raw %}${{ github.event_name == 'pull_request' }}{% endraw %}
+        continue-on-error: true # exit 1 or any error is no record: the steps below run
         env:
           HEAD_SHA: {% raw %}${{ github.event.pull_request.head.sha }}{% endraw %}
-        run: |
-          if uv run .agents/skills/gatekeeper/scripts/approvals.py gate-record "$HEAD_SHA" -- "$GATE_COMMAND"; then
-            echo "recorded=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::the part skipped: a pass record of $GATE_COMMAND covers this head's tree (named above)"
-          else
-            echo "::notice::no pass record of $GATE_COMMAND on this head's tree, so the part runs"
-          fi
+        run: uv run .agents/skills/gatekeeper/scripts/approvals.py gate-record "$HEAD_SHA" -- "$GATE_COMMAND"
 {% endif %}      # mise installs the pinned tools; each part is the same task agents run.
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
-{% if loop_enabled %}        if: {% raw %}${{ steps.record.outputs.recorded != 'true' }}{% endraw %}
+{% if loop_enabled %}        if: {% raw %}${{ steps.record.outcome != 'success' }}{% endraw %}
 {% endif %}      - run: mise run setup:dev
-{% if loop_enabled %}        if: {% raw %}${{ steps.record.outputs.recorded != 'true' }}{% endraw %}
+{% if loop_enabled %}        if: {% raw %}${{ steps.record.outcome != 'success' }}{% endraw %}
 {% endif %}      - env:
           PART: {% raw %}${{ matrix.part }}{% endraw %}
           BASE_REF: {{ base_ref }}
         run: mise run "$PART"
-{% if loop_enabled %}        if: {% raw %}${{ steps.record.outputs.recorded != 'true' }}{% endraw %}
+{% if loop_enabled %}        if: {% raw %}${{ steps.record.outcome != 'success' }}{% endraw %}
 {% endif %}{% if loop_enabled %}
   # The narrowed run, in place of the parts: the tests this change affects plus the project's cheap
   # whole-repo checks. affected-tests runs the full `mise run check` itself for a base git can't resolve
@@ -103,23 +98,18 @@
         if: {% raw %}${{ github.event_name == 'pull_request' }}{% endraw %}
       - id: record
         if: {% raw %}${{ github.event_name == 'pull_request' }}{% endraw %}
+        continue-on-error: true # exit 1 or any error is no record: the steps below run
         env:
           HEAD_SHA: {% raw %}${{ github.event.pull_request.head.sha }}{% endraw %}
-        run: |
-          if uv run .agents/skills/gatekeeper/scripts/approvals.py gate-record "$HEAD_SHA" -- "$GATE_COMMAND"; then
-            echo "recorded=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::the affected tests skipped: a pass record of $GATE_COMMAND covers this head's tree (named above)"
-          else
-            echo "::notice::no pass record of $GATE_COMMAND on this head's tree, so the affected tests run"
-          fi
+        run: uv run .agents/skills/gatekeeper/scripts/approvals.py gate-record "$HEAD_SHA" -- "$GATE_COMMAND"
 {% endif %}      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
-        if: {% raw %}${{ steps.record.outputs.recorded != 'true' }}{% endraw %}
+        if: {% raw %}${{ steps.record.outcome != 'success' }}{% endraw %}
       - run: mise run setup:dev
-        if: {% raw %}${{ steps.record.outputs.recorded != 'true' }}{% endraw %}
+        if: {% raw %}${{ steps.record.outcome != 'success' }}{% endraw %}
       # The checkout's HEAD is the PR merged into main as it is now, so its first parent is main's current
       # tip. github.event.pull_request.base.sha is main when the PR opened and selects every test once main moves.
       - name: Affected tests (pull request)
-        if: {% raw %}${{ github.event_name == 'pull_request' && steps.record.outputs.recorded != 'true' }}{% endraw %}
+        if: {% raw %}${{ github.event_name == 'pull_request' && steps.record.outcome != 'success' }}{% endraw %}
         run: uv run .agents/skills/engineering-loop/scripts/approvals.py affected-tests --base HEAD^1
       - name: Affected tests (push to main)
         if: {% raw %}${{ github.event_name == 'push' }}{% endraw %}

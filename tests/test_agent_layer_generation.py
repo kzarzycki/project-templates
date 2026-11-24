@@ -1436,7 +1436,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
                         for step in job["steps"]:
                             if "run" in step:
                                 # The one exception: the pack's own scripts, which the loop's narrowed and nightly steps call.
-                                self.assertRegex(step["run"], r"^(mise run \S+|uv run \.agents/skills/engineering-loop/scripts/\S+\.py [^\n]+)$", f"{workflow.name} {job_name}")
+                                self.assertRegex(step["run"], r"^(mise run \S+|uv run \.agents/skills/(engineering-loop|gatekeeper)/scripts/\S+\.py [^\n]+)$", f"{workflow.name} {job_name}")
 
                 # The ruleset's two names: CI's aggregate job and the status the approvals step posts.
                 ruleset = json.loads((project / ".github/rulesets/main.json").read_text())
