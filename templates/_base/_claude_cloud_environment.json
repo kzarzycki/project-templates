@@ -1,5 +1,5 @@
 {
-  "network": { "access": "default", "allowed_hosts": ["mise.run"] },
+  "network": { "access": "default", "allowed_hosts": [] },
   "variables": {},
   "registries": [],
   "proof": ["mise run check"]
