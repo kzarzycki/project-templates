@@ -87,7 +87,7 @@ class NarrowedCiTest(unittest.TestCase):
                 pull_request = runs["Affected tests (pull request)"]
                 push = runs["Affected tests (push to main)"]
                 self.assertEqual(f"uv run {AFFECTED} --base HEAD^1", pull_request["run"])
-                self.assertEqual("${{ github.event_name == 'pull_request' }}", pull_request["if"])
+                self.assertEqual("${{ github.event_name == 'pull_request' && steps.record.outputs.recorded != 'true' }}", pull_request["if"])
                 self.assertEqual("${{ github.event.before }}", push["env"]["BEFORE"])
                 self.assertEqual(f'uv run {AFFECTED} --base "$BEFORE"', push["run"])
                 checkout = jobs["affected"]["steps"][0]
@@ -275,6 +275,106 @@ class NarrowedCiTest(unittest.TestCase):
         self.assertIn("`Affected tests: <command>`", loop)
         self.assertIn("`Gate: full`", loop)
         self.assertFalse([line for line in loop.splitlines() if line.startswith("Affected tests:")])
+
+    def record_steps(self, project_type: str, job: str, **answers: object) -> tuple[list[dict], dict]:
+        ci, _ = workflow(project_type, **answers)
+        return ci["jobs"][job]["steps"], ci
+
+    def test_a_pr_job_asks_gate_record_for_the_gate_before_each_step_it_can_skip(self) -> None:
+        for project_type, answers in LEAVES:
+            for job, skipped in (("part", ("jdx/mise-action@", "mise run setup:dev", "mise run \"$PART\"")),
+                                 ("affected", ("jdx/mise-action@", "mise run setup:dev", f"uv run {AFFECTED} --base HEAD^1"))):
+                with self.subTest(project_type=project_type, job=job, **answers):
+                    steps, ci = self.record_steps(project_type, job, **answers)
+                    # the command asked is the gate `local-ci --record` records: mise run check:all by default
+                    self.assertEqual("mise run check:all", ci["env"]["GATE_COMMAND"])
+                    record = next(index for index, step in enumerate(steps) if step.get("id") == "record")
+                    asked = steps[record]
+                    self.assertEqual("${{ github.event_name == 'pull_request' }}", asked["if"])
+                    # the PR head, not the test merge commit the job checks out
+                    self.assertEqual("${{ github.event.pull_request.head.sha }}", asked["env"]["HEAD_SHA"])
+                    self.assertIn(
+                        '.agents/skills/gatekeeper/scripts/approvals.py gate-record "$HEAD_SHA" -- "$GATE_COMMAND"',
+                        asked["run"],
+                    )
+                    self.assertNotIn("github.sha", asked["run"])
+                    for index, step in enumerate(steps):
+                        text = step.get("uses", "") + step.get("run", "")
+                        if any(text.startswith(mark) or text == mark for mark in skipped):
+                            self.assertGreater(index, record, text)
+                            self.assertIn("steps.record.outputs.recorded != 'true'", step["if"], text)
+                    # only a pass record skips: push, queue and nightly runs never set the output
+                    self.assertNotIn("recorded=true", asked["run"].split("then")[0])
+                    self.assertEqual(1, asked["run"].count('echo "recorded=true"'))
+
+    def gate_record(self, steps: list[dict], code: int | None) -> tuple[str, str]:
+        """Runs the `record` step's script with a gate-record that exits `code` (None: no gatekeeper), and
+        returns its GITHUB_OUTPUT and its output."""
+        script = next(step["run"] for step in steps if step.get("id") == "record")
+        with tempfile.TemporaryDirectory() as tmp:
+            bin_dir = Path(tmp) / "bin"
+            bin_dir.mkdir()
+            uv = bin_dir / "uv"
+            # a missing gatekeeper is `uv run <missing script>` failing, which is exit 2
+            uv.write_text(f"#!/bin/sh\n{'echo recorded: x as loop-gate/y; ' if code == 0 else ''}exit {2 if code is None else code}\n")
+            uv.chmod(0o755)
+            out = Path(tmp) / "out"
+            out.touch()
+            result = subprocess.run(
+                ["bash", "-eo", "pipefail", "-c", script],
+                env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HEAD_SHA": "abc",
+                     "GATE_COMMAND": "mise run check:all", "GITHUB_OUTPUT": str(out)},
+                capture_output=True, text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            return out.read_text(), result.stdout
+
+    def test_a_step_is_skipped_only_on_exit_0_and_runs_on_no_record_or_any_error(self) -> None:
+        for job in ("part", "affected"):
+            steps, _ = self.record_steps("software/python", job)
+            with self.subTest(job=job):
+                output, said = self.gate_record(steps, 0)
+                self.assertEqual("recorded=true\n", output)
+                self.assertIn("recorded: x as loop-gate/y", said)  # the record is named
+                self.assertIn("covers this head's tree", said)
+                for code in (1, 2, 127, None):  # no record, an error, a missing gatekeeper
+                    output, said = self.gate_record(steps, code)
+                    self.assertEqual("", output, code)
+                    self.assertIn("no pass record", said)
+
+    def test_push_merge_group_and_schedule_runs_never_ask_and_run_every_step(self) -> None:
+        for job in ("part", "affected"):
+            steps, _ = self.record_steps("software/python", job, merge_queue=True)
+            for step in steps:
+                if step.get("id") == "record" or step.get("uses", "").startswith("astral-sh/setup-uv@"):
+                    self.assertEqual("${{ github.event_name == 'pull_request' }}", step["if"])
+                else:
+                    # an output set only by the PR-only step is empty elsewhere, so the step runs
+                    self.assertIn(step.get("if"), (None, "${{ steps.record.outputs.recorded != 'true' }}",
+                                                   "${{ github.event_name == 'push' }}",
+                                                   "${{ github.event_name == 'pull_request' && steps.record.outputs.recorded != 'true' }}"))
+
+    def test_the_plan_and_check_jobs_stay_unchanged(self) -> None:
+        ci, text = workflow("software/python")
+        self.assertNotIn("gate-record", yaml.safe_dump(ci["jobs"]["plan"]))
+        self.assertNotIn("gate-record", yaml.safe_dump(ci["jobs"]["check"]))
+
+    def test_the_loop_off_workflow_asks_nothing(self) -> None:
+        for answers in ({"engineering_loop": False}, {"include_engineering_workflow": False}):
+            with self.subTest(**answers):
+                _, text = workflow("software/python", **answers)
+                self.assertNotIn("gate-record", text)
+                self.assertNotIn("GATE_COMMAND", text)
+
+    def test_seeded_docs_say_the_recorded_run_replaced_the_push_run(self) -> None:
+        project = render("software/python")
+        loop = (project / "docs/agents/loop.md").read_text()
+        self.assertIn("recorded head run", loop)
+        self.assertIn("replaced the\npre-push test run", loop)
+        self.assertIn("gate-record <PR head> -- <gate>", loop)
+        hooks = (project / ".pre-commit-config.yaml").read_text()
+        self.assertIn("the worker's\n      # recorded head run", hooks)
+        self.assertNotIn("test:changed", hooks)
 
     def test_without_the_loop_ci_is_unchanged(self) -> None:
         for answers in ({"engineering_loop": False}, {"include_engineering_workflow": False}, {"include_agent_layer": False}):

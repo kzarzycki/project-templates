@@ -1282,12 +1282,13 @@ class AgentLayerGenerationTest(unittest.TestCase):
             for repo in yaml.safe_load((project / ".pre-commit-config.yaml").read_text())["repos"]
             for hook in repo["hooks"]
         }
-        for name in ("test:changed", "check:secrets"):
-            self.assertEqual(
-                {"id": name, "name": name, "entry": f"mise run {name}", "language": "system",
-                 "pass_filenames": False, "always_run": True, "stages": ["pre-push"]},
-                hooks[name],
-            )
+        self.assertNotIn("test:changed", hooks)  # the worker's recorded head run replaced the push run
+        self.assertEqual(
+            {"id": "check:secrets", "name": "check:secrets", "entry": "mise run check:secrets", "language": "system",
+             "pass_filenames": False, "always_run": True, "stages": ["pre-push"]},
+            hooks["check:secrets"],
+        )
+        self.assertEqual(["check:secrets"], [name for name, hook in hooks.items() if hook.get("stages") == ["pre-push"]])
         approvals_seed = (project / "docs/agents/loop.md").read_text()
         self.assertIn("Only people approve", approvals_seed)
         # The seed's policy as the pack reads it: the verifier judges risk, CI, CODEOWNERS and loop.md stay the owner's.
