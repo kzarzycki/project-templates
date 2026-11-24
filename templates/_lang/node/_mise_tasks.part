@@ -23,6 +23,15 @@ run = '''
 {% include "templates/_base/_diff_base.part" %}if git rev-parse -q --verify "$base^{commit}" >/dev/null; then npx vitest run --changed "$base"; else npx vitest run; fi
 '''
 
+[tasks."test:affected"]
+description = "The loop's `Affected tests:` command: the whole-repo lints and type check, then the vitest tests affected by the change since GATE_BASE."
+# GATE_BASE is the commit the gatekeeper selects against; without it, or before origin/main exists, every test runs.
+run = '''
+mise run --skip-tools check:lint
+base="${GATE_BASE:-origin/main}"
+if git rev-parse -q --verify "$base^{commit}" >/dev/null; then npx vitest run --changed "$base"; else npx vitest run; fi
+'''
+
 [tasks."check:unit"]
 description = "Runs test:unit in a host gate slot (gate-slot) with coverage, then fails on any changed line not covered (scripts/check-coverage.mjs)."
 run = '''
