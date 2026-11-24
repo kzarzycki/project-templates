@@ -63,15 +63,9 @@
         entry: mise run lint:commit-msg --
         language: system
         stages: [commit-msg]
-      # A push runs the changed tests and the branch's secret scan. The loop's proofs stay
-      # off the push: a push is reversible and a draft can't merge.
-      - id: test:changed
-        name: test:changed
-        entry: mise run test:changed
-        language: system
-        pass_filenames: false
-        always_run: true
-        stages: [pre-push]
+      # A push runs the branch's secret scan only. The changed tests ran once, as the worker's
+      # recorded head run (`approvals.py local-ci --record`), which replaced the push run; the loop's
+      # proofs stay off the push: a push is reversible and a draft can't merge.
       - id: check:secrets
         name: check:secrets
         entry: mise run check:secrets

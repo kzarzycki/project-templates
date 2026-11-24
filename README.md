@@ -57,7 +57,8 @@ lives once, in `mise.toml` `[tools]` or the toolchain's lock file:
   `land` do and `gate-slot` itself does, it takes none, so a gate never waits on
   its own parent. The content template's `check:unit`, a link check bound by the network rather than the host, runs without one. It runs them with diff coverage against `origin/$BASE_REF`
   (default `main`) once that branch exists. `test:fast` (alias `test`),
-  `test:unit` and `test:changed` (the pre-push hook) run the tests alone.
+  `test:unit` and `test:changed` run the tests alone; no pre-push hook runs them, since the
+  worker's recorded head run (`local-ci --record`) replaced the push run.
 - `check:secrets` scans the branch's commits with gitleaks.
 - `check:agents`, with the compiled agent layer, runs `agent:sync -- --frozen`
   once `apm.lock.yaml` is committed. The vendored layer has none.
@@ -668,6 +669,16 @@ file, `copier update` shows a conflict: keep your entries, which work as before
 flow lists; `ci:parts` names any other line it can't read. Your build files get the version-only rule
 with no edit. Filters now apply on every event CI runs on, so a push to main or
 a queue entry also skips a part whose files nothing touched.
+
+Updating to the next release drops the pre-push `test:changed` hook (`check:secrets`
+stays on pre-push): with the loop on, the worker's recorded head run
+(`approvals.py local-ci --record`) replaced the push run. On a pull request CI asks
+the gatekeeper whether the head's tree has a pass record of `mise run check:all`
+(`approvals.py gate-record <PR head> -- mise run check:all`) and skips the setup
+and the check it covers, naming the record; with no record, an error or no
+gatekeeper installed it runs them as before. Push, merge-queue and nightly runs
+are unchanged. If your `loop.md` sets another `gate`, set `GATE_COMMAND` in
+`.github/workflows/ci.yml` to the same command.
 
 Updating to v0.10.0 moved the pack to `^0.21.0` (a caret on 0.x:
 `^0.18.0` never takes 0.19.0, nor `^0.20.0` 0.21.0); run

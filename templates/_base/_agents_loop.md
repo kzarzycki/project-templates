@@ -121,6 +121,13 @@ CI narrows a pull request's and a push to main's check when this file has an
 and a nightly run of the full parts opens an issue naming the merges since the
 last green when it ends red. The line `Gate: full` returns every gate to the
 full check, so a project with a weak selector can keep it while the selector is fixed.
+
+The worker's recorded head run (`approvals.py local-ci --record`) replaced the
+pre-push test run: no hook runs the tests on a push. On a pull request CI asks
+`approvals.py gate-record <PR head> -- <gate>` whether the head's tree has a
+pass record of the gate (`mise run check:all`, or the `gate` set above, with
+`GATE_COMMAND` in `.github/workflows/ci.yml` set to the same command), and
+skips the steps that record covers, naming it; with no record it runs them.
 {% endif %}
 ## Risk criteria
 

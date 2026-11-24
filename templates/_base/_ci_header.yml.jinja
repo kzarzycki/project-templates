@@ -12,7 +12,12 @@ on:
 {% endif %}
 permissions:
   contents: read
-
+{% if loop_enabled %}
+env:
+  # The command `approvals.py local-ci --record` records a pass of: loop.md's `gate`, else this. A pull request's
+  # jobs ask gate-record for it, so keep it byte-for-byte the gate.
+  GATE_COMMAND: mise run check:all
+{% endif %}
 # A PR's newer push cancels its older run. Every push to main{% if merge_queue %} and every queue entry{% endif %} keeps
 # its own run, so a red main can be pinned to the merge that caused it.
 concurrency:
