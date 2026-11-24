@@ -260,12 +260,15 @@ With the pack on, `engineering_loop=true` (the default) turns on the pack's
 `engineering-loop` skill: one line in `.apm/instructions/project.instructions.md`,
 which `agent:sync` compiles into `AGENTS.md` (in `CLAUDE.md` with the vendored
 layer), says every change that lands as a PR runs it, unless a developer's personal
-instructions say `Engineering loop: off` and loop.md allows it. Deleting that line turns the loop off. The loop reads this project's
-facts from three files, seeded with a heading and a short prompt per fact:
+instructions say `Engineering loop: off` and gatekeeper.md allows it. Deleting that line turns the loop off. The loop reads this project's
+facts from four files, seeded with a heading and a short prompt per fact:
 
-- `docs/agents/loop.md`: a `## Settings` block of YAML the pack's `approvals.py`
+- `docs/agents/gatekeeper.md`: a `## Policy` block of YAML the pack's `approvals.py`
   reads (the spec policy, the risk rule, the skill for each stage the project
-  changes), then in prose the owner, proof on a branch, acceptance references,
+  changes, `land`, which names GitHub's merge queue when you asked for one, and
+  `select.unkeyed`, the checks whose pass is never reused, empty until the
+  project has one that reads outside the tree);
+- `docs/agents/loop.md`: in prose the owner, proof on a branch, acceptance references,
   why a person must approve, the project's risk criteria, how a finding is
   judged in use, the worktree command, the ledger path and any extra verifier
   checklist;
@@ -277,13 +280,13 @@ facts from three files, seeded with a heading and a short prompt per fact:
 `mise run loop:approvals <point> [pr]` (alias `gate`) checks the proof each loop
 step leaves on GitHub, with the pack's `approvals.py`. The gates are the merge
 approval: the verifier's verdict is a review on the PR, and a PR whose proofs
-hold needs no person's label. Only people approve: `docs/agents/loop.md` §
-Settings is the owner's standing policy (`spec.auto`: `bug`, `follow-up`,
+hold needs no person's label. Only people approve: `docs/agents/gatekeeper.md` §
+Policy is the owner's standing policy (`spec.auto`: `bug`, `follow-up`,
 `sub-issue`), and a high-risk PR, one with `risk:high` or matching the `risk` rule, waits for the
 owner's `approved:merge` label; a push removes it. The seed's rule is
 `verifier: true`, which holds when the verifier's pass on the head says
 anything but `Risk: low`, plus the paths no check can settle: `.github/**`,
-`CODEOWNERS` and `docs/agents/loop.md`. `always: true` asks for the label on
+`CODEOWNERS`, `docs/agents/gatekeeper.md` and `docs/agents/loop.md`. `always: true` asks for the label on
 every merge. § Approvals explains three settings the seed leaves off:
 `spec.auto: true`, a `signoff` section and `opt_out: true` under `loop`. The
 `.github/workflows/approvals.yml` workflow posts the merge result as the
@@ -366,7 +369,7 @@ whose own workflows only release, answers `include_ci=false`. It then gets no CI
 workflow and no `.github/check-paths.yml`, and no `ci:parts` or `ci:check` task;
 no workflow but `approvals.yml` and `approvals_relay.yml` are written, so the repo's own workflows stay as
 they are. The ruleset requires only `loop:approvals`, and the seeded
-`docs/agents/loop.md` has `ci: false` under `loop` in its settings. The merge approval then stops looking for
+`docs/agents/gatekeeper.md` has `ci: false` under `loop` in its policy. The merge approval then stops looking for
 a green `check`. Its proof instead is
 `uv run .agents/skills/engineering-loop/scripts/approvals.py local-ci <pr>`, run
 on a clean checkout at the PR's head commit. It runs `mise run check:all` there and,
@@ -564,6 +567,11 @@ by 2. An `apple/xcode` project's `.pre-commit-config.yaml` loses its trailing
 blank line, which failed its own `lint:eof`. Copier keeps a deleted file
 deleted on update, so a project that deleted either file to work around this
 copies it back from a fresh render.
+
+Updating to the next release seeds `docs/agents/gatekeeper.md` (`_skip_if_exists`, so
+a project that has one keeps it). Move the `## Settings` block of the project's `loop.md` there under
+`## Policy`, add `land` (`queue: github` with a merge queue) and `select.unkeyed`, and delete the block from
+`loop.md`: the gatekeeper refuses a project with both. Needs gatekeeper 0.1.9 (`engineering-v0.35.7`).
 
 Updating to the next release moves the pack to the exact tag
 `engineering-v0.23.2`, which Renovate moves on from there (below): run
