@@ -1208,11 +1208,11 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertEqual("gate", tasks["loop:approvals"]["alias"])
         self.assertIn("mise run agent:sync", approvals_run[0])
         self.assertEqual(
-            'uv run .agents/skills/engineering-loop/scripts/approvals.py check "${usage_point}" ${usage_pr:-}',
+            'uv run .agents/skills/gatekeeper/scripts/gatekeeper.py check "${usage_point}" ${usage_pr:-}',
             approvals_run[-1],
         )
         self.assertEqual(
-            'uv run .agents/skills/engineering-loop/scripts/approvals.py land "${usage_pr}" $([ "${usage_wait:-false}" = true ] && echo --wait)',
+            'uv run .agents/skills/gatekeeper/scripts/gatekeeper.py land "${usage_pr}" $([ "${usage_wait:-false}" = true ] && echo --wait)',
             tasks["loop:land"]["run"][-1],
         )
         self.assertFalse((project / ".github/workflows/gate.yml").exists())
@@ -1275,7 +1275,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
             self.assertIn(words, land)
         self.assertNotIn("auto-merge", land)
         self.assertEqual("Runs every check: part: the list CI runs.", tasks["check:all"]["description"])
-        self.assertIn("labels=.agents/skills/engineering-loop/scripts/labels.py", tasks["setup:github"]["run"])
+        self.assertIn("labels=.agents/skills/github-tracker/scripts/labels.py", tasks["setup:github"]["run"])
         self.assertIn(".worktrees/", (project / ".gitignore").read_text().splitlines())
         hooks = {
             hook["id"]: hook
@@ -1435,7 +1435,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
                         for step in job["steps"]:
                             if "run" in step:
                                 # The one exception: the pack's own scripts, which the loop's narrowed and nightly steps call.
-                                self.assertRegex(step["run"], r"^(mise run \S+|uv run \.agents/skills/engineering-loop/scripts/\S+\.py [^\n]+)$", f"{workflow.name} {job_name}")
+                                self.assertRegex(step["run"], r"^(mise run \S+|uv run \.agents/skills/(gatekeeper/scripts/\S+|engineering-loop/scripts/nightly)\.py [^\n]+)$", f"{workflow.name} {job_name}")
 
                 # The ruleset's two names: CI's aggregate job and the status the approvals step posts.
                 ruleset = json.loads((project / ".github/rulesets/main.json").read_text())

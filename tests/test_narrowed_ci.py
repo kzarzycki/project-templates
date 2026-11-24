@@ -16,9 +16,9 @@ import yaml
 
 from tests.test_agent_layer_generation import LEAVES, MISE, render
 
-AFFECTED = ".agents/skills/engineering-loop/scripts/approvals.py affected-tests"
+AFFECTED = ".agents/skills/gatekeeper/scripts/gatekeeper.py affected-tests"
 NIGHTLY = ".agents/skills/engineering-loop/scripts/nightly.py red"
-SCRIPTS = Path(".agents/skills/engineering-loop/scripts")
+SCRIPTS = Path(".agents/skills/gatekeeper/scripts")
 
 # The pack's reader of loop.md (gatekeeper.py at the pinned release: AFFECTED, FULL_GATE, narrowing), as far as
 # ci:narrowed uses it; the tests run the task against it, so its grammar is the pack's, not the task's.

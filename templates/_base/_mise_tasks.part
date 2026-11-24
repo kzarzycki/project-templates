@@ -326,7 +326,7 @@ case "${GITHUB_EVENT_NAME:-}" in
   push) loop="$(cat docs/agents/loop.md 2>/dev/null)" || loop="" ;;
   *) loop="" ;;
 esac
-scripts=.agents/skills/engineering-loop/scripts
+scripts=.agents/skills/gatekeeper/scripts
 if [ -n "$loop" ]; then
   probe="$(mktemp -d)/probe.py"
   { sed -n '/^# \/\/\/ script$/,/^# \/\/\/$/p' "$scripts/gatekeeper.py" 2>/dev/null
@@ -409,8 +409,8 @@ arg "[pr]" help="the PR number; default: this branch's PR"
 # Add the project's own checks as more lines; the task stops at the first that fails.
 # ponytail: the path is the codex target's copy; without codex, point it at .claude/skills.
 run = [
-  'test -f .agents/skills/engineering-loop/scripts/approvals.py || { echo "loop:approvals: the engineering-loop skill is not installed; run mise run agent:sync and commit its output" >&2; exit 1; }',
-  'uv run .agents/skills/engineering-loop/scripts/approvals.py check "${usage_point}" ${usage_pr:-}',
+  'test -f .agents/skills/gatekeeper/scripts/gatekeeper.py || { echo "loop:approvals: the gatekeeper skill is not installed; run mise run agent:sync and commit its output" >&2; exit 1; }',
+  'uv run .agents/skills/gatekeeper/scripts/gatekeeper.py check "${usage_point}" ${usage_pr:-}',
 ]
 
 [tasks."loop:land"]
@@ -421,8 +421,8 @@ flag "--wait" help="wait until the PR merges or needs someone"
 '''
 # ponytail: the path is the codex target's copy; without codex, point it at .claude/skills.
 run = [
-  'test -f .agents/skills/engineering-loop/scripts/approvals.py || { echo "loop:land: the engineering-loop skill is not installed; run mise run agent:sync and commit its output" >&2; exit 1; }',
-  'uv run .agents/skills/engineering-loop/scripts/approvals.py land "${usage_pr}" $([ "${usage_wait:-false}" = true ] && echo --wait)',
+  'test -f .agents/skills/gatekeeper/scripts/gatekeeper.py || { echo "loop:land: the gatekeeper skill is not installed; run mise run agent:sync and commit its output" >&2; exit 1; }',
+  'uv run .agents/skills/gatekeeper/scripts/gatekeeper.py land "${usage_pr}" $([ "${usage_wait:-false}" = true ] && echo --wait)',
 ]
 
 [tasks."ci:approvals"]
@@ -487,12 +487,12 @@ flag "--dry-run" help="Print what labels.py would change; write nothing to GitHu
 command -v gh >/dev/null || { echo "error: gh is required; install the GitHub CLI and run 'gh auth login'" >&2; exit 127; }
 # The labels are the pack's: labels.py is their one definition, read from docs/agents/issue-tracker.md.
 # ponytail: the path is the codex target's copy; without codex, point it at .claude/skills.
-labels=.agents/skills/engineering-loop/scripts/labels.py
+labels=.agents/skills/github-tracker/scripts/labels.py
 # Checked before any write, so a missing skill never leaves the ruleset applied and the labels not.
 if [ "${usage_revert:-false}" = true ]; then
   if [ "${usage_dry_run:-false}" = true ]; then echo "error: --dry-run and --revert cannot be combined" >&2; exit 2; fi
 elif [ ! -f "$labels" ]; then
-  echo "setup:github: the engineering-loop skill is not installed; run mise run agent:sync and commit its output" >&2
+  echo "setup:github: the github-tracker skill is not installed; run mise run agent:sync and commit its output" >&2
   exit 1
 elif [ "${usage_dry_run:-false}" = true ]; then
   echo "dry run: the ruleset and repository settings are left as they are"

@@ -85,12 +85,12 @@
       # tip. github.event.pull_request.base.sha is main when the PR opened and selects every test once main moves.
       - name: Affected tests (pull request)
         if: {% raw %}${{ github.event_name == 'pull_request' }}{% endraw %}
-        run: uv run .agents/skills/engineering-loop/scripts/approvals.py affected-tests --base HEAD^1
+        run: uv run .agents/skills/gatekeeper/scripts/gatekeeper.py affected-tests --base HEAD^1
       - name: Affected tests (push to main)
         if: {% raw %}${{ github.event_name == 'push' }}{% endraw %}
         env:
           BEFORE: {% raw %}${{ github.event.before }}{% endraw %}
-        run: uv run .agents/skills/engineering-loop/scripts/approvals.py affected-tests --base "$BEFORE"
+        run: uv run .agents/skills/gatekeeper/scripts/gatekeeper.py affected-tests --base "$BEFORE"
 
   # A red nightly opens one issue listing the merges since the last green nightly (the pack's nightly.py).
   nightly-red:
