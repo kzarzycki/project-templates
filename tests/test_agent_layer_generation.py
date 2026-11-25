@@ -229,7 +229,7 @@ LEAVES = (
 )
 
 
-GATEKEEPER_REF = "gatekeeper-v0.1.9"  # the gatekeeper release whose policy loader the seeded gatekeeper.md must satisfy (engineering-v0.35.7's)
+GATEKEEPER_REF = "gatekeeper-v0.1.16"  # the newest gatekeeper release, which engineering-v0.35.10 resolves to: the seeded gatekeeper.md must satisfy its policy loader
 _GATEKEEPER: list[Path] = []
 
 
