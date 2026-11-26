@@ -1,6 +1,12 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:recommended", ":semanticCommitTypeAll(chore)"],
+  "extends": [
+    "config:recommended",
+{%- if include_agent_layer %}
+    "github>kzarzycki/agent-skills//renovate/stable",
+{%- endif %}
+    ":semanticCommitTypeAll(chore)"
+  ],
   "timezone": "UTC",
   "labels": ["dependencies"],
   "lockFileMaintenance": {
@@ -9,22 +15,6 @@
     "schedule": ["* 0-5 * * 1"],
     "automerge": true
   },
-{% if include_agent_layer %}
-  "customManagers": [
-    {
-      "customType": "regex",
-      "description": "apm.yml git packages pinned to a release tag <package>-vX.Y.Z",
-      "managerFilePatterns": ["/(^|/)apm\\.yml$/"],
-      "matchStrings": [
-        "-\\s+git:\\s*(?<packageName>[\\w.-]+/[\\w.-]+)/(?<package>[\\w.-]+)\\s*\\n\\s*ref:\\s*[\\w.-]+?-v(?<currentValue>\\d+\\.\\d+\\.\\d+)"
-      ],
-      "depNameTemplate": "{{ '{{{packageName}}}/{{{package}}}' }}",
-      "datasourceTemplate": "github-tags",
-      "versioningTemplate": "semver",
-      "extractVersionTemplate": "{{ '^{{{package}}}-v(?<version>\\\\d+\\\\.\\\\d+\\\\.\\\\d+)$' }}"
-    }
-  ],
-{% endif %}
   "packageRules": [
     {
       "description": "Routine: patch and minor updates of tools, libraries and actions, one group a week, landed on the gates.",

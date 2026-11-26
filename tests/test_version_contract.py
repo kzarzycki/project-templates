@@ -5,6 +5,8 @@ import re
 import unittest
 from pathlib import Path
 
+import yaml
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -20,12 +22,17 @@ class VersionContractTest(unittest.TestCase):
 
         self.assertEqual("0.5.0", plugin["version"])
 
-    def test_pack_pin_is_the_release_that_moved_the_gatekeeper_scripts(self) -> None:
-        # engineering-v0.35.10 ships the gatekeeper and loop packages the template's
-        # mise tasks and CI call by their current paths, not the old forwarders.
-        copier = self.text("copier.yml")
+    def test_the_template_sets_no_pack_version(self) -> None:
+        # The version a project runs is the project's: pinned once at generation, then moved by Renovate.
+        self.assertNotIn("engineering_capability_ref", self.text("copier.yml"))
+        self.assertNotRegex(self.text("templates/_base/_apm_yml.part"), r"ref:")
+        self.assertNotRegex(self.text("templates/_base/_renovate.json.jinja"), r"engineering|matchStrings")
 
-        self.assertIn('default: "engineering-v0.35.10"', copier)
+    def test_the_pack_pin_migration_is_above_the_newest_release_a_project_can_come_from(self) -> None:
+        # Copier runs a migration only for old _commit < version <= new _commit; 0.6.0 once sat below every real tag.
+        latest_release = (0, 14, 2)  # v0.14.2, the newest tag when the migration was written; bump only with a later migration
+        [migration] = yaml.safe_load(self.text("copier.yml"))["_migrations"]
+        self.assertGreater(tuple(map(int, migration["version"].split("."))), latest_release)
 
     def test_templates_call_no_forwarder_path(self) -> None:
         # The engineering-loop forwarders go away with the next major; only nightly.py lives there.
