@@ -6,6 +6,7 @@ import os
 import re
 import subprocess
 import shutil
+import sys
 import tempfile
 import tomllib
 import unittest
@@ -21,10 +22,10 @@ MISE = shutil.which("mise")
 assert MISE is not None
 
 
-def settings(text: str) -> dict:
-    """A docs/agents/ file's ```yaml settings block as the pack's approvals.py reads it, with safe_load."""
-    found = re.search(r"^## Settings\n.*?^```yaml[ \t]*\n(.*?)^```[ \t]*$", text, re.DOTALL | re.MULTILINE)
-    assert found, "no ```yaml block under ## Settings"
+def settings(text: str, heading: str = "Settings") -> dict:
+    """A docs/agents/ file's ```yaml block under `## <heading>` as the pack's approvals.py reads it, with safe_load."""
+    found = re.search(rf"^## {heading}\n.*?^```yaml[ \t]*\n(.*?)^```[ \t]*$", text, re.DOTALL | re.MULTILINE)
+    assert found, f"no ```yaml block under ## {heading}"
     return yaml.safe_load(found[1])
 
 
@@ -226,6 +227,25 @@ LEAVES = (
     ("infra/terraform", {}),
     ("apple/xcode", {}),
 )
+
+
+GATEKEEPER_REF = "gatekeeper-v0.1.16"  # the newest gatekeeper release, which engineering-v0.35.10 resolves to: the seeded gatekeeper.md must satisfy its policy loader
+_GATEKEEPER: list[Path] = []
+
+
+def gatekeeper_scripts() -> Path:
+    """The gatekeeper skill's scripts folder at GATEKEEPER_REF, fetched once per run; the test is skipped without network."""
+    if not _GATEKEEPER:
+        checkout = Path(tempfile.mkdtemp(prefix="gatekeeper-"))
+        atexit.register(shutil.rmtree, checkout, True)
+        fetched = subprocess.run(
+            ["git", "clone", "-q", "--depth", "1", "--branch", GATEKEEPER_REF, "https://github.com/kzarzycki/agent-skills", str(checkout / "pack")],
+            capture_output=True, text=True,
+        )
+        if fetched.returncode:
+            raise unittest.SkipTest(f"cannot fetch {GATEKEEPER_REF}: {fetched.stderr.strip()}")
+        _GATEKEEPER.append(checkout / "pack/gatekeeper/skills/gatekeeper/scripts")
+    return _GATEKEEPER[0]
 
 
 _PACK: list[Path] = []
@@ -1307,16 +1327,20 @@ class AgentLayerGenerationTest(unittest.TestCase):
                  "pass_filenames": False, "always_run": True, "stages": ["pre-push"]},
                 hooks[name],
             )
-        approvals_seed = (project / "docs/agents/loop.md").read_text()
-        self.assertIn("Only people approve", approvals_seed)
+        loop_seed = (project / "docs/agents/loop.md").read_text()
+        approvals_seed = (project / "docs/agents/gatekeeper.md").read_text()  # the policy moved out of loop.md
+        self.assertNotIn("Settings", loop_seed)
+        self.assertIn("Only people approve", loop_seed)
         # The seed's policy as the pack reads it: the verifier judges risk, CI, CODEOWNERS and loop.md stay the owner's.
         # Only the old line form is gone; the alternatives are documented, not switched on.
         self.assertEqual(
             {
                 "spec": {"auto": ["bug", "follow-up", "sub-issue"]},
-                "risk": {"verifier": True, "paths": [".github/**", "CODEOWNERS", "docs/agents/loop.md"]},
+                "risk": {"verifier": True, "paths": [".github/**", "CODEOWNERS", "docs/agents/gatekeeper.md", "docs/agents/loop.md"]},
+                "land": None,  # no merge queue: the batch keys stay at their defaults
+                "select": {"unkeyed": []},
             },
-            settings(approvals_seed),
+            settings(approvals_seed, "Policy"),
         )
         self.assertNotRegex(approvals_seed, re.compile(r"^[ \t]*[-*] +(?:spec|plan|merge|risk|bot|signoff):", re.MULTILINE))
         # Uncommented, the seed's bot entry is the pack's updater named by its branch, over the routine group's files.
@@ -1328,9 +1352,9 @@ class AgentLayerGenerationTest(unittest.TestCase):
             yaml.safe_load(re.sub(r"^# ?", "", bot[0], flags=re.MULTILINE)),
         )
         # the one demo path, so an agent whose upload is refused stops rather than posting another way
-        self.assertIn("\n\nKeep this line: a demo goes on the PR through the `demo` skill's script; when it refuses, stop and report.\n", approvals_seed)
+        self.assertIn("\n\nKeep this line: a demo goes on the PR through the `demo` skill's script; when it refuses, stop and report.\n", loop_seed)
         for line in ("`auto: true`", "`signoff`", "`opt_out: true`", "`Engineering loop: off`", "`always: true`"):
-            self.assertIn(line, approvals_seed)
+            self.assertIn(line, loop_seed)
         # board maps each loop column to the board column of its own name, as the pack's board.py reads it.
         loop_columns = ["Intent", "Needs owner", "Ready", "Build", "Verify", "Sign-off", "Done"]
         tracker = settings((project / "docs/agents/issue-tracker.md").read_text())
@@ -1340,7 +1364,6 @@ class AgentLayerGenerationTest(unittest.TestCase):
             (
                 "loop.md",
                 (
-                    "Settings",
                     "Owner",
                     "Proof on a branch",
                     "Acceptance references",
@@ -1357,6 +1380,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
                 ("Settings", "Never on GitHub"),
             ),
             ("coding-standards.md", ("Domain facts",)),
+            ("gatekeeper.md", ("Policy",)),
         ):
             text = (project / "docs/agents" / name).read_text()
             self.assertNotIn("Landing exceptions", text)
@@ -1444,7 +1468,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
                 components = tracker["components"]
                 self.assertGreater(len(components), 2)  # the leaf's own parts, then tooling and docs
                 self.assertEqual([], [name for name, text in components.items() if not name.startswith("area:") or not text])
-                self.assertIs(True, settings((project / "docs/agents/loop.md").read_text())["risk"]["verifier"])
+                self.assertIs(True, settings((project / "docs/agents/gatekeeper.md").read_text(), "Policy")["risk"]["verifier"])
 
                 # Every step that runs a command runs a mise task: the task is the check's one definition.
                 for workflow in (project / ".github/workflows").glob("*.yml"):
@@ -1619,7 +1643,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         [checks] = [rule["parameters"] for rule in ruleset["rules"] if rule["type"] == "required_status_checks"]
         self.assertEqual([{"context": "loop:approvals"}], checks["required_status_checks"])
         # The pack's approvals.py reads `ci: false` as no CI and then wants its local-ci record.
-        self.assertEqual({"ci": False}, settings((project / "docs/agents/loop.md").read_text())["loop"])
+        self.assertEqual({"ci": False}, settings((project / "docs/agents/gatekeeper.md").read_text(), "Policy")["loop"])
 
         # The approvals workflow reruns on local-ci's record, a PR comment, instead of on CI's completion.
         text = (project / ".github/workflows/approvals.yml").read_text()
@@ -1691,7 +1715,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
     def test_regeneration_keeps_filled_docs_agents_files(self) -> None:
         project = render()
         filled = "Tracker: GitHub\n\n## Components\n\n- `api`: the service.\n"
-        for name in ("loop.md", "issue-tracker.md", "coding-standards.md"):
+        for name in ("loop.md", "issue-tracker.md", "coding-standards.md", "gatekeeper.md"):
             (project / "docs/agents" / name).write_text(filled)
 
         subprocess.run(
@@ -1701,8 +1725,41 @@ class AgentLayerGenerationTest(unittest.TestCase):
             check=True, capture_output=True, text=True,
         )
 
-        for name in ("loop.md", "issue-tracker.md", "coding-standards.md"):
+        for name in ("loop.md", "issue-tracker.md", "coding-standards.md", "gatekeeper.md"):
             self.assertEqual(filled, (project / "docs/agents" / name).read_text())
+
+    def test_every_leaf_seeds_a_gatekeeper_policy_the_pinned_gatekeeper_loads(self) -> None:
+        for project_type, answers in LEAVES:
+            for extra in ({}, {"merge_queue": True}, {"include_ci": False}):
+                with self.subTest(project_type=project_type, **answers, **extra):
+                    project = render(project_type, **answers, **extra)
+                    policy = (project / "docs/agents/gatekeeper.md").read_text()
+                    loop = (project / "docs/agents/loop.md").read_text()
+                    self.assertEqual(["## Policy"], re.findall(r"^## .*", policy, re.MULTILINE))
+                    self.assertNotRegex(loop, r"^## Settings", "the policy lives in gatekeeper.md")
+                    self.assertNotIn("§ Settings", loop)
+                    block = settings(policy, "Policy")
+                    self.assertEqual({"unkeyed": []}, block["select"])  # no step of the seeded gate reads outside the tree
+                    self.assertIn("never reused", policy)  # the empty list says what belongs in it
+                    # `land` follows the merge-queue answer; the batch keys stay at their defaults, named in a comment.
+                    self.assertEqual({"queue": "github"} if extra.get("merge_queue") else None, block["land"])
+                    self.assertIn("batch_wait_seconds", policy)
+                    self.assertEqual({"ci": False} if extra.get("include_ci") is False else None, block.get("loop"))
+                    self.assertEqual({"spec", "risk", "land", "select"} | ({"loop"} if "loop" in block else set()), set(block))
+                    # the pinned gatekeeper's own loader: no refusal, and no deprecation but `ci: false`'s
+                    stderr = self.load_policy(project)
+                    self.assertEqual([] if extra.get("include_ci") is not False else ["deprecated: ci goes in the next release; land batches every landable PR (#650)"], stderr)
+
+    def load_policy(self, project: Path) -> list[str]:
+        """The stderr lines of gatekeeper.py (GATEKEEPER_REF's) choosing and reading the project's policy, as approvals.py does."""
+        scripts = gatekeeper_scripts()
+        code = (
+            "import sys; sys.path.insert(0, sys.argv[1]); import gatekeeper as g, pathlib; p = pathlib.Path(sys.argv[2]) / 'docs/agents'\n"
+            "g.settings(g.chosen((p / 'loop.md').read_text(), (p / 'gatekeeper.md').read_text()))"
+        )
+        result = subprocess.run([sys.executable, "-c", code, str(scripts), str(project)], capture_output=True, text=True)
+        self.assertEqual(0, result.returncode, result.stderr)
+        return result.stderr.splitlines()
 
     def test_content_leaf_gate_is_only_mise_run_check(self) -> None:
         project = render("authoring/content")

@@ -107,7 +107,7 @@ copied token.
 
 Every project with mise gets its checks as mise tasks: `mise run check` (lint and unit tests) before a push, `mise run check:all` for every part CI runs, one `lint:<tool>` task per linter that the commit hooks call.
 With `engineering_loop=true` the scaffold also turns the engineering loop on
-and seeds `docs/agents/loop.md`, `issue-tracker.md` and `coding-standards.md`
+and seeds `docs/agents/gatekeeper.md`, `loop.md`, `issue-tracker.md` and `coding-standards.md`
 for the owner to fill in.
 
 Set `include_agent_layer=false` to omit the coding-agent integration and all four

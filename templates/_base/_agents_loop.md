@@ -1,49 +1,7 @@
 # Loop facts
 
 The `engineering-loop` skill reads this file at every step but the gate.
-Replace each prompt with this project's fact; keep the headings.
-
-## Settings
-
-`mise run loop:approvals` reads this block, the engineering loop's settings
-(its SKILL.md § Settings has every key). It is YAML: `key: value` under a
-section name, a list one item per line. Quote a value that starts with `*` or
-reads as another type (`no`, `on`, `1.10`). A key or section the loop doesn't
-know is refused, naming it. § Approvals says what the seed's settings do.
-
-```yaml
-spec:
-  # specs approved by policy, with no owner record; any other waits for the owner
-  auto:
-    - bug
-    - follow-up
-    - sub-issue
-{% if not include_ci %}
-loop:
-  ci: false
-{% endif %}
-# practice:
-#   the skill that fills a stage this project changes, one key each, such as
-#   spec: brainstorming; a stage left out runs its default
-
-risk:
-  verifier: true
-  paths:
-    - .github/**
-    - CODEOWNERS
-    - docs/agents/loop.md
-
-# bot:
-#   renovate:   # deps:renovate's routine group, run on your token: see § Approvals
-#     branch: renovate/
-#     paths:
-#       - uv.lock
-#       - package-lock.json
-#       - pyproject.toml
-#       - package.json
-#       - mise.toml
-#       - .github/workflows/*.yml
-```
+Replace each prompt with this project's fact; keep the headings. The policy is in `gatekeeper.md`.
 
 ## Owner
 
@@ -64,7 +22,7 @@ recomputation or an invariant.
 
 ## Approvals
 
-Only people approve; the rest is the standing policy in § Settings, which
+Only people approve; the rest is the standing policy in `docs/agents/gatekeeper.md`, which
 `mise run loop:approvals` evaluates. `spec.auto` with `bug`, `follow-up` and
 `sub-issue` approves the spec of a bug, a `Found while #<n>` follow-up, or a writer's sub-issue of an epic the
 owner approved; any other spec waits for the owner. A PR lands on its gates
@@ -87,7 +45,7 @@ which the loop obeys. The template ships no `CODEOWNERS`: GitHub would ask its
 owners to review every PR the loop opens. Keep paths to a team with a push
 ruleset instead, and ask someone for a review by name when it needs one.
 
-Three settings the seed leaves out change this. `auto: true` under `spec`, in place of
+Three settings the seed leaves out of gatekeeper.md change this. `auto: true` under `spec`, in place of
 the list, approves every spec by policy, epics included, except
 one the `risk` rule matches or one opened by an account without write access,
 which waits for the owner; the rule then holds the spec instead of the merge,
@@ -102,7 +60,7 @@ passes `loop:approvals`, its author merges it, and no risk rule holds it.
 Renovate (`mise run deps:renovate`) labels `verify` the updates an agent
 reviews: the template, the agent packages and every major. Its routine group
 runs on the developer's token, so its PRs are the developer's and a verifier
-reviews them too. The commented `bot.renovate` entry above exempts them
+reviews them too. The commented `bot.renovate` entry in gatekeeper.md exempts them
 instead: it names Renovate by its `renovate/` branch, and holds only when every
 commit is the developer's (`deps:renovate` sets Renovate's git author to
 your git identity) and every file matches its `paths`. The `risk` rule still holds a match on its own paths, so
