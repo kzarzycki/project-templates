@@ -48,6 +48,13 @@ def narrowing(text):
 '''
 
 
+def tasks_comment(project: Path, name: str) -> str:
+    """The comment lines of the rendered mise.toml between a task's header and its `run`."""
+    text = (project / "mise.toml").read_text()
+    start = text.index(f'[tasks."{name}"]')
+    return text[start:text.index("run =", start)]
+
+
 def workflow(project_type: str, **answers: object) -> tuple[dict, str]:
     text = (render(project_type, **answers) / ".github/workflows/ci.yml").read_text()
     return yaml.safe_load(text), text
@@ -269,12 +276,39 @@ class NarrowedCiTest(unittest.TestCase):
         self.assertIn("::error::", failed.stderr)
         self.assertEqual("", failed.stdout)
 
-    def test_loop_md_says_ci_narrows_and_ships_no_selector(self) -> None:
-        project = render("software/python")
-        loop = (project / "docs/agents/loop.md").read_text()
-        self.assertIn("`Affected tests: <command>`", loop)
-        self.assertIn("`Gate: full`", loop)
-        self.assertFalse([line for line in loop.splitlines() if line.startswith("Affected tests:")])
+    def test_loop_md_says_ci_narrows_and_seeds_a_selector_per_language(self) -> None:
+        for project_type, answers in (("software/python", {}), ("software/node", {}), ("software/java", {}),
+                                      ("ai/mcp", {"language": "python"}), ("ai/mcp", {"language": "node"})):
+            with self.subTest(project_type=project_type, **answers):
+                project = render(project_type, **answers)
+                loop = (project / "docs/agents/loop.md").read_text()
+                self.assertIn("`Affected tests: <command>`", loop)
+                self.assertIn("`Gate: full`", loop)
+                self.assertNotIn("which this seed leaves out", loop)
+                lines = [line for line in loop.splitlines() if line.startswith("Affected tests:")]
+                self.assertEqual(["Affected tests: mise run test:affected"], lines)  # exactly one, a single mise task
+                tasks = tomllib.loads((project / "mise.toml").read_text())["tasks"]
+                run = tasks["test:affected"]["run"]
+                self.assertIn("mise run --skip-tools check:lint", run)  # the whole-repo lints (and tsc for node)
+                node = project_type == "software/node" or answers.get("language") == "node"
+                if node:  # a base-relative selector, no ponytail
+                    self.assertIn('npx vitest run --changed "$base"', run)
+                    self.assertIn("GATE_BASE", run)
+                else:  # no base-relative selector: the whole unit suite, ponytail naming the pack's selector
+                    self.assertNotIn("testmon", run)
+                    self.assertIn("kzarzycki/agent-skills#2217", tasks_comment(project, "test:affected"))
+
+    def test_the_seeded_line_is_left_out_where_no_task_backs_it(self) -> None:
+        for project_type, answers in (("data/dbt", {}), ("infra/terraform", {})):
+            with self.subTest(project_type=project_type, **answers):
+                loop = (render(project_type, **answers) / "docs/agents/loop.md").read_text()
+                self.assertEqual([], [line for line in loop.splitlines() if line.startswith("Affected tests:")])
+                self.assertIn("Write your selector's command there", loop)
+
+    def test_the_seed_paragraph_is_gone_with_ci_off(self) -> None:
+        loop = (render("software/python", include_ci=False) / "docs/agents/loop.md").read_text()
+        self.assertEqual([], [line for line in loop.splitlines() if line.startswith("Affected tests:")])
+        self.assertNotIn("`Affected tests: <command>`", loop)
 
     def test_without_the_loop_ci_is_unchanged(self) -> None:
         for answers in ({"engineering_loop": False}, {"include_engineering_workflow": False}, {"include_agent_layer": False}):
