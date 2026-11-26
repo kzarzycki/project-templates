@@ -7,6 +7,9 @@ jobs:
     # A draft runs nothing until ready_for_review; a push or a queue entry has no PR, so it always runs.
     if: {% raw %}${{ {% endraw %}{{ repository_guard }}{% raw %}!github.event.pull_request.draft }}{% endraw %}
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
     steps:
 {% include "templates/_base/_ci_steps.yml.jinja" -%}
 {% include "templates/_lang/node/_ci_steps.yml.jinja" -%}
