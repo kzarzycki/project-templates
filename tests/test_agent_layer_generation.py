@@ -16,8 +16,8 @@ import yaml
 
 
 ROOT = Path(__file__).resolve().parents[1]
-# The pack release the template pins by default; tests read it here so a bump touches copier.yml only.
-PACK_REF = yaml.safe_load((ROOT / "copier.yml").read_text())["engineering_capability_ref"]["default"]
+# A real pack release the tests that install the pack from GitHub run against. The template sets no version.
+PACK_REF = "engineering-v0.35.10"
 MISE = shutil.which("mise")
 assert MISE is not None
 
@@ -78,6 +78,7 @@ def render(project_type: str = "software/python", existing: dict[str, bytes] | N
         ),
     )
     destination = scratch / "project"
+    pack_ref = answers.pop("engineering_capability_ref", None)  # no template answer: written the way the setup step does
     for name, content in (existing or {}).items():  # the repo's own files, there before the render
         (destination / name).parent.mkdir(parents=True, exist_ok=True)
         (destination / name).write_bytes(content)
@@ -97,7 +98,17 @@ def render(project_type: str = "software/python", existing: dict[str, bytes] | N
         command.extend(("--data", f"{key}={rendered}"))
     command.extend((str(template), str(destination)))
     subprocess.run(command, check=True, capture_output=True, text=True)
+    if pack_ref:
+        pin_pack(destination, str(pack_ref), str(answers.get("engineering_capability_source", "kzarzycki/agent-skills/engineering")))
     return destination
+
+
+def pin_pack(project: Path, ref: str, source: str = "kzarzycki/agent-skills/engineering") -> None:
+    """Pin the ref-less pack line in apm.yml, as a project's owner (or the setup step) does."""
+    manifest = project / "apm.yml"
+    text = manifest.read_text()
+    assert f"    - {source}\n" in text, text
+    manifest.write_text(text.replace(f"    - {source}\n", f"    - git: {source}\n      ref: {ref}\n"))
 
 
 def isolated_agent_env(project: Path) -> dict[str, str]:
@@ -254,7 +265,7 @@ _PACK: list[Path] = []
 def pinned_pack() -> Path:
     """The agent-skills repo at the engineering tag copier.yml pins, fetched once per run; the test is skipped without network."""
     if not _PACK:
-        tag = re.search(r'default: "(engineering-v[\d.]+)"', (ROOT / "copier.yml").read_text())[1]
+        tag = PACK_REF
         checkout = Path(tempfile.mkdtemp(prefix="pack-"))
         atexit.register(shutil.rmtree, checkout, True)
         fetched = subprocess.run(
@@ -436,15 +447,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         apm = (project / "apm.yml").read_text()
         self.assertIn("- claude", apm)
         self.assertIn("- codex", apm)
-        self.assertEqual(
-            [
-                {
-                    "git": "kzarzycki/agent-skills/engineering",
-                    "ref": PACK_REF,
-                }
-            ],
-            yaml.safe_load(apm)["dependencies"]["apm"],
-        )
+        self.assertEqual(["kzarzycki/agent-skills/engineering"], yaml.safe_load(apm)["dependencies"]["apm"])
         self.assertIn("mcp: []", apm)
 
         mise = tomllib.loads((project / "mise.toml").read_text())
@@ -490,8 +493,8 @@ class AgentLayerGenerationTest(unittest.TestCase):
 
         manifest = (project / "apm.yml").read_text()
         answers = (project / ".copier-answers.yml").read_text()
-        self.assertEqual(1, manifest.count("git: kzarzycki/agent-skills/engineering"))
-        self.assertIn(f"ref: {PACK_REF}", manifest)
+        self.assertEqual(1, manifest.count("- kzarzycki/agent-skills/engineering"))
+        self.assertNotIn("ref:", manifest)  # the project's, from its first pin
         self.assertIn("include_engineering_workflow: true", answers)
         self.assertNotIn("engineering_capability_source", answers)
         self.assertNotIn("engineering_capability_ref", answers)
@@ -2139,7 +2142,7 @@ class RenovateGenerationTest(unittest.TestCase):
         project = render(include_mise=True, include_agent_layer=True)
         config = json.loads((project / "renovate.json").read_text())
         self.assertFalse((project / ".github/dependabot.yml").exists())
-        self.assertEqual(["github-tags"], [m["datasourceTemplate"] for m in config["customManagers"]])
+        self.assertNotIn("customManagers", config)  # the pack's preset carries the manager
         rules = {rule.get("groupName"): rule for rule in reversed(config["packageRules"])}  # the first rule of a group
         # Copier refuses a tree another manager changed, so the template and the agent packages update apart (#88).
         for group, managers in (("template", ["copier"]), ("agent packages", ["custom.regex"])):
@@ -2161,13 +2164,17 @@ class RenovateGenerationTest(unittest.TestCase):
         self.assertEqual((["mise"], ["!/\\//"], "conda-forge/{{{packageName}}}"),
                          (rule["matchManagers"], rule["matchPackageNames"], rule["overridePackageName"]))
 
-    def test_the_apm_manager_reads_the_rendered_pin(self) -> None:
-        project = render(include_mise=True, include_agent_layer=True)
-        manager = json.loads((project / "renovate.json").read_text())["customManagers"][0]
-        # Renovate's matchStrings are ECMAScript; this one uses nothing Python's re reads differently.
-        found = re.search(manager["matchStrings"][0].replace("(?<", "(?P<"), (project / "apm.yml").read_text())
-        self.assertEqual(("kzarzycki/agent-skills", "engineering", PACK_REF.removeprefix("engineering-v")),
-                         (found["packageName"], found["package"], found["currentValue"]))
+    def test_renovate_extends_the_packs_stable_preset_and_carries_no_pack_regex(self) -> None:
+        text = (render(include_mise=True, include_agent_layer=True) / "renovate.json").read_text()
+        config = json.loads(text)
+        self.assertEqual(["config:recommended", "github>kzarzycki/agent-skills//renovate/stable", ":semanticCommitTypeAll(chore)"],
+                         config["extends"])
+        self.assertNotIn("matchStrings", text)
+        self.assertNotIn("engineering-v", text)
+        # The preset line is a line of its own, so moving to the next line edits that one line.
+        self.assertIn('\n    "github>kzarzycki/agent-skills//renovate/stable",\n', text)
+        without = json.loads((render(include_mise=True, include_agent_layer=False) / "renovate.json").read_text())
+        self.assertEqual(["config:recommended", ":semanticCommitTypeAll(chore)"], without["extends"])
 
     def test_without_the_agent_layer_renovate_has_no_apm_manager_or_task(self) -> None:
         config = json.loads((render(include_mise=True, include_agent_layer=False) / "renovate.json").read_text())
@@ -2218,6 +2225,184 @@ class RenovateGenerationTest(unittest.TestCase):
         project = render(include_mise=False)
         self.assertTrue((project / ".github/dependabot.yml").exists())
         self.assertFalse((project / "renovate.json").exists())
+
+
+TEMPLATE_IGNORE = shutil.ignore_patterns(".git", ".superpowers", ".pytest_cache", ".ruff_cache", ".venv", "__pycache__", "_out", "tmp", "apm_modules", "node_modules")
+GIT = ["git", "-c", "user.name=Test", "-c", "user.email=test@example.com"]
+
+
+def template_repo(scratch: Path, name: str, tag: str, patch: dict[str, tuple[str, str]] | None = None) -> Path:
+    """A git copy of this template at `tag`, with `patch` ({path: (old, new)}) applied to it first."""
+    template = scratch / name
+    shutil.copytree(ROOT, template, ignore=TEMPLATE_IGNORE)
+    for path, (old, new) in (patch or {}).items():
+        text = (template / path).read_text()
+        assert old in text, (path, old)
+        (template / path).write_text(text.replace(old, new, 1))
+    subprocess.run(["git", "init", "-q"], cwd=template, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=template, check=True)
+    subprocess.run([*GIT, "commit", "--no-verify", "-qm", tag], cwd=template, check=True)
+    subprocess.run(["git", "tag", tag], cwd=template, check=True)
+    return template
+
+
+def retag_template(template: Path, tag: str, patch: dict[str, tuple[str, str]]) -> None:
+    for path, (old, new) in patch.items():
+        text = (template / path).read_text()
+        assert old in text, (path, old)
+        (template / path).write_text(text.replace(old, new, 1))
+    subprocess.run(["git", "add", "-A"], cwd=template, check=True)
+    subprocess.run([*GIT, "commit", "--no-verify", "-qm", tag], cwd=template, check=True)
+    subprocess.run(["git", "tag", tag], cwd=template, check=True)
+
+
+def generate_project(template: Path, project: Path) -> None:
+    subprocess.run(
+        ["copier", "copy", "--trust", "--defaults", "--skip-tasks", "--data", "project_name=pack-pin-test",
+         "--data", "project_type=software/python", "--data", "include_mise=true", "--data", "include_agent_layer=true",
+         str(template), str(project)],
+        check=True, capture_output=True, text=True,
+    )
+    subprocess.run(["git", "init", "-q"], cwd=project, check=True)
+    commit_project(project, "generate")
+
+
+def update_project(project: Path) -> None:
+    result = subprocess.run(["copier", "update", "--trust", "--defaults", "--skip-tasks"], cwd=project, capture_output=True, text=True)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+class PackVersionOwnershipTest(unittest.TestCase):
+    """The pack's version is the project's: the template sets none, and `copier update` keeps the project's own."""
+
+    def scratch(self) -> Path:
+        scratch = Path(tempfile.mkdtemp(prefix="pack-version-"))
+        atexit.register(shutil.rmtree, scratch, True)
+        return scratch
+
+    def test_a_generated_apm_yml_names_the_pack_with_no_ref_and_renovate_only_extends_the_preset(self) -> None:
+        project = render(include_mise=True, include_agent_layer=True)
+        manifest = (project / "apm.yml").read_text()
+        self.assertEqual(["kzarzycki/agent-skills/engineering"], yaml.safe_load(manifest)["dependencies"]["apm"])
+        self.assertNotIn("ref:", manifest)
+        self.assertNotIn("engineering_capability_ref", (project / ".copier-answers.yml").read_text())
+        renovate = (project / "renovate.json").read_text()
+        self.assertIn("github>kzarzycki/agent-skills//renovate/stable", json.loads(renovate)["extends"])
+        for regex_part in ("matchStrings", "customManagers", "extractVersionTemplate", "engineering-v"):
+            self.assertNotIn(regex_part, renovate)
+
+    def test_a_projects_own_pin_and_preset_line_survive_a_template_update_to_those_files(self) -> None:
+        scratch = self.scratch()
+        template = template_repo(scratch, "template", "v0.6.0")
+        project = scratch / "project"
+        generate_project(template, project)
+        # The project pins the pack (the setup step, or its owner) and moves to the next line.
+        pin_pack(project, "engineering-v0.35.12")
+        renovate = project / "renovate.json"
+        stable = '"github>kzarzycki/agent-skills//renovate/stable"'
+        self.assertIn(stable, renovate.read_text())
+        renovate.write_text(renovate.read_text().replace(stable, '"github>kzarzycki/agent-skills//renovate/next"'))
+        commit_project(project, "own edits")
+
+        retag_template(template, "v0.7.0", {
+            "templates/_base/_apm_yml.part": ("integrations.", "integrations (a template change)."),
+            "templates/_base/_renovate.json.jinja": ('"timezone": "UTC"', '"timezone": "Europe/Warsaw"'),
+        })
+        update_project(project)
+
+        manifest = (project / "apm.yml").read_text()
+        self.assertEqual([{"git": "kzarzycki/agent-skills/engineering", "ref": "engineering-v0.35.12"}],
+                         yaml.safe_load(manifest)["dependencies"]["apm"])
+        self.assertIn("(a template change)", manifest)
+        config = json.loads(renovate.read_text())
+        self.assertIn("github>kzarzycki/agent-skills//renovate/next", config["extends"])
+        self.assertNotIn("github>kzarzycki/agent-skills//renovate/stable", config["extends"])
+        self.assertEqual("Europe/Warsaw", config["timezone"])
+        self.assertNotIn("<<<<<<<", manifest + renovate.read_text())
+
+    def test_a_project_generated_from_the_template_that_set_the_ref_keeps_its_ref_through_update(self) -> None:
+        scratch = self.scratch()
+        # Today's template: the hidden answer, written into apm.yml, and the regex in renovate.json.
+        before = template_repo(scratch, "template", "v0.14.2", {
+            "copier.yml": ("# An unasked question keeps its default", 'engineering_capability_ref:\n  type: str\n  when: false\n  default: "engineering-v0.35.10"\n\n# An unasked question keeps its default'),
+            "templates/_base/_apm_yml.part": ("  apm:\n\n    - {{ engineering_capability_source }}\n\n{% else %}", "  apm:\n{% if engineering_capability_ref %}\n    - git: {{ engineering_capability_source }}\n      ref: {{ engineering_capability_ref }}\n{% else %}\n    - {{ engineering_capability_source }}\n{% endif %}\n{% else %}"),
+        })
+        project = scratch / "project"
+        generate_project(before, project)
+        self.assertEqual([{"git": "kzarzycki/agent-skills/engineering", "ref": "engineering-v0.35.10"}],
+                         yaml.safe_load((project / "apm.yml").read_text())["dependencies"]["apm"])
+        # Renovate has moved it since, and the project added a key of its own.
+        manifest = project / "apm.yml"
+        manifest.write_text(manifest.read_text().replace("engineering-v0.35.10", "engineering-v0.35.12").replace("mcp: []", "mcp: []\n# project note"))
+        commit_project(project, "renovate bump")
+
+        # The template as it is now, one release later.
+        for path in ("copier.yml", "templates/_base/_apm_yml.part"):
+            shutil.copy(ROOT / path, before / path)
+        subprocess.run(["git", "add", "-A"], cwd=before, check=True)
+        subprocess.run([*GIT, "commit", "--no-verify", "-qm", "v0.15.0"], cwd=before, check=True)
+        subprocess.run(["git", "tag", "v0.15.0"], cwd=before, check=True)
+        update_project(project)
+
+        text = manifest.read_text()
+        self.assertEqual([{"git": "kzarzycki/agent-skills/engineering", "ref": "engineering-v0.35.12"}],
+                         yaml.safe_load(text)["dependencies"]["apm"])
+        self.assertIn("# project note", text)
+        self.assertNotIn("<<<<<<<", text)
+        self.assertIn("_commit: v0.15.0", (project / ".copier-answers.yml").read_text())
+        # A second update has nothing to migrate and moves nothing.
+        subprocess.run(["git", "add", "-A"], cwd=project, check=True)
+        subprocess.run([*GIT, "commit", "--no-verify", "-qm", "update"], cwd=project, check=True)
+        self.assertEqual(text, manifest.read_text())
+
+    def pack_remote(self, scratch: Path, tags: tuple[str, ...]) -> Path:
+        remote = scratch / "agent-skills"
+        remote.mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=remote, check=True)
+        (remote / "README.md").write_text("pack\n")
+        subprocess.run(["git", "add", "-A"], cwd=remote, check=True)
+        subprocess.run([*GIT, "commit", "--no-verify", "-qm", "pack"], cwd=remote, check=True)
+        for tag in tags:
+            subprocess.run(["git", "tag", tag], cwd=remote, check=True)
+        return remote
+
+    def run_first_pin(self, project: Path, scratch: Path, remote: str) -> subprocess.CompletedProcess:
+        config = scratch / "gitconfig"
+        config.write_text(f'[url "{remote}"]\n  insteadOf = https://github.com/kzarzycki/agent-skills\n')
+        env = {**os.environ, "GIT_CONFIG_GLOBAL": str(config), "GIT_CONFIG_NOSYSTEM": "1"}
+        return subprocess.run(["bash", str(ROOT / "_pack_pin.sh"), "first"], cwd=project, env=env, capture_output=True, text=True)
+
+    def test_setup_pins_the_newest_stable_release_tag_once(self) -> None:
+        scratch = self.scratch()
+        remote = self.pack_remote(scratch, ("engineering-v0.9.1", "engineering-v0.10.0", "engineering-v0.11.0-next", "gatekeeper-v9.0.0", "engineering-v0.2.0"))
+        project = render(include_mise=True, include_agent_layer=True)
+
+        result = self.run_first_pin(project, scratch, f"file://{remote}")
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual([{"git": "kzarzycki/agent-skills/engineering", "ref": "engineering-v0.10.0"}],
+                         yaml.safe_load((project / "apm.yml").read_text())["dependencies"]["apm"])
+        # A later release is the project's (Renovate's) to take: a second run leaves the pin where it is.
+        subprocess.run(["git", "tag", "engineering-v0.12.0"], cwd=remote, check=True)
+        self.assertEqual(0, self.run_first_pin(project, scratch, f"file://{remote}").returncode)
+        self.assertIn("ref: engineering-v0.10.0", (project / "apm.yml").read_text())
+
+    def test_setup_offline_leaves_the_pack_ref_less_and_says_how_to_pin_it(self) -> None:
+        scratch = self.scratch()
+        project = render(include_mise=True, include_agent_layer=True)
+        before = (project / "apm.yml").read_text()
+
+        result = self.run_first_pin(project, scratch, f"file://{scratch}/missing")
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(before, (project / "apm.yml").read_text())
+        self.assertIn("add 'ref: engineering-vX.Y.Z'", result.stderr)
+
+    def test_post_gen_runs_the_first_pin(self) -> None:
+        post_gen = (ROOT / "_post_gen.sh").read_text()
+        self.assertIn('_pack_pin.sh" first', post_gen)
+        self.assertIn('[ "$operation" = update ] ||', post_gen)  # a ref-less pack on update stays the project's choice
+        self.assertIn("{{ _copier_operation }}", (ROOT / "copier.yml").read_text())
 
 
 if __name__ == "__main__":
