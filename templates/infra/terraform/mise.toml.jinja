@@ -16,7 +16,7 @@ description = "Validates every root module offline (no backend; init fetches onl
 # are validated through the roots that call them. TF_ROOT_MODULES, set under [env], replaces the
 # list (space-separated directories). Its own TF_DATA_DIR, so a module already initialized against
 # a remote backend validates with no credentials.
-# ponytail: a directory name with a space is not supported; quote the loop when one appears.
+# ponytail: a directory name with a space is not supported; quote the for loop when one appears.
 run = '''
 roots="${TF_ROOT_MODULES:-$(git ls-files -- '*.tf' | sed 's#[^/]*$##; s#/$##; s#^$#.#' | sort -u | grep -Ev '(^|/)modules(/|$)')}"
 [ -n "$roots" ] || { echo "lint:terraform-validate: no Terraform root module"; exit 0; }

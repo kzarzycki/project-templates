@@ -15,7 +15,7 @@ from pathlib import Path
 
 import yaml
 
-from tests.test_agent_layer_generation import LEAVES, MISE, render
+from tests.test_agent_layer_generation import mise_config, LEAVES, MISE, render
 
 AFFECTED = ".agents/skills/gatekeeper/scripts/gatekeeper.py affected-tests"
 NIGHTLY = ".agents/skills/engineering-loop/scripts/nightly.py red"
@@ -51,7 +51,7 @@ def narrowing(text):
 
 def tasks_comment(project: Path, name: str) -> str:
     """The comment lines of the rendered mise.toml between a task's header and its `run`."""
-    text = (project / "mise.toml").read_text()
+    text = "".join(path.read_text() for path in [project / "mise.toml", *sorted((project / ".mise/conf.d").glob("*.toml"))])
     start = text.index(f'[tasks."{name}"]')
     return text[start:text.index("run =", start)]
 
@@ -61,12 +61,17 @@ def workflow(project_type: str, **answers: object) -> tuple[dict, str]:
     return yaml.safe_load(text), text
 
 
+def loop_workflow(project_type: str, **answers: object) -> tuple[dict, str]:
+    text = (render(project_type, **answers) / ".github/workflows/loop-ci.yml").read_text()
+    return yaml.safe_load(text), text
+
+
 _TASKS: dict[str, str] = {}
 
 
 def task(project: Path, name: str) -> str:
     if name not in _TASKS:  # the rendered tasks are the same in every test
-        _TASKS[name] = tomllib.loads((project / "mise.toml").read_text())["tasks"][name]["run"]
+        _TASKS[name] = mise_config(project)["tasks"][name]["run"]
     return _TASKS[name]
 
 
@@ -89,7 +94,7 @@ class NarrowedCiTest(unittest.TestCase):
     def test_every_leaf_narrows_a_pr_and_a_push_and_runs_the_full_parts_nightly(self) -> None:
         for project_type, answers in LEAVES:
             with self.subTest(project_type=project_type, **answers):
-                ci, _ = workflow(project_type, **answers)
+                ci, _ = loop_workflow(project_type, **answers)
                 jobs = ci["jobs"]
                 runs = {step.get("name"): step for step in jobs["affected"]["steps"] if "name" in step}
                 pull_request = runs["Affected tests (pull request)"]
@@ -104,10 +109,11 @@ class NarrowedCiTest(unittest.TestCase):
 
                 # PyYAML reads the bare key `on` as True.
                 self.assertEqual([{"cron": "41 3 * * *"}], ci[True]["schedule"])
+                self.assertIn("github.event_name == 'schedule'", jobs["nightly"]["if"])
+                self.assertEqual("mise run check:all", jobs["nightly"]["steps"][-1]["run"])
                 nightly = jobs["nightly-red"]
-                self.assertEqual("check", nightly["needs"])
-                self.assertIn("github.event_name == 'schedule'", nightly["if"])
-                self.assertIn("needs.check.result == 'failure'", nightly["if"])
+                self.assertEqual("nightly", nightly["needs"])
+                self.assertIn("needs.nightly.result == 'failure'", nightly["if"])
                 self.assertEqual("write", nightly["permissions"]["issues"])
                 self.assertNotIn("issues", ci["permissions"])  # that job only
                 script = "\n".join(step.get("run", "") for step in nightly["steps"])
@@ -119,11 +125,14 @@ class NarrowedCiTest(unittest.TestCase):
         for project_type, answers in LEAVES:
             with self.subTest(project_type=project_type, **answers):
                 jobs = workflow(project_type, **answers)[0]["jobs"]
+                loop_jobs = loop_workflow(project_type, **answers)[0]["jobs"]
                 plan = jobs["plan"]
                 steps = plan["steps"]
                 mode = next(index for index, step in enumerate(steps) if step.get("id") == "mode")
                 parts = next(index for index, step in enumerate(steps) if step.get("id") == "parts")
-                self.assertEqual("mise run ci:narrowed", steps[mode]["run"])
+                # The base asks for the task only when the project has one; the loop provides it.
+                self.assertIn("grep -q '^ci:narrowed '", steps[mode]["run"])
+                self.assertIn("mise run ci:narrowed", steps[mode]["run"])
                 # ci:narrowed runs the pack under uv.
                 self.assertTrue([step for step in steps[:mode] if step.get("uses", "").startswith("astral-sh/setup-uv@")])
                 self.assertLess(mode, parts)
@@ -131,18 +140,22 @@ class NarrowedCiTest(unittest.TestCase):
                 # list, since part's fromJSON('') would fail on the unset output.
                 self.assertEqual("${{ steps.mode.outputs.narrowed != 'true' }}", steps[parts]["if"])
                 self.assertEqual("${{ steps.parts.outputs.parts || '[]' }}", plan["outputs"]["parts"])
-                self.assertEqual("${{ steps.mode.outputs.narrowed }}", plan["outputs"]["narrowed"])
                 self.assertIn("needs.plan.outputs.parts != '[]'", jobs["part"]["if"])
-                self.assertIn("needs.plan.outputs.narrowed == 'true'", jobs["affected"]["if"])
-                # check waits for the narrowed run and reads its result.
-                self.assertIn("affected", jobs["check"]["needs"])
-                env = next(step["env"] for step in jobs["check"]["steps"] if step.get("run") == "mise run ci:check")
+                self.assertNotIn("affected", jobs)  # the base knows no narrowed job
+                self.assertEqual("${{ steps.mode.outputs.narrowed }}", loop_jobs["narrowed"]["outputs"]["narrowed"])
+                self.assertEqual("mise run ci:narrowed", next(s for s in loop_jobs["narrowed"]["steps"] if s.get("id") == "mode")["run"])
+                self.assertIn("needs.narrowed.outputs.narrowed == 'true'", loop_jobs["affected"]["if"])
+                # loop-check is the loop's own required check: it waits for the narrowed run and reads its result.
+                self.assertIn("affected", loop_jobs["loop-check"]["needs"])
+                env = loop_jobs["loop-check"]["steps"][0]["env"]
                 self.assertEqual("${{ needs.affected.result }}", env["AFFECTED"])
 
     def test_a_queue_entry_keeps_the_full_parts(self) -> None:
         ci, _ = workflow("software/python", merge_queue=True)
+        loop_ci, _ = loop_workflow("software/python", merge_queue=True)
         self.assertIn("merge_group", ci[True])
-        self.assertEqual("mise run ci:narrowed", next(s for s in ci["jobs"]["plan"]["steps"] if s.get("id") == "mode")["run"])
+        self.assertIn("merge_group", loop_ci[True])
+        self.assertEqual("mise run ci:narrowed", next(s for s in loop_ci["jobs"]["narrowed"]["steps"] if s.get("id") == "mode")["run"])
 
     def narrowed(self, event: str, base: str | None, head: str | None, pack: bool = True,
                  env: dict[str, str] | None = None) -> str:
@@ -228,20 +241,27 @@ class NarrowedCiTest(unittest.TestCase):
         run = task(render("software/python") if "ci:check" not in _TASKS else Path(), "ci:check")
         return sh(run, Path(tempfile.gettempdir()), **env)
 
-    def test_check_fails_when_the_narrowed_run_failed_or_was_cancelled(self) -> None:
-        for result in ("failure", "cancelled"):
-            with self.subTest(result=result):
-                done = self.check(PLAN="success", PARTS="skipped", PLANNED="[]", AFFECTED=result)
-                self.assertNotEqual(0, done.returncode)
-                self.assertIn(f"was {result}", done.stdout)
+    def loop_check(self, **env: str) -> subprocess.CompletedProcess[str]:
+        steps = loop_workflow("software/python")[0]["jobs"]["loop-check"]["steps"]
+        return sh(steps[0]["run"], Path(tempfile.gettempdir()), **env)
 
-    def test_check_passes_on_the_narrowed_run_alone_and_says_so(self) -> None:
-        done = self.check(PLAN="success", PARTS="skipped", PLANNED="[]", AFFECTED="success")
-        self.assertEqual((0, "the narrowed run passed\n"), (done.returncode, done.stdout))
-        # No narrowed run and no part: the plan listed none.
-        done = self.check(PLAN="success", PARTS="skipped", PLANNED="[]", AFFECTED="skipped")
+    def test_loop_check_fails_when_the_narrowed_run_or_the_nightly_failed_or_was_cancelled(self) -> None:
+        for job in ("NARROWED", "AFFECTED", "NIGHTLY"):
+            for result in ("failure", "cancelled"):
+                with self.subTest(job=job, result=result):
+                    env = {"NARROWED": "success", "AFFECTED": "skipped", "NIGHTLY": "skipped", job: result}
+                    self.assertNotEqual(0, self.loop_check(**env).returncode)
+
+    def test_loop_check_passes_when_its_jobs_passed_or_did_not_run(self) -> None:
+        for affected in ("success", "skipped"):
+            done = self.loop_check(NARROWED="success", AFFECTED=affected, NIGHTLY="skipped")
+            self.assertEqual(0, done.returncode)
+
+    def test_check_does_not_know_the_narrowed_run(self) -> None:
+        # CI's own check reads only the plan and the parts: the narrowed run is the loop's check.
+        done = self.check(PLAN="success", PARTS="skipped", PLANNED="[]", AFFECTED="failure")
         self.assertEqual((0, "the plan listed no check: part\n"), (done.returncode, done.stdout))
-        done = self.check(PLAN="success", PARTS="success", PLANNED='["check:unit"]', AFFECTED="skipped")
+        done = self.check(PLAN="success", PARTS="success", PLANNED='["check:unit"]')
         self.assertEqual((0, "every check: part passed\n"), (done.returncode, done.stdout))
 
     def last_green(self, gh: str) -> subprocess.CompletedProcess[str]:
@@ -288,7 +308,7 @@ class NarrowedCiTest(unittest.TestCase):
                 self.assertNotIn("which this seed leaves out", loop)
                 lines = [line for line in loop.splitlines() if line.startswith("Affected tests:")]
                 self.assertEqual(["Affected tests: mise run test:affected"], lines)  # exactly one, a single mise task
-                tasks = tomllib.loads((project / "mise.toml").read_text())["tasks"]
+                tasks = mise_config(project)["tasks"]
                 run = tasks["test:affected"]["run"]
                 self.assertIn("mise run --skip-tools check:lint", run)  # the whole-repo lints (and tsc for node)
                 node = project_type == "software/node" or answers.get("language") == "node"
@@ -312,7 +332,7 @@ class NarrowedCiTest(unittest.TestCase):
         self.assertNotIn("`Affected tests: <command>`", loop)
 
     def test_without_the_loop_ci_is_unchanged(self) -> None:
-        for answers in ({"engineering_loop": False}, {"include_engineering_workflow": False}, {"include_agent_layer": False}):
+        for answers in ({"loop": False}, {"include_engineering_workflow": False}, {"include_agent_layer": False}):
             with self.subTest(**answers):
                 ci, text = workflow("software/python", **answers)
                 self.assertNotIn("affected", ci["jobs"])
@@ -323,7 +343,7 @@ class NarrowedCiTest(unittest.TestCase):
 
     def test_a_rendered_workflow_passes_actionlint_and_zizmor(self) -> None:
         project = render("software/python")
-        tools = tomllib.loads((project / "mise.toml").read_text())["tools"]
+        tools = mise_config(project)["tools"]
         for linter, args in (("actionlint", ()), ("zizmor", ("--offline",))):
             with self.subTest(linter=linter):
                 result = subprocess.run(
@@ -336,11 +356,11 @@ class NarrowedCiTest(unittest.TestCase):
     def test_a_loop_off_workflow_of_every_template_passes_actionlint_and_zizmor(self) -> None:
         seen = set()
         for project_type, answers in LEAVES:
-            project = render(project_type, engineering_loop=False, **answers)
+            project = render(project_type, loop=False, **answers)
             if not (project / ".github/workflows/ci.yml").exists():
                 continue
             seen.add(project_type)
-            tools = tomllib.loads((project / "mise.toml").read_text())["tools"]
+            tools = mise_config(project)["tools"]
             for linter, args in (("actionlint", ()), ("zizmor", ("--offline",))):
                 with self.subTest(template=project_type, linter=linter):
                     result = subprocess.run(
@@ -354,7 +374,7 @@ class LintFloorTests(unittest.TestCase):
     """Every PR push lints the changed files: its own job, no tests, no build, whatever gates the rest."""
 
     def test_lint_job_is_ungated_runs_no_tests_and_is_required(self) -> None:
-        for answers in ({}, {"merge_queue": True}, {"loop_enabled": False}):
+        for answers in ({}, {"merge_queue": True}, {"loop": False}):
             with self.subTest(**answers):
                 project = render("software/python", **answers)
                 jobs = yaml.safe_load((project / ".github/workflows/ci.yml").read_text())["jobs"]

@@ -14,7 +14,7 @@ fnox.local.toml
 # Agents' worktrees
 .worktrees/
 
-# The engineering loop's briefs, verifier reports and repros
+# Agents' briefs, reports and repros
 tmp/
 
 # OS / editor

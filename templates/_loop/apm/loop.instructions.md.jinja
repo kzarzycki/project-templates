@@ -1,0 +1,8 @@
+---
+description: The engineering loop
+applyTo: "**"
+---
+
+Every change that lands as a PR runs the `engineering-loop` skill, unless your personal instructions say `Engineering loop: off` and `docs/agents/gatekeeper.md` sets `opt_out: true` under `loop`. Its project facts are in `docs/agents/`.
+
+`loop:approvals` rejects a PR whose description has no `## Evidence` section.

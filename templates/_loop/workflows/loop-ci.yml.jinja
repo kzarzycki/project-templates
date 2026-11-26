@@ -1,0 +1,143 @@
+name: Loop CI
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main, master]
+{% if merge_queue %}  # A merge queue runs the required checks on each PR combined with main.
+  merge_group:
+{% endif %}  # The full check on main, since a PR or a push may run only the tests it affects (loop.md `Affected tests:`).
+  schedule:
+    - cron: "41 3 * * *"
+
+# Each job names its own permissions (ghalint's job_permissions policy).
+permissions: {}
+
+concurrency:
+  group: {% raw %}loop-ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}{% endraw %}
+  cancel-in-progress: {% raw %}${{ github.event_name == 'pull_request' }}{% endraw %}
+
+jobs:
+  # A PR or a push is narrowed when loop.md names an `Affected tests:` command and not `Gate: full`: the
+  # `affected` job then runs in place of the parts ci.yml plans. The nightly and a queue entry keep the full parts.
+  narrowed:
+    if: {% raw %}${{ {% endraw %}{{ repository_guard }}{% raw %}!github.event.pull_request.draft }}{% endraw %}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      narrowed: {% raw %}${{ steps.mode.outputs.narrowed }}{% endraw %}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          install: false # ci:narrowed needs only mise and uv
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - id: mode
+        env:
+          MISE_TASK_RUN_AUTO_INSTALL: "false"
+        run: mise run ci:narrowed
+
+  # The narrowed run, in place of the parts: the tests this change affects plus the project's cheap
+  # whole-repo checks. affected-tests runs the full `mise run check` itself for a base git can't resolve
+  # (the all-zeros SHA of a new branch) and when loop.md has no `Affected tests:` line.
+  affected:
+    needs: narrowed
+    if: {% raw %}${{ {% endraw %}{{ repository_guard }}{% raw %}needs.narrowed.outputs.narrowed == 'true' }}{% endraw %}
+    runs-on: {{ part_runner | default('ubuntu-latest') }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      UV_LOCKED: "1" # a uv sync fails on a stale uv.lock instead of rewriting it
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the diff against the base
+          persist-credentials: false
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+      - run: mise run setup:dev
+      # The checkout's HEAD is the PR merged into main as it is now, so its first parent is main's current
+      # tip. github.event.pull_request.base.sha is main when the PR opened and selects every test once main moves.
+      - name: Affected tests (pull request)
+        if: {% raw %}${{ github.event_name == 'pull_request' }}{% endraw %}
+        run: uv run .agents/skills/gatekeeper/scripts/gatekeeper.py affected-tests --base HEAD^1
+      - name: Affected tests (push to main)
+        if: {% raw %}${{ github.event_name == 'push' }}{% endraw %}
+        env:
+          BEFORE: {% raw %}${{ github.event.before }}{% endraw %}
+        run: uv run .agents/skills/gatekeeper/scripts/gatekeeper.py affected-tests --base "$BEFORE"
+
+  # The nightly: the full check on main, since a PR or a push may run only the tests it affects.
+  nightly:
+    if: {% raw %}${{ {% endraw %}{{ repository_guard }}{% raw %}github.event_name == 'schedule' }}{% endraw %}
+    runs-on: {{ part_runner | default('ubuntu-latest') }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      UV_LOCKED: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+      - run: mise run setup:dev
+      - run: mise run check:all
+
+  # A red nightly opens one issue listing the merges since the last green nightly (the pack's nightly.py).
+  nightly-red:
+    needs: nightly
+    if: {% raw %}${{ {% endraw %}{{ repository_guard }}{% raw %}always() && needs.nightly.result == 'failure' }}{% endraw %}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read # to find the last green nightly
+      pull-requests: read # to find each merge's PR
+      issues: write # to open or comment on the issue
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the history between the last green commit and this one
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          install: false # ci:last-green needs only gh and git, which the runner has
+      - id: green
+        env:
+          GH_TOKEN: {% raw %}${{ github.token }}{% endraw %}
+          MISE_TASK_RUN_AUTO_INSTALL: "false"
+        run: mise run ci:last-green
+      - name: Open or update the nightly issue
+        env:
+          GH_TOKEN: {% raw %}${{ github.token }}{% endraw %}
+          LAST_GREEN: {% raw %}${{ steps.green.outputs.sha }}{% endraw %}
+          RED: {% raw %}${{ github.sha }}{% endraw %}
+          RUN_URL: {% raw %}${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}{% endraw %}
+        run: uv run .agents/skills/engineering-loop/scripts/nightly.py red --last-green "$LAST_GREEN" --red "$RED" --run "$RUN_URL"
+
+  # The loop's one required check: it fails when the narrowed run or the nightly failed, and passes when
+  # neither ran (a full-check run is gated by CI's own `check`). Always, so it reports even when a job above was cancelled.
+  loop-check:
+    needs: [narrowed, affected, nightly]
+    if: {% raw %}${{ {% endraw %}{{ repository_guard }}{% raw %}always() && !github.event.pull_request.draft }}{% endraw %}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - env:
+          NARROWED: {% raw %}${{ needs.narrowed.result }}{% endraw %}
+          AFFECTED: {% raw %}${{ needs.affected.result }}{% endraw %}
+          NIGHTLY: {% raw %}${{ needs.nightly.result }}{% endraw %}
+        run: |
+          for result in "$NARROWED" "$AFFECTED" "$NIGHTLY"; do
+            case "$result" in failure|cancelled) echo "::error::a loop job was $result"; exit 1 ;; esac
+          done
+          echo "the loop's jobs passed or did not run"

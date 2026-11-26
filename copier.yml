@@ -78,16 +78,17 @@ include_engineering_workflow:
   when: "{{ include_mise and include_agent_layer }}"
   help: Add the standard engineering capability pack?
 
-engineering_loop:
+# Existing projects answered this as engineering_loop; their answer is the default here, so nobody is asked again.
+loop:
   type: bool
-  default: true
+  default: "{{ (engineering_loop | default(true)) and include_mise and include_agent_layer and include_engineering_workflow }}"
   when: "{{ include_mise and include_agent_layer and include_engineering_workflow }}"
-  help: Turn the engineering loop on (a line in AGENTS.md and the docs/agents/ files it reads)?
+  help: Turn the engineering loop on (the docs/agents/ files it reads, its CI check and its mise tasks)?
 
 merge_queue:
   type: bool
   default: false
-  when: "{{ include_mise and include_agent_layer and include_engineering_workflow and engineering_loop }}"
+  when: "{{ include_mise and include_agent_layer and include_engineering_workflow and loop }}"
   help: "Render GitHub's merge queue on main? The engineering pack's `loop:land` then enqueues each landable PR, pinned to its head, and the queue's CI run gates it; without a queue, `land` gates each batch itself. GitHub offers a queue only on organization-owned repos."
 
 include_fnox:
@@ -168,13 +169,6 @@ engineering_capability_ref:
   # An exact release tag, which Renovate (renovate.json) moves to each new release.
   default: "engineering-v0.35.10"
 
-# An unasked question keeps its default, so the loop is on only when every
-# question it depends on was answered yes.
-loop_enabled:
-  type: bool
-  when: false
-  default: "{{ include_mise and include_agent_layer and include_engineering_workflow and engineering_loop }}"
-
 _exclude:
   - "*.pyc"
   - "__pycache__"
@@ -185,7 +179,6 @@ _exclude:
   - "{% if not (include_mise and include_agent_layer) %}apm.yml{% endif %}"
   - "{% if not (include_mise and include_agent_layer) or agent_layer_mode == 'vendored' %}.apm{% endif %}"
   - "{% if not (include_mise and include_agent_layer and include_fnox) %}fnox.toml{% endif %}"
-  - "{% if not loop_enabled %}docs/agents{% endif %}"
   - "{% if not include_ci %}.github/workflows/ci.yml{% endif %}"
   - "{% if not include_ci %}.github/check-paths.yml{% endif %}"
   - "{% if not include_example %}main.tf{% endif %}"
