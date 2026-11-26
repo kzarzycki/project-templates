@@ -398,7 +398,22 @@ run_renovate() {
 }
 run_renovate "$@"
 """
-{% if loop_enabled %}
+{% if include_agent_layer %}
+[tasks."deps:renovate-weekly"]
+description = "The weekly workflow's step: runs deps:renovate with the RENOVATE_TOKEN secret, or says it is unset and ends green."
+# A PR opened with the workflow's own github.token starts no CI, so the workflow passes a token or
+# App secret instead. Without it nothing is opened and nothing fails.
+run = """
+if [ -z "${RENOVATE_TOKEN:-}" ]; then
+  echo "::notice title=Renovate skipped::The RENOVATE_TOKEN secret is not set, so no dependency PRs are opened. Add a token with contents and pull-requests write as a repo or org secret named RENOVATE_TOKEN; see the README, Dependency updates: Renovate."
+  exit 0
+fi
+export GH_TOKEN="$RENOVATE_TOKEN"
+git config --global user.name renovate
+git config --global user.email renovate@users.noreply.github.com
+mise run deps:renovate
+"""
+{% endif %}{% if loop_enabled %}
 [tasks."loop:approvals"]
 alias = "gate"
 description = "Checks the loop's proofs on GitHub: approved spec, verdict, Evidence, merge approval. merge exits 3 while it waits for check, or for the owner's approved:merge on a high-risk PR."

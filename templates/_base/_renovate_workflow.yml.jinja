@@ -1,0 +1,37 @@
+# Opens the weekly dependency PRs: runs the Renovate CLI from this repo's renovate.json in this
+# repo's own Actions (`mise run deps:renovate-weekly`, which runs the task a developer runs by hand), so its
+# postUpgradeTasks run `agent:sync --refresh` and a pin-bump PR carries the refreshed lock and agent
+# files. The PR is opened with the RENOVATE_TOKEN secret, not github.token, because a PR opened with
+# github.token starts no CI. Without the secret the job says so and ends green. Setup: README,
+# "Dependency updates: Renovate".
+name: Renovate
+on:
+  schedule:
+    - cron: "23 4 * * 1" # Monday, inside the nightly and weekly windows of renovate.json
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: renovate
+  cancel-in-progress: false
+
+jobs:
+  renovate:
+{% if github_repository %}    if: {% raw %}${{ {% endraw %}{{ repository_guard }}{% raw %}true }}{% endraw %}
+{% endif %}    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          install: false # the task installs what it runs; gh is on the runner
+          cache: false
+      - env:
+          RENOVATE_TOKEN: {% raw %}${{ secrets.RENOVATE_TOKEN }}{% endraw %}
+          GH_REPO: {% raw %}${{ github.repository }}{% endraw %}
+        run: mise run deps:renovate-weekly
