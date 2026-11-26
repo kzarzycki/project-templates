@@ -55,6 +55,13 @@ lives once, in `mise.toml` `[tools]` or the toolchain's lock file:
   costs no Actions minutes.
 - `check:lint` (aliases `lint`, `fmt`) runs every `lint:` task, with or
   without pre-commit installed.
+- The rendered CI also has a `lint` job, a required check in the rendered
+  ruleset, that runs `check:lint` on every PR push (and each queue entry) with
+  no tests and no build, whatever the project does to the rest of its gate, such
+  as gating only in the merge queue. It sets `LINT_BASE` to the change's base, so
+  `files-or-repo` lints only the files changed since the merge base, and the
+  whole repo when the base can't be resolved. `check:lint` has no path filter in
+  `.github/check-paths.yml`. Cost: about 1 minute (0.5 to 2) per push.
 - `check:unit` runs the tests through `scripts/gate-slot`, which holds one of the
   host's `GATE_SLOTS` (default 1) so parallel agents' gates queue instead of
   overloading one machine, and exports `GATE_JOBS` (the free cores) for a

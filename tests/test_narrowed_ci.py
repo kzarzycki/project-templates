@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -348,6 +349,72 @@ class NarrowedCiTest(unittest.TestCase):
                     )
                     self.assertEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertGreaterEqual(len(seen), 3)
+
+class LintFloorTests(unittest.TestCase):
+    """Every PR push lints the changed files: its own job, no tests, no build, whatever gates the rest."""
+
+    def test_lint_job_is_ungated_runs_no_tests_and_is_required(self) -> None:
+        for answers in ({}, {"merge_queue": True}, {"loop_enabled": False}):
+            with self.subTest(**answers):
+                project = render("software/python", **answers)
+                jobs = yaml.safe_load((project / ".github/workflows/ci.yml").read_text())["jobs"]
+                lint = jobs["lint"]
+                self.assertNotIn("needs", lint)  # not behind plan, narrowing or a part
+                self.assertEqual("${{ !github.event.pull_request.draft }}", lint["if"])
+                self.assertEqual(["mise run setup:dev", "mise run check:lint"],
+                                 [step["run"] for step in lint["steps"] if "run" in step])
+                self.assertIn("LINT_BASE", lint["env"])
+                self.assertEqual(0, lint["steps"][0]["with"]["fetch-depth"])
+                if not (project / ".github/rulesets/main.json").exists():
+                    continue  # loop off: no ruleset
+                ruleset = json.loads((project / ".github/rulesets/main.json").read_text())
+                [checks] = [r["parameters"]["required_status_checks"] for r in ruleset["rules"] if r["type"] == "required_status_checks"]
+                self.assertIn("lint", [c["context"] for c in checks])
+
+    def test_queue_gated_project_keeps_lint_on_pull_requests(self) -> None:
+        project = render("software/python", merge_queue=True)
+        ci = yaml.safe_load((project / ".github/workflows/ci.yml").read_text())
+        self.assertIn("pull_request", ci[True])
+        self.assertIn("merge_group", ci[True])
+        self.assertIn("github.event.merge_group.base_sha", ci["jobs"]["lint"]["env"]["LINT_BASE"])
+        self.assertNotIn("github.event_name", ci["jobs"]["lint"].get("if", ""))
+
+    def test_check_lint_has_no_path_filter(self) -> None:
+        for project_type, answers in LEAVES:
+            with self.subTest(project_type=project_type):
+                filters = yaml.safe_load((render(project_type, **answers) / ".github/check-paths.yml").read_text())
+                self.assertNotIn("check:lint", filters)
+
+    def test_files_or_repo_lints_only_files_changed_since_the_base(self) -> None:
+        project = render("software/python")
+        script = project / "scripts/files-or-repo"
+        # No user config: an init.templateDir hook must not run `uv` and leave a uv.lock in the repo under test.
+        env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+
+        def git(*args: str) -> None:
+            subprocess.run(["git", *args], cwd=project, env=env, check=True, capture_output=True)
+
+        git("-c", "init.templateDir=", "init", "-q", "-b", "main")
+        (project / "old.txt").write_text("old\n")
+        (project / "gone.txt").write_text("gone\n")
+        git("add", "-A")
+        git("commit", "-q", "--no-verify", "-m", "base")
+        git("checkout", "-qb", "topic")
+        (project / "new.txt").write_text("new\n")
+        git("rm", "-q", "gone.txt")
+        git("add", "-A")
+        git("commit", "-q", "--no-verify", "-m", "change")
+
+        def seen(base: str | None) -> set[str]:
+            out = subprocess.run(
+                [str(script), "sh", "-c", 'printf "%s\\n" "$@"', "x", "--"],
+                cwd=project, capture_output=True, text=True, check=True, env={**env, **({"LINT_BASE": base} if base else {})},
+            ).stdout
+            return set(out.split())
+
+        self.assertEqual({"new.txt"}, seen("main"))  # a deleted file is not linted either
+        self.assertIn("old.txt", seen(None))  # no base: the whole repo, as a local run
+        self.assertIn("old.txt", seen("0" * 40))  # a base git can't resolve: the whole repo
 
 
 if __name__ == "__main__":

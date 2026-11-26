@@ -130,6 +130,25 @@
           RUN_URL: {% raw %}${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}{% endraw %}
         run: uv run .agents/skills/engineering-loop/scripts/nightly.py red --last-green "$LAST_GREEN" --red "$RED" --run "$RUN_URL"
 {% endif %}
+  # The floor of every PR push: lint on the changed files, no tests and no build, whatever gates the rest
+  # (a project that gates only in the merge queue still lints each push). It has no path filter. A draft
+  # runs nothing until ready_for_review; `check:lint` in the parts still lints the whole repo.
+  lint:
+    if: {% raw %}${{ {% endraw %}{{ repository_guard }}{% raw %}!github.event.pull_request.draft }}{% endraw %}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      UV_LOCKED: "1"
+      LINT_BASE: {% raw %}${{ github.base_ref && format('origin/{0}', github.base_ref) || {% endraw %}{% if merge_queue %}{% raw %}github.event.merge_group.base_sha || {% endraw %}{% endif %}{% raw %}github.event.before }}{% endraw %}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the merge base of the change
+          persist-credentials: false
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+      - run: mise run setup:dev
+      - run: mise run check:lint
+
   check:
     needs: [plan, part{% if loop_enabled %}, affected{% endif %}]
     # Always, so the required check reports even when the plan or a part failed or was cancelled.

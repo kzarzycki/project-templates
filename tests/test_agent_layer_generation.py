@@ -1221,7 +1221,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertIn("mise run --skip-tools agent:sync -- --frozen", tasks["check:agents"]["run"])
         self.assertEqual("mise run --skip-tools --jobs 1 --continue-on-error 'lint:*'", tasks["check:lint"]["run"])
         workflow = (project / ".github/workflows/ci.yml").read_text()
-        self.assertEqual(["plan", "part", "affected", "nightly-red", "check"], list(yaml.safe_load(workflow)["jobs"]))
+        self.assertEqual(["plan", "part", "affected", "nightly-red", "lint", "check"], list(yaml.safe_load(workflow)["jobs"]))
         self.assertNotIn("pytest", workflow)
         approvals_run = tasks["loop:approvals"]["run"]
         self.assertEqual("gate", tasks["loop:approvals"]["alias"])
@@ -1406,11 +1406,11 @@ class AgentLayerGenerationTest(unittest.TestCase):
                 self.assertEqual("${{ github.event_name == 'pull_request' }}", ci["concurrency"]["cancel-in-progress"])
                 jobs = ci["jobs"]
                 # `affected` and `nightly-red` are the loop's narrowed run and red-nightly report (test_narrowed_ci).
-                self.assertEqual(["plan", "part", "affected", "nightly-red", "check"], list(jobs))
+                self.assertEqual(["plan", "part", "affected", "nightly-red", "lint", "check"], list(jobs))
                 # Only the parts and the narrowed run run the project's checks; an Apple project's need Xcode.
                 runner = "macos-latest" if project_type == "apple/xcode" else "ubuntu-latest"
                 runners = {"plan": "ubuntu-latest", "check": "ubuntu-latest", "nightly-red": "ubuntu-latest",
-                           "part": runner, "affected": runner}
+                           "part": runner, "affected": runner, "lint": "ubuntu-latest"}
                 self.assertEqual(runners, {name: job["runs-on"] for name, job in jobs.items()})
                 self.assertEqual("${{ !github.event.pull_request.draft }}", jobs["plan"]["if"])
                 self.assertEqual("${{ always() && !github.event.pull_request.draft }}", jobs["check"]["if"])
@@ -1460,7 +1460,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
                 ruleset = json.loads((project / ".github/rulesets/main.json").read_text())
                 rules = {rule["type"]: rule.get("parameters") for rule in ruleset["rules"]}
                 required = [check["context"] for check in rules["required_status_checks"]["required_status_checks"]]
-                self.assertEqual(["check", "loop:approvals"], required)
+                self.assertEqual(["check", "lint", "loop:approvals"], required)
                 self.assertEqual("check", jobs["check"].get("name", "check"))  # the check run's name, not just the key
                 self.assertEqual(15368, rules["required_status_checks"]["required_status_checks"][0]["integration_id"])  # GitHub Actions
                 self.assertIn("for context in loop:approvals gatekeeper", tasks["ci:approvals"]["run"])
