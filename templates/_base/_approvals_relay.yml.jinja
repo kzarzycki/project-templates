@@ -11,9 +11,16 @@ on:
 {% endif %}
 permissions: {}
 
+# A PR's newer review cancels its older relay run.
+{% if merge_queue %}# A queue entry has no PR and keeps its own run.
+{% endif %}concurrency:
+  group: {% raw %}approvals-relay-${{ github.event.pull_request.number || github.sha }}{% endraw %}
+  cancel-in-progress: true
+
 jobs:
   relay:
 {% if github_repository %}    if: {% raw %}${{ {% endraw %}{{ repository_guard }}{% raw %}true }}{% endraw %}
 {% endif %}    runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - run: echo "relayed to the Approvals workflow"

@@ -47,8 +47,21 @@ lives once, in `mise.toml` `[tools]` or the toolchain's lock file:
   rewrites the files and fails when it changed one.
   `lint:json` skips the paths matching `LINT_JSON_SKIP`, an ERE the project
   sets under `[env]` in `mise.toml`, for files with a `.json` name that hold no JSON.
+- `lint:ghalint` runs [ghalint](https://github.com/suzuki-shunsuke/ghalint) on
+  `.github/workflows/`. Among its policies, `job_timeout_minutes_is_required`
+  ([012](https://github.com/suzuki-shunsuke/ghalint/blob/main/docs/policies/012.md))
+  fails a job with no `timeout-minutes`, so a hung job stops at its limit and
+  not at GitHub's 6 hours. It runs in `mise run check` and the commit hook, so it
+  costs no Actions minutes.
 - `check:lint` (aliases `lint`, `fmt`) runs every `lint:` task, with or
   without pre-commit installed.
+- The rendered CI also has a `lint` job, a required check in the rendered
+  ruleset, that runs `check:lint` on every PR push (and each queue entry) with
+  no tests and no build, whatever the project does to the rest of its gate, such
+  as gating only in the merge queue. It sets `LINT_BASE` to the change's base, so
+  `files-or-repo` lints only the files changed since the merge base, and the
+  whole repo when the base can't be resolved. `check:lint` has no path filter in
+  `.github/check-paths.yml`. Cost: about 1 minute (0.5 to 2) per push.
 - `check:unit` runs the tests through `scripts/gate-slot`, which holds one of the
   host's `GATE_SLOTS` (default 1) so parallel agents' gates queue instead of
   overloading one machine, and exports `GATE_JOBS` (the free cores) for a
@@ -695,13 +708,18 @@ on an older build, archiving a sub-agent stops its parent too.
 With mise, a project gets `renovate.json` and `mise run deps:renovate`, which runs the
 Renovate CLI (free, AGPL-3.0) on the repo with the developer's own `gh` login (scopes
 `repo` and `workflow`), so it needs no org admin: its PRs are the developer's, and a PR a
-user token opens starts CI. A nightly scheduled agent runs it. Updates fall in two classes:
+user token opens starts CI. With the agent layer, the project also gets
+`.github/workflows/renovate.yml`, which runs the same task weekly in the repo's own Actions
+(below). Updates fall in two classes:
 
 - **verify** (label `verify`, draft): the template (Renovate's `copier` manager, which
   trusts the template's tasks), the `apm.yml` packages pinned to a `<package>-vX.Y.Z`
-  tag (then `agent:sync --refresh` regenerates the lock and agent files), one PR a night
-  for the template and another for the packages, since copier refuses a tree another
-  manager already changed; and every major update, each its own PR. An agent reviews each before
+  tag together with the apm tool pin in `mise.toml` (then `agent:sync --refresh`
+  regenerates the lock and agent files), one PR a night for the template and another for
+  the packages, since copier refuses a tree another manager already changed. The apm pin
+  moves only in that group, never alone in the routine tools group: a new apm can break the
+  engineering pack for claude and codex consumers until the pack ships its fix, so it moves
+  with the pack versions it was tested against; and every major update, each its own PR. An agent reviews each before
   `loop:land`.
 - **routine**: patch and minor updates of tools, libraries and actions, one group a week
   after 3 days, with auto-merge on. A verifier reviews it too: its PRs are the developer's, and
@@ -709,8 +727,65 @@ user token opens starts CI. A nightly scheduled agent runs it. Updates fall in t
 
 Mend's hosted Renovate does not fit: its free tier runs no scripts and no
 `postUpgradeTasks`, so template and pack updates would fail or leave the lock stale.
-Upgrades that take it off a person's machine: a classic PAT in a repo secret and a
-workflow, or a GitHub App, which needs an org owner.
+
+### Weekly run in GitHub Actions (agent layer)
+
+A project with the agent layer gets `.github/workflows/renovate.yml`: every Monday at 04:23 UTC
+(and on demand from the Actions tab) it runs `mise run deps:renovate` from the repo's own
+`renovate.json`, so a new pack tag or apm release becomes a draft PR within a week, carrying the
+lock and agent files that `agent:sync --refresh` writes. A project without the agent layer gets
+no workflow. `copier update` brings it to existing projects. It uses only the Renovate CLI and
+mise on GitHub's runner, with no third-party GitHub App, and its actions are pinned by commit SHA.
+
+**Owner step, once per repo (or once per org with an org secret):**
+
+1. Create a credential that can open PRs which start CI. A PR opened with the workflow's own
+   `github.token` starts no CI, so use one of:
+   - a fine-grained personal access token, resource owner the repo's owner, access to this
+     repo, with repository permissions **Contents: Read and write** and **Pull requests: Read
+     and write** (Metadata read is added for you; add **Workflows: Read and write** if a PR
+     should be able to change workflow files); or
+   - a GitHub App you own, installed on the repo with the same permissions. Its installation
+     tokens expire after an hour, so the secret cannot hold one: the workflow then needs a
+     token-minting step in front of the Renovate step, which the template does not ship.
+2. Store it as an Actions secret named **`RENOVATE_TOKEN`**: repo Settings, Secrets and
+   variables, Actions, New repository secret (or the same page of the organization for an org
+   secret). Nobody pastes it anywhere else.
+3. Run the workflow once from the Actions tab (Run workflow) to check it.
+
+**Without the secret** the task prints a notice that `RENOVATE_TOKEN` is
+not set and points here, does nothing else and ends green: no failure mail, no failed
+check. Set the secret and the next Monday run (or a manual run) opens the PRs.
+
+**Actions minutes** (estimates for a Linux runner, not measured; measure on one repo first):
+a week with nothing to bump takes about 5 minutes, so about 20 a month; each PR Renovate opens
+adds about 4 minutes for `agent:sync --refresh`. Without the secret a run is well under a
+minute. A repo near its minutes cap can lower the cost by removing the schedule and running
+the workflow by hand.
+
+## Set each job's time limit (after `copier update`)
+
+Every job in the generated workflows sets `timeout-minutes`, and `ghalint` fails
+a job that doesn't. The template can't know your run times, so the values it ships
+are generous defaults (10 minutes for the small jobs, 45 for `part` and
+`affected`). After `copier update`, set each job's `timeout-minutes` to about 2x
+its slowest recent successful run, rounded up:
+
+```bash
+# Duration in minutes of each recent successful run of the CI workflow.
+gh run list --workflow ci.yml --status success --limit 30 --json databaseId,startedAt,updatedAt \
+  --jq '.[] | "\(.databaseId) \((((.updatedAt|fromdate) - (.startedAt|fromdate)) / 60) | floor) min"'
+# One job's time within a run, for a job that is only part of that total.
+gh run view <run-id> --json jobs --jq '.jobs[] | "\(.name) \((((.completedAt|fromdate) - (.startedAt|fromdate)) / 60) | ceil) min"'
+```
+
+Keep a limit above the slowest run, since a job that hits it fails. A run that
+slows down later then fails instead of using the repo's monthly minutes.
+
+Generated workflows also cancel superseded runs: a PR's newer push cancels its
+older CI run, and each push to `main` keeps its own run, so a red `main` points
+at the merge that caused it. A release or deploy job you add should not cancel in
+progress, since a run stopped halfway leaves things half-published.
 
 ## Adopt an existing (pre-template) repo
 

@@ -41,10 +41,11 @@
       "draftPR": true,
       "automerge": false
     },
-    {%- for manager, group in [("copier", "template")] + ([("custom.regex", "agent packages")] if include_agent_layer else []) %}
+    {%- set verify_groups = [("template", "copier", "")] + ([("agent packages", "custom.regex", ""), ("agent packages", "mise", ', "matchDepNames": ["github:microsoft/apm"]')] if include_agent_layer else []) %}
+    {%- for group, manager, extra in verify_groups %}
     {
-      "description": "Verify: the {{ group }}, one draft PR a night, which an agent reviews before it lands.{% if include_agent_layer %} Its own branch: copier refuses a tree another manager already changed.{% endif %}",
-      "matchManagers": ["{{ manager }}"],
+      "description": "Verify: the {{ group }}, one draft PR a night, which an agent reviews before it lands.{% if include_agent_layer and manager == 'mise' %} The apm pin in mise.toml moves in this group, never on its own in the tools group: a new apm can break the pack for claude and codex consumers until the pack ships its fix, so it moves only with the pack versions it was tested against.{% elif include_agent_layer %} Its own branch: copier refuses a tree another manager already changed.{% endif %}",
+      "matchManagers": ["{{ manager }}"]{{ extra }},
       "groupName": "{{ group }}",
       "schedule": ["* 0-5 * * *"],
       "minimumReleaseAge": null,

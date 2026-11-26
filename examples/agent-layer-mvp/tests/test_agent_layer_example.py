@@ -219,6 +219,7 @@ class AgentLayerExampleTest(unittest.TestCase):
                 "pre-commit": "4.6.0",
                 "github:microsoft/apm": "0.30.0",
                 "fnox": "1.30.0",
+                "ghalint": "1.6.0",
             },
             mise["tools"],
         )

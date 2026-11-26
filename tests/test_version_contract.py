@@ -91,7 +91,8 @@ class VersionContractTest(unittest.TestCase):
     def test_root_ci_pins_its_toolchain(self) -> None:
         workflow = self.text(".github/workflows/ci.yml")
 
-        self.assertIn("permissions:\n  contents: read", workflow)
+        self.assertIn("permissions: {}\n", workflow)  # each job names its own (ghalint's job_permissions)
+        self.assertIn("    permissions:\n      contents: read\n", workflow)
         checkout = re.search(
             r"actions/checkout@[^\n]+\n(?:(?:        ).*\n)+", workflow
         )
@@ -138,6 +139,7 @@ class VersionContractTest(unittest.TestCase):
             ("gitleaks", "8.30.1"),
             ("actionlint", "1.7.12"),
             ("zizmor", "1.27.0"),
+            ("ghalint", "1.6.0"),
         ):
             self.assertEqual(1, tools.count(f'{tool} = "{version}"'), tool)
             self.assertNotIn(version, hooks)

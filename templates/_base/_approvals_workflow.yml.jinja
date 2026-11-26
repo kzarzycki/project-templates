@@ -57,6 +57,7 @@ jobs:
     if: >-
       {{ '${{ ' }}{% if github_repository %}{{ repository_guard }}({{ runs }}){% else %}{{ runs }}{% endif %}{{ ' }}' }}{% endif %}
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       issues: write # adds risk:high to a PR the gate finds high risk
