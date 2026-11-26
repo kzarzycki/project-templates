@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Run a linter on the files given after the last `--`, or on every tracked file when none are given.
 # A `lint:` task calls it, so the git hook (staged files) and `mise run check:lint` (the whole
-# repo) run one command on the same selection.
+# repo) run one command on the same selection. With no FILE and LINT_BASE set to a ref (CI's lint job),
+# the selection is the files changed since the merge base of that ref and HEAD; a base git can't
+# resolve (a new branch's all-zeros SHA, a shallow clone) selects the whole repo.
 #
 #   files-or-repo [--only ERE] [--skip ERE] [--text] [--fixer] COMMAND [ARG...] -- [FILE...]
 #
@@ -34,7 +36,13 @@ shift "$last"
 
 list="$(mktemp)"
 trap 'rm -f "$list" "$list.picked" "$list.before" "$list.after"' EXIT
-if [ $# -gt 0 ]; then printf '%s\0' "$@" >"$list"; else git ls-files -z >"$list"; fi
+if [ $# -gt 0 ]; then
+  printf '%s\0' "$@" >"$list"
+elif [ -n "${LINT_BASE:-}" ] && merge_base="$(git merge-base "$LINT_BASE" HEAD 2>/dev/null)"; then
+  git diff --name-only -z --diff-filter=d "$merge_base" HEAD >"$list"
+else
+  git ls-files -z >"$list"
+fi
 
 # One grep per filter over the whole list, NUL-separated, so a path may hold spaces or quotes.
 # $1 is -v to drop the matches; grep exits 1 when nothing is left, which is no error.
