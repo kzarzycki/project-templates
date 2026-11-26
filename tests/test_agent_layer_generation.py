@@ -1608,7 +1608,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         project = render(existing={".github/workflows/ship.yml": ship}, include_ci=False)
 
         self.assertEqual(ship, (project / ".github/workflows/ship.yml").read_bytes())
-        self.assertEqual(["approvals.yml", "approvals_relay.yml", "ship.yml"], sorted(path.name for path in (project / ".github/workflows").iterdir()))
+        self.assertEqual(["approvals.yml", "approvals_relay.yml", "renovate.yml", "ship.yml"], sorted(path.name for path in (project / ".github/workflows").iterdir()))
         self.assertFalse((project / ".github/check-paths.yml").exists())
         self.assertTrue((project / "renovate.json").exists())  # not CI
         tasks = tomllib.loads((project / "mise.toml").read_text())["tasks"]
@@ -2083,7 +2083,7 @@ class RenovateGenerationTest(unittest.TestCase):
         config = json.loads((project / "renovate.json").read_text())
         self.assertFalse((project / ".github/dependabot.yml").exists())
         self.assertEqual(["github-tags"], [m["datasourceTemplate"] for m in config["customManagers"]])
-        rules = {rule.get("groupName"): rule for rule in config["packageRules"]}
+        rules = {rule.get("groupName"): rule for rule in reversed(config["packageRules"])}  # the first rule of a group
         # Copier refuses a tree another manager changed, so the template and the agent packages update apart (#88).
         for group, managers in (("template", ["copier"]), ("agent packages", ["custom.regex"])):
             rule = rules[group]
@@ -2116,6 +2116,46 @@ class RenovateGenerationTest(unittest.TestCase):
         config = json.loads((render(include_mise=True, include_agent_layer=False) / "renovate.json").read_text())
         self.assertNotIn("customManagers", config)
         self.assertNotIn("postUpgradeTasks", json.dumps(config))
+
+    def test_apm_moves_with_the_pack_pins_in_one_grouped_pr(self) -> None:
+        config = json.loads((render(include_mise=True, include_agent_layer=True) / "renovate.json").read_text())
+        [rule] = [r for r in config["packageRules"] if r.get("matchDepNames") == ["github:microsoft/apm"]]
+        [pack] = [r for r in config["packageRules"] if r.get("matchManagers") == ["custom.regex"]]
+        self.assertEqual(["mise"], rule["matchManagers"])
+        for key in ("groupName", "schedule", "addLabels", "draftPR", "automerge", "postUpgradeTasks"):
+            self.assertEqual(pack[key], rule[key], key)
+        # It follows the tools group's rule, so its settings win for the apm pin.
+        rules = config["packageRules"]
+        self.assertGreater(rules.index(rule), rules.index(next(r for r in rules if r.get("groupName") == "tools and libraries")))
+
+    def test_the_weekly_renovate_workflow_exists_only_with_the_agent_layer(self) -> None:
+        workflow = ".github/workflows/renovate.yml"
+        project = render(include_mise=True, include_agent_layer=True)
+        text = (project / workflow).read_text()
+        data = yaml.safe_load(text)
+        self.assertEqual(["23 4 * * 1"], [s["cron"] for s in data[True]["schedule"]])
+        self.assertIn("workflow_dispatch", data[True])
+        self.assertIn("secrets.RENOVATE_TOKEN", text)
+        self.assertNotRegex(text, r"\$\{\{[^}]*(github\.token|GITHUB_TOKEN)")
+        self.assertIn("run: mise run deps:renovate-weekly", text)
+        # The missing secret is a notice, never a failure.
+        task = tomllib.loads((project / "mise.toml").read_text())["tasks"]["deps:renovate-weekly"]["run"]
+        self.assertIn("::notice", task)
+        self.assertNotIn("exit 1", task)
+        self.assertIn("mise run deps:renovate\n", task)
+        for line in re.findall(r"uses: (\S+)", text):
+            self.assertRegex(line, r"@[0-9a-f]{40}$")
+        for answers in ({"include_agent_layer": False}, {"include_mise": False}):
+            with self.subTest(**answers):
+                self.assertFalse((render(**answers) / workflow).exists())
+        for linter, args in (("actionlint", ()), ("zizmor", ("--offline",))):
+            with self.subTest(linter=linter):
+                tools = tomllib.loads((project / "mise.toml").read_text())["tools"]
+                result = subprocess.run(
+                    [MISE, "exec", f"{linter}@{tools[linter]}", "--", linter, *args, workflow],
+                    cwd=project, capture_output=True, text=True,
+                )
+                self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
     def test_without_mise_dependabot_stays(self) -> None:
         project = render(include_mise=False)
