@@ -47,6 +47,12 @@ lives once, in `mise.toml` `[tools]` or the toolchain's lock file:
   rewrites the files and fails when it changed one.
   `lint:json` skips the paths matching `LINT_JSON_SKIP`, an ERE the project
   sets under `[env]` in `mise.toml`, for files with a `.json` name that hold no JSON.
+- `lint:ghalint` runs [ghalint](https://github.com/suzuki-shunsuke/ghalint) on
+  `.github/workflows/`. Among its policies, `job_timeout_minutes_is_required`
+  ([012](https://github.com/suzuki-shunsuke/ghalint/blob/main/docs/policies/012.md))
+  fails a job with no `timeout-minutes`, so a hung job stops at its limit and
+  not at GitHub's 6 hours. It runs in `mise run check` and the commit hook, so it
+  costs no Actions minutes.
 - `check:lint` (aliases `lint`, `fmt`) runs every `lint:` task, with or
   without pre-commit installed.
 - `check:unit` runs the tests through `scripts/gate-slot`, which holds one of the
@@ -703,6 +709,30 @@ Mend's hosted Renovate does not fit: its free tier runs no scripts and no
 `postUpgradeTasks`, so template and pack updates would fail or leave the lock stale.
 Upgrades that take it off a person's machine: a classic PAT in a repo secret and a
 workflow, or a GitHub App, which needs an org owner.
+
+## Set each job's time limit (after `copier update`)
+
+Every job in the generated workflows sets `timeout-minutes`, and `ghalint` fails
+a job that doesn't. The template can't know your run times, so the values it ships
+are generous defaults (10 minutes for the small jobs, 45 for `part` and
+`affected`). After `copier update`, set each job's `timeout-minutes` to about 2x
+its slowest recent successful run, rounded up:
+
+```bash
+# Duration in minutes of each recent successful run of the CI workflow.
+gh run list --workflow ci.yml --status success --limit 30 --json databaseId,startedAt,updatedAt \
+  --jq '.[] | "\(.databaseId) \((((.updatedAt|fromdate) - (.startedAt|fromdate)) / 60) | floor) min"'
+# One job's time within a run, for a job that is only part of that total.
+gh run view <run-id> --json jobs --jq '.jobs[] | "\(.name) \((((.completedAt|fromdate) - (.startedAt|fromdate)) / 60) | ceil) min"'
+```
+
+Keep a limit above the slowest run, since a job that hits it fails. A run that
+slows down later then fails instead of using the repo's monthly minutes.
+
+Generated workflows also cancel superseded runs: a PR's newer push cancels its
+older CI run, and each push to `main` keeps its own run, so a red `main` points
+at the merge that caused it. A release or deploy job you add should not cancel in
+progress, since a run stopped halfway leaves things half-published.
 
 ## Adopt an existing (pre-template) repo
 

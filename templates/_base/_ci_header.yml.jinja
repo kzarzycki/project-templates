@@ -10,8 +10,8 @@ on:
   schedule:
     - cron: "41 3 * * *"
 {% endif %}
-permissions:
-  contents: read
+# Each job names its own permissions (ghalint's job_permissions policy).
+permissions: {}
 
 # A PR's newer push cancels its older run. Every push to main{% if merge_queue %} and every queue entry{% endif %} keeps
 # its own run, so a red main can be pinned to the merge that caused it.

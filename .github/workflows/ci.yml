@@ -12,12 +12,16 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-permissions:
-  contents: read
+# Each job names its own permissions (ghalint's job_permissions policy).
+permissions: {}
 
 jobs:
   verify:
     runs-on: ubuntu-latest
+    # ~2x the slowest recent successful run (8.6 min), rounded up: a hung job stops here, not at GitHub's 6 hours.
+    timeout-minutes: 18
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -54,6 +58,8 @@ jobs:
           mise exec github:microsoft/apm@0.33.0 --
           uv run --with PyYAML==6.0.3 --
           python3 -m unittest $MODULES
+      - name: Check the root workflows against ghalint's policies
+        run: mise exec aqua:suzuki-shunsuke/ghalint@1.6.0 -- ghalint run
       - name: Install example tools
         working-directory: examples/agent-layer-mvp
         run: mise install
@@ -70,6 +76,10 @@ jobs:
   generate:
     # apple/xcode's check:all runs its gate script (swift test), which needs Xcode: macOS.
     runs-on: ${{ matrix.os || 'ubuntu-latest' }}
+    # ~2x the slowest recent successful run (1.4 min), rounded up.
+    timeout-minutes: 3
+    permissions:
+      contents: read
     strategy:
       matrix:
         include:
@@ -165,6 +175,8 @@ jobs:
     needs: [verify, generate]
     if: ${{ always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && contains(needs.*.result, 'failure') }}
     runs-on: ubuntu-latest
+    # A few API calls; no recent run to measure, since it runs only after a red scheduled run.
+    timeout-minutes: 5
     permissions:
       issues: write
     steps:

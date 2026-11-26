@@ -141,6 +141,10 @@ run = '{{ scripts_dir }}/files-or-repo --only "^\.github/workflows/[^/]+\.ya?ml$
 description = "Checks the workflows for security mistakes."
 run = '{{ scripts_dir }}/files-or-repo --only "^\.github/(workflows/[^/]+|dependabot)\.ya?ml$" zizmor --'
 
+[tasks."lint:ghalint"]
+description = "Checks the workflows against ghalint's policies, among them a timeout-minutes on every job."
+run = '{{ scripts_dir }}/files-or-repo --only "^\.github/workflows/[^/]+\.ya?ml$" ghalint run --'
+
 [tasks."lint:symlinks"]
 description = "Fails on a broken or absolute symlink."
 run = "{{ scripts_dir }}/check-symlinks.sh"

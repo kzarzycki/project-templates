@@ -41,6 +41,15 @@ repos:
     hooks:
       - id: zizmor
 
+  # ghalint has no pre-commit repo: a local hook runs the mise-installed binary.
+  - repo: local
+    hooks:
+      - id: ghalint
+        name: ghalint
+        entry: ghalint run
+        language: system
+        files: '^\.github/workflows/[^/]+\.ya?ml$'
+
   # Reject staged symlinks whose target doesn't resolve.
   - repo: local
     hooks:

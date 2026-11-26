@@ -9,6 +9,7 @@
   plan:
     if: {% raw %}${{ {% endraw %}{{ repository_guard }}{% raw %}!github.event.pull_request.draft }}{% endraw %}
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       actions: read # to find the merge queue's run of a push's commit
@@ -45,6 +46,8 @@
     runs-on: {{ part_runner | default('ubuntu-latest') }}
     # ponytail: one timeout for every part, the longest's; a per-part limit would be a second definition of the part.
     timeout-minutes: 45
+    permissions:
+      contents: read
     env:
       UV_LOCKED: "1" # a uv sync fails on a stale uv.lock instead of rewriting it
     strategy:
@@ -72,6 +75,8 @@
     if: {% raw %}${{ {% endraw %}{{ repository_guard }}{% raw %}needs.plan.outputs.narrowed == 'true' }}{% endraw %}
     runs-on: {{ part_runner | default('ubuntu-latest') }}
     timeout-minutes: 45
+    permissions:
+      contents: read
     env:
       UV_LOCKED: "1" # a uv sync fails on a stale uv.lock instead of rewriting it
     steps:
@@ -97,6 +102,7 @@
     needs: check
     if: {% raw %}${{ {% endraw %}{{ repository_guard }}{% raw %}always() && github.event_name == 'schedule' && needs.check.result == 'failure' }}{% endraw %}
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       actions: read # to find the last green nightly
@@ -129,6 +135,7 @@
     # Always, so the required check reports even when the plan or a part failed or was cancelled.
     if: {% raw %}${{ {% endraw %}{{ repository_guard }}{% raw %}always() && !github.event.pull_request.draft }}{% endraw %}
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       actions: read # to name the failed parts
