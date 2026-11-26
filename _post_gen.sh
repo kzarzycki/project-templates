@@ -33,6 +33,10 @@ else
   log "git already initialised — adoption mode"
 fi
 
+# 1b. the engineering pack's first pin: the template names the pack with no ref, so write the newest
+#     stable release tag once, here; the project owns it from then on (_pack_pin.sh says how).
+bash "$(dirname "$0")/_pack_pin.sh" first || true
+
 # 2. pinned tools. The dependencies, the hooks (each a mise task) and the first commit
 #    run through the toolchain mise pins, so install it first. Without mise, tools are
 #    whatever is on PATH.

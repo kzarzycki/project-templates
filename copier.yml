@@ -162,12 +162,6 @@ engineering_capability_source:
   when: false
   default: "kzarzycki/agent-skills/engineering"
 
-engineering_capability_ref:
-  type: str
-  when: false
-  # An exact release tag, which Renovate (renovate.json) moves to each new release.
-  default: "engineering-v0.35.10"
-
 # An unasked question keeps its default, so the loop is on only when every
 # question it depends on was answered yes.
 loop_enabled:
@@ -180,6 +174,7 @@ _exclude:
   - "__pycache__"
   - "copier.yml"
   - "_post_gen.sh"
+  - "_pack_pin.sh"
   - "{% if license == 'none' %}LICENSE{% endif %}"
   - "{% if not include_mise %}mise.toml{% endif %}"
   - "{% if not (include_mise and include_agent_layer) %}apm.yml{% endif %}"
@@ -206,6 +201,15 @@ _skip_if_exists:
   - "docs/agents/*.md"
   - "{% if agent_layer_mode == 'vendored' %}CLAUDE.md{% endif %}"
   - "{% if agent_layer_mode == 'vendored' %}AGENTS.md{% endif %}"
+
+# Projects generated before the template stopped setting the pack's version keep their ref across the
+# update (the script says how); a project at or past this version never runs them.
+_migrations:
+  - version: "0.6.0"
+    before:
+      - "bash '{{ _copier_conf.src_path }}/_pack_pin.sh' strip kzarzycki/agent-skills/engineering"
+    after:
+      - "bash '{{ _copier_conf.src_path }}/_pack_pin.sh' restore kzarzycki/agent-skills/engineering"
 
 _tasks:
   - "bash '{{ _copier_conf.src_path }}/_post_gen.sh' '{{ project_type }}' '{{ language | default('', true) }}'"

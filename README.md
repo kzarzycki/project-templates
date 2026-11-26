@@ -728,6 +728,30 @@ user token opens starts CI. With the agent layer, the project also gets
 Mend's hosted Renovate does not fit: its free tier runs no scripts and no
 `postUpgradeTasks`, so template and pack updates would fail or leave the lock stale.
 
+### The pack's version and release line (agent layer)
+
+The template sets no version of the engineering pack, so `copier update` never moves it. Both
+choices are the project's:
+
+- **The version.** `apm.yml` names the pack as `kzarzycki/agent-skills/engineering`, and apm
+  resolves a dependency with no `ref:` to the pack's default branch. So the setup step
+  (`_post_gen.sh`, `_pack_pin.sh first`) writes the newest stable `engineering-vX.Y.Z` tag
+  under it once, at generation, found with `git ls-remote --tags` on the pack's repo (a `-next`
+  tag never counts). Offline it changes nothing and says so: add `ref: engineering-vX.Y.Z`
+  by hand, or the pack installs from the default branch. From then on the ref is the project's
+  line in `apm.yml`; Renovate moves it, and so can you.
+- **The release line.** `renovate.json` extends the pack's preset,
+  `github>kzarzycki/agent-skills//renovate/stable`, which holds the manager that finds the pin and
+  follows stable tags only. To follow the `-next` tags too, change that one line to
+  `.../renovate/next`.
+
+`copier update` carries template changes into `apm.yml` and `renovate.json` and keeps those
+two lines. A project generated before this change keeps its ref too: the update's migration
+(`_pack_pin.sh strip`, then `restore`) takes the ref out of `apm.yml` for the merge and puts it
+back, read from the file as last committed. It handles the plain form the template wrote, a `git:`
+line with `ref:` under it; a pack entry edited beyond that is merged like any other file, so
+check `apm.yml` for conflict markers after the update.
+
 ### Weekly run in GitHub Actions (agent layer)
 
 A project with the agent layer gets `.github/workflows/renovate.yml`: every Monday at 04:23 UTC
