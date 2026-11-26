@@ -228,6 +228,25 @@ LEAVES = (
 )
 
 
+_PACK: list[Path] = []
+
+
+def pinned_pack() -> Path:
+    """The agent-skills repo at the engineering tag copier.yml pins, fetched once per run; the test is skipped without network."""
+    if not _PACK:
+        tag = re.search(r'default: "(engineering-v[\d.]+)"', (ROOT / "copier.yml").read_text())[1]
+        checkout = Path(tempfile.mkdtemp(prefix="pack-"))
+        atexit.register(shutil.rmtree, checkout, True)
+        fetched = subprocess.run(
+            ["git", "clone", "-q", "--depth", "1", "--branch", tag, "https://github.com/kzarzycki/agent-skills", str(checkout / "pack")],
+            capture_output=True, text=True,
+        )
+        if fetched.returncode:
+            raise unittest.SkipTest(f"cannot fetch {tag}: {fetched.stderr.strip()}")
+        _PACK.append(checkout / "pack")
+    return _PACK[0]
+
+
 class AgentLayerGenerationTest(unittest.TestCase):
     def test_public_docs_explain_agent_layer_scaffold_and_activation(self) -> None:
         readme = (ROOT / "README.md").read_text()
@@ -1648,6 +1667,26 @@ class AgentLayerGenerationTest(unittest.TestCase):
                     cwd=project, capture_output=True, text=True,
                 )
                 self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+
+    def test_every_pack_script_a_rendered_project_calls_exists_at_the_pinned_pack(self) -> None:
+        # A rendered project's files call pack scripts at .agents/skills/<skill>/scripts/<file>; apm installs each
+        # plugin's skills there, so the script must exist in some plugin of the pack at the pinned tag.
+        pack = pinned_pack()
+        called = re.compile(r"\.agents/skills/([\w-]+)/scripts/([\w.-]+)")
+        for project_type, answers in LEAVES:
+            with self.subTest(project_type=project_type, **answers):
+                project = render(project_type, **answers)
+                found: set[tuple[str, str]] = set()
+                for path in project.rglob("*"):
+                    if path.is_file() and ".git" not in path.relative_to(project).parts:
+                        found.update(called.findall(path.read_text(errors="ignore")))
+                missing = sorted(
+                    f"{skill}/scripts/{script}" for skill, script in found
+                    if not list(pack.glob(f"*/skills/{skill}/scripts/{script}"))
+                )
+                self.assertEqual([], missing)
+                if project_type == "software/python":
+                    self.assertIn(("gatekeeper", "gatekeeper.py"), found)  # the scan sees the gate's calls
 
     def test_regeneration_keeps_filled_docs_agents_files(self) -> None:
         project = render()
