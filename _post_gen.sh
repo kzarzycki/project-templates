@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Post-generation tasks, run by copier from the destination dir. Idempotent:
 # every step guards itself so `copier update` re-runs it harmlessly.
-#   $1 = project_type (e.g. software/python)   $2 = language (python|node|"")
+#   $1 = project_type (e.g. software/python)   $2 = language (python|node|"")   $3 = copy|update
 set -euo pipefail
 
 project_type="${1:-}"
 language="${2:-}"
+operation="${3:-copy}"
 log() { printf '  → %s\n' "$1"; }
 
 # Resolve the toolchain: fixed-language leaves imply it; ai/mcp carries $language.
@@ -34,8 +35,9 @@ else
 fi
 
 # 1b. the engineering pack's first pin: the template names the pack with no ref, so write the newest
-#     stable release tag once, here; the project owns it from then on (_pack_pin.sh says how).
-bash "$(dirname "$0")/_pack_pin.sh" first || true
+#     stable release tag once, here, at generation (never on update); the project owns it from then on
+#     (_pack_pin.sh says how).
+[ "$operation" = update ] || bash "$(dirname "$0")/_pack_pin.sh" first || true
 
 # 2. pinned tools. The dependencies, the hooks (each a mise task) and the first commit
 #    run through the toolchain mise pins, so install it first. Without mise, tools are

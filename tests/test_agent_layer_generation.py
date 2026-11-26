@@ -2323,7 +2323,7 @@ class PackVersionOwnershipTest(unittest.TestCase):
     def test_a_project_generated_from_the_template_that_set_the_ref_keeps_its_ref_through_update(self) -> None:
         scratch = self.scratch()
         # Today's template: the hidden answer, written into apm.yml, and the regex in renovate.json.
-        before = template_repo(scratch, "template", "v0.5.0", {
+        before = template_repo(scratch, "template", "v0.14.2", {
             "copier.yml": ("# An unasked question keeps its default", 'engineering_capability_ref:\n  type: str\n  when: false\n  default: "engineering-v0.35.10"\n\n# An unasked question keeps its default'),
             "templates/_base/_apm_yml.part": ("  apm:\n\n    - {{ engineering_capability_source }}\n\n{% else %}", "  apm:\n{% if engineering_capability_ref %}\n    - git: {{ engineering_capability_source }}\n      ref: {{ engineering_capability_ref }}\n{% else %}\n    - {{ engineering_capability_source }}\n{% endif %}\n{% else %}"),
         })
@@ -2340,8 +2340,8 @@ class PackVersionOwnershipTest(unittest.TestCase):
         for path in ("copier.yml", "templates/_base/_apm_yml.part"):
             shutil.copy(ROOT / path, before / path)
         subprocess.run(["git", "add", "-A"], cwd=before, check=True)
-        subprocess.run([*GIT, "commit", "--no-verify", "-qm", "v0.6.0"], cwd=before, check=True)
-        subprocess.run(["git", "tag", "v0.6.0"], cwd=before, check=True)
+        subprocess.run([*GIT, "commit", "--no-verify", "-qm", "v0.15.0"], cwd=before, check=True)
+        subprocess.run(["git", "tag", "v0.15.0"], cwd=before, check=True)
         update_project(project)
 
         text = manifest.read_text()
@@ -2349,7 +2349,7 @@ class PackVersionOwnershipTest(unittest.TestCase):
                          yaml.safe_load(text)["dependencies"]["apm"])
         self.assertIn("# project note", text)
         self.assertNotIn("<<<<<<<", text)
-        self.assertIn("_commit: v0.6.0", (project / ".copier-answers.yml").read_text())
+        self.assertIn("_commit: v0.15.0", (project / ".copier-answers.yml").read_text())
         # A second update has nothing to migrate and moves nothing.
         subprocess.run(["git", "add", "-A"], cwd=project, check=True)
         subprocess.run([*GIT, "commit", "--no-verify", "-qm", "update"], cwd=project, check=True)
@@ -2399,7 +2399,10 @@ class PackVersionOwnershipTest(unittest.TestCase):
         self.assertIn("add 'ref: engineering-vX.Y.Z'", result.stderr)
 
     def test_post_gen_runs_the_first_pin(self) -> None:
-        self.assertIn('_pack_pin.sh" first', (ROOT / "_post_gen.sh").read_text())
+        post_gen = (ROOT / "_post_gen.sh").read_text()
+        self.assertIn('_pack_pin.sh" first', post_gen)
+        self.assertIn('[ "$operation" = update ] ||', post_gen)  # a ref-less pack on update stays the project's choice
+        self.assertIn("{{ _copier_operation }}", (ROOT / "copier.yml").read_text())
 
 
 if __name__ == "__main__":
