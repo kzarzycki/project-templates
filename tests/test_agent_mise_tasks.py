@@ -750,7 +750,7 @@ class AgentMiseTasksTest(unittest.TestCase):
         )
         gh.chmod(0o755)
         # the pack's labels.py, which setup:github only calls: it logs its arguments
-        labels = self.project / ".agents/skills/engineering-loop/scripts/labels.py"
+        labels = self.project / ".agents/skills/github-tracker/scripts/labels.py"
         labels.parent.mkdir(parents=True, exist_ok=True)
         labels.write_text(
             "import os, sys\n"
@@ -809,7 +809,7 @@ class AgentMiseTasksTest(unittest.TestCase):
         self.assertIn("cannot be combined", refused.stderr)
 
         # without the installed skill it stops before any write
-        (self.project / ".agents/skills/engineering-loop/scripts/labels.py").unlink()
+        (self.project / ".agents/skills/github-tracker/scripts/labels.py").unlink()
         missing = self.run_task("setup:github")
         self.assertEqual(1, missing.returncode)
         self.assertIn("run mise run agent:sync", missing.stderr)
@@ -1160,7 +1160,7 @@ class AgentMiseTasksTest(unittest.TestCase):
 
     def approvals_run(self, code: int, **env: str) -> tuple[subprocess.CompletedProcess[str], dict]:
         """ci:approvals against a fake approvals.py that prints one line and exits with code."""
-        script = self.project / ".agents/skills/engineering-loop/scripts/approvals.py"
+        script = self.project / ".agents/skills/gatekeeper/scripts/gatekeeper.py"
         script.parent.mkdir(parents=True, exist_ok=True)
         script.write_text(f"import sys\nprint('approvals said {code}')\nsys.exit({code})\n")
         state = self.bin / "github.json"
@@ -1200,7 +1200,7 @@ class AgentMiseTasksTest(unittest.TestCase):
         self.assertNotIn("gh pr merge", (self.project / "mise.toml").read_text())
 
     def test_loop_land_runs_approvals_land_on_the_pr_and_keeps_its_exit(self) -> None:
-        script = self.project / ".agents/skills/engineering-loop/scripts/approvals.py"
+        script = self.project / ".agents/skills/gatekeeper/scripts/gatekeeper.py"
         missing = self.run_task("loop:land", "7")
         self.assertEqual(1, missing.returncode)
         self.assertIn("run mise run agent:sync", missing.stderr)

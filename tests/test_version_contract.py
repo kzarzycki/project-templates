@@ -20,6 +20,22 @@ class VersionContractTest(unittest.TestCase):
 
         self.assertEqual("0.5.0", plugin["version"])
 
+    def test_pack_pin_is_the_release_that_moved_the_gatekeeper_scripts(self) -> None:
+        # engineering-v0.35.10 ships the gatekeeper and loop packages the template's
+        # mise tasks and CI call by their current paths, not the old forwarders.
+        copier = self.text("copier.yml")
+
+        self.assertIn('default: "engineering-v0.35.10"', copier)
+
+    def test_templates_call_no_forwarder_path(self) -> None:
+        # The engineering-loop forwarders go away with the next major; only nightly.py lives there.
+        forwarders = re.compile(
+            r"engineering-loop/scripts/(?!nightly\.py)\w+\.py"
+        )
+        for path in [*(ROOT / "templates").rglob("*"), ROOT / "README.md"]:
+            if path.is_file():
+                self.assertIsNone(forwarders.search(path.read_text(errors="ignore")), path)
+
     def test_default_runtimes_use_current_stable_or_lts_lines(self) -> None:
         copier = self.text("copier.yml")
 

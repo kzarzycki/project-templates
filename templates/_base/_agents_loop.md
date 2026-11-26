@@ -110,7 +110,7 @@ a workflow update keeps waiting for the owner until `.github/**` narrows to
 what it means to keep, such as `.github/rulesets/**`.
 {% if not include_ci %}
 `ci: false` says this project has no CI: the merge proof is the local check
-`uv run .agents/skills/engineering-loop/scripts/approvals.py local-ci <pr>`
+`uv run .agents/skills/gatekeeper/scripts/gatekeeper.py record checks <pr>`
 records on the head. A check that reads environment variables names them in
 `local_ci_env`, one per line.
 {% endif %}

@@ -368,7 +368,7 @@ no workflow but `approvals.yml` and `approvals_relay.yml` are written, so the re
 they are. The ruleset requires only `loop:approvals`, and the seeded
 `docs/agents/loop.md` has `ci: false` under `loop` in its settings. The merge approval then stops looking for
 a green `check`. Its proof instead is
-`uv run .agents/skills/engineering-loop/scripts/approvals.py local-ci <pr>`, run
+`uv run .agents/skills/gatekeeper/scripts/gatekeeper.py record checks <pr>`, run
 on a clean checkout at the PR's head commit. It runs `mise run check:all` there and,
 when the check passes without changing the tree, posts `Local check passed` with
 that head on the PR. So anything the project's CI enforced has to be in
