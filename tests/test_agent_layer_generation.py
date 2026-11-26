@@ -1589,7 +1589,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         project = render(existing={".github/workflows/ship.yml": ship}, include_ci=False)
 
         self.assertEqual(ship, (project / ".github/workflows/ship.yml").read_bytes())
-        self.assertEqual(["approvals.yml", "approvals_relay.yml", "ship.yml"], sorted(path.name for path in (project / ".github/workflows").iterdir()))
+        self.assertEqual(["approvals.yml", "approvals_relay.yml", "renovate.yml", "ship.yml"], sorted(path.name for path in (project / ".github/workflows").iterdir()))
         self.assertFalse((project / ".github/check-paths.yml").exists())
         self.assertTrue((project / "renovate.json").exists())  # not CI
         tasks = tomllib.loads((project / "mise.toml").read_text())["tasks"]
