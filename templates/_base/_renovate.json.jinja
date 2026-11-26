@@ -9,19 +9,20 @@
     "schedule": ["* 0-5 * * 1"],
     "automerge": true
   },
+{%- set pack_next = (pack_channel | default("stable")) == "next" %}
 {% if include_agent_layer %}
   "customManagers": [
     {
       "customType": "regex",
-      "description": "apm.yml git packages pinned to a release tag <package>-vX.Y.Z",
+      "description": "apm.yml git packages pinned to a release tag <package>-vX.Y.Z{% if pack_next %} or <package>-vX.Y.Z-next{% endif %}",
       "managerFilePatterns": ["/(^|/)apm\\.yml$/"],
       "matchStrings": [
-        "-\\s+git:\\s*(?<packageName>[\\w.-]+/[\\w.-]+)/(?<package>[\\w.-]+)\\s*\\n\\s*ref:\\s*[\\w.-]+?-v(?<currentValue>\\d+\\.\\d+\\.\\d+)"
+        "-\\s+git:\\s*(?<packageName>[\\w.-]+/[\\w.-]+)/(?<package>[\\w.-]+)\\s*\\n\\s*ref:\\s*[\\w.-]+?-v(?<currentValue>\\d+\\.\\d+\\.\\d+{% if pack_next %}(?:-next)?{% endif %})"
       ],
       "depNameTemplate": "{{ '{{{packageName}}}/{{{package}}}' }}",
       "datasourceTemplate": "github-tags",
       "versioningTemplate": "semver",
-      "extractVersionTemplate": "{{ '^{{{package}}}-v(?<version>\\\\d+\\\\.\\\\d+\\\\.\\\\d+)$' }}"
+      "extractVersionTemplate": "{{ '^{{{package}}}-v(?<version>\\\\d+\\\\.\\\\d+\\\\.\\\\d+' ~ ('(?:-next)?' if pack_next else '') ~ ')$' }}"
     }
   ],
 {% endif %}
@@ -59,6 +60,13 @@
       }{% endif %}
     },
     {%- endfor %}
+{%- if include_agent_layer and pack_next %}
+    {
+      "description": "Next channel: Renovate skips a prerelease (-next) for a pin that is not one; allow it for the pack pins. Semver still ranks X.Y.Z above X.Y.Z-next.",
+      "matchManagers": ["custom.regex"],
+      "ignoreUnstable": false
+    },
+{%- endif %}
     {
       "description": "mise pins conda tools by bare name and installs them from conda-forge; anaconda.org names a package by channel.",
       "matchManagers": ["mise"],

@@ -728,6 +728,23 @@ user token opens starts CI. With the agent layer, the project also gets
 Mend's hosted Renovate does not fit: its free tier runs no scripts and no
 `postUpgradeTasks`, so template and pack updates would fail or leave the lock stale.
 
+### Pack release line (agent layer)
+
+With the agent layer, `pack_channel` picks which of the engineering pack's two release lines
+Renovate moves the `apm.yml` pin along:
+
+- `stable` (default): `<package>-vX.Y.Z` tags, which the pack promotes from a commit once a full
+  nightly run has passed on it. The rendered `renovate.json` is the one earlier releases wrote.
+- `next`: also `<package>-vX.Y.Z-next` tags, which the pack cuts after every merge that passed its
+  merge's test selection. They are **not** covered by the full nightly suite, so a project on `next`
+  gets fixes within minutes of their merge and takes the risk a stable tag has already cleared. A
+  stable tag of the same or a newer number still wins (`X.Y.Z` ranks above `X.Y.Z-next`), so a `next`
+  project also takes each promotion. The apm pin keeps moving only with the pack pins, on either line.
+
+Switch an existing project with `copier update --data pack_channel=next` (or `stable`); it re-renders
+`renovate.json`, and the next weekly run moves the pin. Moving back to `stable` leaves a pin that is
+already a `-next` tag until the next stable tag is newer than it.
+
 ### Weekly run in GitHub Actions (agent layer)
 
 A project with the agent layer gets `.github/workflows/renovate.yml`: every Monday at 04:23 UTC

@@ -2169,6 +2169,41 @@ class RenovateGenerationTest(unittest.TestCase):
         self.assertEqual(("kzarzycki/agent-skills", "engineering", PACK_REF.removeprefix("engineering-v")),
                          (found["packageName"], found["package"], found["currentValue"]))
 
+    def test_stable_channel_renders_the_renovate_json_it_always_did(self) -> None:
+        default = (render(include_mise=True, include_agent_layer=True) / "renovate.json").read_bytes()
+        project = render(include_mise=True, include_agent_layer=True)
+        self.assertEqual("stable", yaml.safe_load((project / ".copier-answers.yml").read_text())["pack_channel"])
+        self.assertEqual(default, (project / "renovate.json").read_bytes())
+        manager = json.loads(default)["customManagers"][0]
+        self.assertTrue(manager["matchStrings"][0].endswith(r"-v(?<currentValue>\d+\.\d+\.\d+)"))
+        self.assertEqual("^{{{package}}}-v(?<version>\\d+\\.\\d+\\.\\d+)$", manager["extractVersionTemplate"])
+        self.assertNotIn("next", json.dumps(manager))
+
+    def test_next_channel_also_matches_next_tags_and_is_the_only_change(self) -> None:
+        stable = (render(include_mise=True, include_agent_layer=True) / "renovate.json").read_text()
+        project = render(include_mise=True, include_agent_layer=True, pack_channel="next")
+        text = (project / "renovate.json").read_text()
+        manager = json.loads(text)["customManagers"][0]
+        self.assertEqual("^{{{package}}}-v(?<version>\\d+\\.\\d+\\.\\d+(?:-next)?)$", manager["extractVersionTemplate"])
+        pattern = re.compile(manager["matchStrings"][0].replace("(?<", "(?P<"))
+        for ref, value in ((PACK_REF, PACK_REF.removeprefix("engineering-v")),
+                           ("engineering-v1.2.3-next", "1.2.3-next")):
+            found = pattern.search(f"- git: kzarzycki/agent-skills/engineering\n  ref: {ref}")
+            self.assertEqual(value, found["currentValue"], ref)
+        # Renovate skips a prerelease for a pin that is not one, so the next channel lifts that for the pack pins only.
+        config, base = json.loads(text), json.loads(stable)
+        [lift] = [r for r in config["packageRules"] if r.get("ignoreUnstable") is False]
+        self.assertEqual(["custom.regex"], lift["matchManagers"])
+        self.assertEqual("semver", manager["versioningTemplate"])
+        self.assertEqual([r for r in config["packageRules"] if r is not lift], base["packageRules"])
+        self.assertNotIn("ignoreUnstable", stable)
+
+    def test_the_channel_is_asked_only_with_the_agent_layer(self) -> None:
+        answers = lambda **kw: yaml.safe_load((render(**kw) / ".copier-answers.yml").read_text())
+        self.assertEqual("next", answers(include_mise=True, include_agent_layer=True, pack_channel="next")["pack_channel"])
+        self.assertNotIn("pack_channel", answers(include_mise=True, include_agent_layer=False, pack_channel="next"))
+        self.assertNotIn("(?:-next)?", (render(include_mise=True, include_agent_layer=False, pack_channel="next") / "renovate.json").read_text())
+
     def test_without_the_agent_layer_renovate_has_no_apm_manager_or_task(self) -> None:
         config = json.loads((render(include_mise=True, include_agent_layer=False) / "renovate.json").read_text())
         self.assertNotIn("customManagers", config)

@@ -72,6 +72,15 @@ agent_layer_mode:
     "compiled: AGENTS.md compiled from .apm/instructions, checked by check:agents": compiled
     "vendored: hand-written CLAUDE.md, committed skills, agent:intake for local edits": vendored
 
+pack_channel:
+  type: str
+  default: stable
+  when: "{{ include_mise and include_agent_layer }}"
+  help: Which release line of the engineering pack should Renovate move the pin along?
+  choices:
+    "stable: <package>-vX.Y.Z tags, promoted once the pack's full nightly run passes": stable
+    "next: also <package>-vX.Y.Z-next tags, cut after every tested merge (tested by the merge's test selection only)": next
+
 include_engineering_workflow:
   type: bool
   default: true
