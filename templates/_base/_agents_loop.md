@@ -68,18 +68,24 @@ a workflow update keeps waiting for the owner until `.github/**` narrows to
 what it means to keep, such as `.github/rulesets/**`.
 {% if not include_ci %}
 `ci: false` says this project has no CI: the merge proof is the local check
-`uv run .agents/skills/engineering-loop/scripts/approvals.py local-ci <pr>`
+`uv run .agents/skills/gatekeeper/scripts/gatekeeper.py record checks <pr>`
 records on the head. A check that reads environment variables names them in
 `local_ci_env`, one per line.
 {% endif %}
 {% if include_ci %}
+{% set seeded = project_type in ['software/python', 'software/node', 'software/java', 'ai/mcp'] %}
 CI narrows a pull request's and a push to main's check when this file has an
-`Affected tests: <command>` line (your selector, which this seed leaves out): the
-`affected` job runs `approvals.py affected-tests` in place of the check: parts,
-and a nightly run of the full parts opens an issue naming the merges since the
-last green when it ends red. The line `Gate: full` returns every gate to the
+`Affected tests: <command>` line: the `affected` job runs `approvals.py affected-tests`
+in place of the check: parts, and a nightly run of the full parts opens an issue naming
+the merges since the last green when it ends red. {% if seeded %}This seed's line names `test:affected`, which
+runs the whole-repo lints, then the tests the change affects against `GATE_BASE`{% if project_type == 'software/node' or (project_type == 'ai/mcp' and language == 'node') %}
+(vitest `--changed`){% else %}; this language has no base-relative selector, so it runs
+the whole unit suite until the pack's selector (kzarzycki/agent-skills#2217) replaces it{% endif %}.
+{% else %}Write your selector's command there; this project has no seeded line. {% endif %}The line `Gate: full` returns every gate to the
 full check, so a project with a weak selector can keep it while the selector is fixed.
-{% endif %}
+{% if seeded %}
+Affected tests: mise run test:affected
+{% endif %}{% endif %}
 ## Risk criteria
 
 Optional. What makes a change risky here beyond the `risk` rule, in words,
