@@ -1,0 +1,11 @@
+name: loop-ci
+on: [pull_request]
+jobs:
+  affected:
+    runs-on: ubuntu-latest
+    steps: [{run: mise run ci:narrowed}]
+  loop-check:
+    needs: [affected]
+    if: always()
+    runs-on: ubuntu-latest
+    steps: [{run: echo gate}]

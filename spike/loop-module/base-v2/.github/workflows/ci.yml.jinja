@@ -1,0 +1,10 @@
+name: ci
+on: [pull_request]
+jobs:
+  check:
+    needs: [plan]
+    runs-on: ubuntu-latest
+    steps: [{run: mise run check}]
+  plan:
+    runs-on: ubuntu-latest
+    steps: [{run: echo plan}]

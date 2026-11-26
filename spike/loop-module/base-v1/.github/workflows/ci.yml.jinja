@@ -1,0 +1,15 @@
+name: ci
+on: [pull_request]
+jobs:
+  check:
+    needs: [plan{% if engineering_loop %}, affected{% endif %}]
+    runs-on: ubuntu-latest
+    steps: [{run: mise run check}]
+{% if engineering_loop %}
+  affected:
+    runs-on: ubuntu-latest
+    steps: [{run: mise run ci:narrowed}]
+{% endif %}
+  plan:
+    runs-on: ubuntu-latest
+    steps: [{run: echo plan}]

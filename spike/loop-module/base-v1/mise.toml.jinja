@@ -1,0 +1,6 @@
+[tasks.check]
+run = "echo base check"
+{% if engineering_loop %}
+[tasks."ci:narrowed"]
+run = "echo loop narrowed"
+{% endif %}
