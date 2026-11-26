@@ -354,21 +354,22 @@ class LintFloorTests(unittest.TestCase):
     def test_files_or_repo_lints_only_files_changed_since_the_base(self) -> None:
         project = render("software/python")
         script = project / "scripts/files-or-repo"
-        env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+        # No user config: an init.templateDir hook must not run `uv` and leave a uv.lock in the repo under test.
+        env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
 
         def git(*args: str) -> None:
             subprocess.run(["git", *args], cwd=project, env=env, check=True, capture_output=True)
 
-        git("init", "-q", "-b", "main")
+        git("-c", "init.templateDir=", "init", "-q", "-b", "main")
         (project / "old.txt").write_text("old\n")
         (project / "gone.txt").write_text("gone\n")
         git("add", "-A")
-        git("commit", "-qm", "base")
+        git("commit", "-q", "--no-verify", "-m", "base")
         git("checkout", "-qb", "topic")
         (project / "new.txt").write_text("new\n")
         git("rm", "-q", "gone.txt")
         git("add", "-A")
-        git("commit", "-qm", "change")
+        git("commit", "-q", "--no-verify", "-m", "change")
 
         def seen(base: str | None) -> set[str]:
             out = subprocess.run(
