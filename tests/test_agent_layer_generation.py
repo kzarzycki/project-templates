@@ -57,6 +57,16 @@ def _lookup(github: dict, path: str) -> object:
     return value
 
 
+def mise_config(project: Path) -> dict:
+    """The project's mise config: mise.toml, plus the tasks of each .mise/conf.d file (mise reads that folder too)."""
+    config = tomllib.loads((project / "mise.toml").read_text())
+    for extra in sorted((project / ".mise" / "conf.d").glob("*.toml")):
+        for name, task in tomllib.loads(extra.read_text()).get("tasks", {}).items():
+            assert name not in config.get("tasks", {}), f"{extra.name} redefines {name}, which mise.toml outranks"
+            config.setdefault("tasks", {})[name] = task
+    return config
+
+
 def render(project_type: str = "software/python", existing: dict[str, bytes] | None = None, **answers: object) -> Path:
     scratch = Path(tempfile.mkdtemp(prefix="project-template-test-"))
     atexit.register(shutil.rmtree, scratch, True)
@@ -399,7 +409,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertIn("test -f apm.yml", workflow)
         self.assertIn("test -f fnox.toml", workflow)
         self.assertIn("test ! -e .agents-toolkit", workflow)
-        self.assertIn("engineering_loop=true", workflow)
+        self.assertIn("loop=true", workflow)
         self.assertIn("grep -q '^\\[tasks.check\\]$' mise.toml", workflow)
         self.assertIn("run: mise run check:all", workflow)
         self.assertIn("run: mise run ci:parts", workflow)
@@ -450,7 +460,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertEqual(["kzarzycki/agent-skills/engineering"], yaml.safe_load(apm)["dependencies"]["apm"])
         self.assertIn("mcp: []", apm)
 
-        mise = tomllib.loads((project / "mise.toml").read_text())
+        mise = mise_config(project)
         self.assertEqual("0.33.0", mise["tools"].get("github:microsoft/apm"))
         self.assertEqual("1.30.0", mise["tools"]["fnox"])
         self.assertEqual(
@@ -503,7 +513,9 @@ class AgentLayerGenerationTest(unittest.TestCase):
             ["## Summary", "## Evidence", "## Merge Danger"],
             [line for line in template.splitlines() if line.startswith("## ")],
         )
-        self.assertIn("`loop:approvals` rejects a PR without this section.", template)
+        self.assertNotIn("loop:approvals", template)  # that sentence is in the loop's own instructions
+        instructions = (project / ".apm/instructions/loop.instructions.md").read_text()
+        self.assertIn("`loop:approvals` rejects a PR whose description has no `## Evidence` section.", instructions)
 
     def test_engineering_workflow_can_be_disabled(self) -> None:
         project = render(
@@ -1168,7 +1180,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
                 project = render(project_type, agent_layer_mode="vendored", **answers)
 
                 self.assertFalse((project / ".apm").exists())
-                tasks = tomllib.loads((project / "mise.toml").read_text())["tasks"]
+                tasks = mise_config(project)["tasks"]
                 self.assertNotIn("check:agents", tasks)
                 self.assertIn("agent:intake", tasks)
                 self.assertNotIn("apm compile", tasks["agent:sync"]["run"])
@@ -1176,16 +1188,17 @@ class AgentLayerGenerationTest(unittest.TestCase):
                 self.assertIn("`CLAUDE.md`", (project / "AGENTS.md").read_text())
                 self.assertIn(
                     "Every change that lands as a PR runs the `engineering-loop` skill, unless your personal instructions say `Engineering loop: off`",
-                    (project / "CLAUDE.md").read_text(),
+                    (project / "docs/agents/loop.md").read_text(),
                 )
+                self.assertNotIn("engineering-loop", (project / "CLAUDE.md").read_text())
                 self.assertIn(".agent-intake/", (project / ".gitignore").read_text().splitlines())
-                managed = re.compile(tomllib.loads((project / "mise.toml").read_text())["env"]["APM_MANAGED"])
+                managed = re.compile(mise_config(project)["env"]["APM_MANAGED"])
                 for path in (".agents/skills/wayfinder/SKILL.md", ".claude/skills/wayfinder/SKILL.md", ".codex/config.toml"):
                     self.assertRegex(path, managed)
                 for path in ("CLAUDE.md", "AGENTS.md", ".github/instructions/project.instructions.md"):
                     self.assertNotRegex(path, managed)
 
-        no_loop = render(agent_layer_mode="vendored", engineering_loop=False)
+        no_loop = render(agent_layer_mode="vendored", loop=False)
         self.assertNotIn("engineering-loop", (no_loop / "CLAUDE.md").read_text())
         compiled = render()
         self.assertFalse((compiled / "AGENTS.md").exists())  # apm compile writes it
@@ -1237,14 +1250,16 @@ class AgentLayerGenerationTest(unittest.TestCase):
     def test_loop_render_seeds_approvals_ci_skeletons_and_loop_line(self) -> None:
         project = render()
 
-        mise = tomllib.loads((project / "mise.toml").read_text())
+        mise = mise_config(project)
         tasks = mise["tasks"]
         self.assertEqual(["check:lint", "check:unit"], tasks["check"]["depends"])
         self.assertEqual(["check:*"], tasks["check:all"]["depends"])
         self.assertIn("mise run --skip-tools agent:sync -- --frozen", tasks["check:agents"]["run"])
         self.assertEqual("mise run --skip-tools --jobs 1 --continue-on-error 'lint:*'", tasks["check:lint"]["run"])
         workflow = (project / ".github/workflows/ci.yml").read_text()
-        self.assertEqual(["plan", "part", "affected", "nightly-red", "lint", "check"], list(yaml.safe_load(workflow)["jobs"]))
+        self.assertEqual(["plan", "part", "lint", "check"], list(yaml.safe_load(workflow)["jobs"]))
+        loop_jobs = yaml.safe_load((project / ".github/workflows/loop-ci.yml").read_text())["jobs"]
+        self.assertEqual(["narrowed", "affected", "nightly", "nightly-red", "loop-check"], list(loop_jobs))
         self.assertNotIn("pytest", workflow)
         approvals_run = tasks["loop:approvals"]["run"]
         self.assertEqual("gate", tasks["loop:approvals"]["alias"])
@@ -1397,8 +1412,9 @@ class AgentLayerGenerationTest(unittest.TestCase):
             )
         self.assertIn(
             "Every change that lands as a PR runs the `engineering-loop` skill, unless your personal instructions say `Engineering loop: off`",
-            (project / ".apm/instructions/project.instructions.md").read_text(),
+            (project / ".apm/instructions/loop.instructions.md").read_text(),
         )
+        self.assertNotIn("engineering-loop", (project / ".apm/instructions/project.instructions.md").read_text())
 
     def test_every_leaf_lands_through_a_ruleset_requiring_its_own_jobs(self) -> None:
         contract = {
@@ -1417,7 +1433,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
                 # No CODEOWNERS: its automatic review requests notify the owners on every loop PR.
                 self.assertEqual([], [path for path in ("CODEOWNERS", ".github/CODEOWNERS", "docs/CODEOWNERS") if (project / path).exists()])
 
-                tasks = tomllib.loads((project / "mise.toml").read_text())["tasks"]
+                tasks = mise_config(project)["tasks"]
                 self.assertEqual(set(), contract - set(tasks))
                 expected = {**aliases, "test:fast": {"ai/skills": ["test", "validate"], "data/dbt": None}.get(project_type, "test")}
                 self.assertEqual(expected, {name: tasks[name].get("alias") for name in aliases})  # dbt's test is dbt test
@@ -1432,16 +1448,15 @@ class AgentLayerGenerationTest(unittest.TestCase):
                 )
                 self.assertEqual("${{ github.event_name == 'pull_request' }}", ci["concurrency"]["cancel-in-progress"])
                 jobs = ci["jobs"]
-                # `affected` and `nightly-red` are the loop's narrowed run and red-nightly report (test_narrowed_ci).
-                self.assertEqual(["plan", "part", "affected", "nightly-red", "lint", "check"], list(jobs))
-                # Only the parts and the narrowed run run the project's checks; an Apple project's need Xcode.
+                # The narrowed run and the red-nightly report are the loop's own workflow (test_narrowed_ci).
+                self.assertEqual(["plan", "part", "lint", "check"], list(jobs))
+                # Only the parts run the project's checks; an Apple project's need Xcode.
                 runner = "macos-latest" if project_type == "apple/xcode" else "ubuntu-latest"
-                runners = {"plan": "ubuntu-latest", "check": "ubuntu-latest", "nightly-red": "ubuntu-latest",
-                           "part": runner, "affected": runner, "lint": "ubuntu-latest"}
+                runners = {"plan": "ubuntu-latest", "check": "ubuntu-latest", "part": runner, "lint": "ubuntu-latest"}
                 self.assertEqual(runners, {name: job["runs-on"] for name, job in jobs.items()})
                 self.assertEqual("${{ !github.event.pull_request.draft }}", jobs["plan"]["if"])
                 self.assertEqual("${{ always() && !github.event.pull_request.draft }}", jobs["check"]["if"])
-                self.assertEqual(["plan", "part", "affected"], jobs["check"]["needs"])
+                self.assertEqual(["plan", "part"], jobs["check"]["needs"])
                 self.assertEqual("${{ fromJSON(needs.plan.outputs.parts) }}", jobs["part"]["strategy"]["matrix"]["part"])
                 self.assertEqual("${{ matrix.part }}", jobs["part"]["name"])
                 # a stale uv.lock fails the part rather than being rewritten by setup:dev (#29)
@@ -1479,15 +1494,16 @@ class AgentLayerGenerationTest(unittest.TestCase):
                         continue  # holds no token, so it runs no task: a bare echo
                     for job_name, job in yaml.safe_load(workflow.read_text())["jobs"].items():
                         for step in job["steps"]:
-                            if "run" in step:
-                                # The one exception: the pack's own scripts, which the loop's narrowed and nightly steps call.
-                                self.assertRegex(step["run"], r"^(mise run \S+|uv run \.agents/skills/(gatekeeper/scripts/\S+|engineering-loop/scripts/nightly)\.py [^\n]+)$", f"{workflow.name} {job_name}")
+                            if "run" in step and job_name != "loop-check":  # loop-check only reads the results of the jobs it needs
+                                # The exceptions: the pack's own scripts, which the loop's narrowed and nightly steps call,
+                                # and CI's optional ci:narrowed hook, which runs the task only when the project has one.
+                                self.assertRegex(step["run"], r"^(mise run \S+|uv run \.agents/skills/(gatekeeper/scripts/\S+|engineering-loop/scripts/nightly)\.py [^\n]+|if mise tasks ls --no-header \| grep -q '\^ci:narrowed '; then mise run ci:narrowed; else [^\n]+; fi\n)$", f"{workflow.name} {job_name}")
 
                 # The ruleset's two names: CI's aggregate job and the status the approvals step posts.
                 ruleset = json.loads((project / ".github/rulesets/main.json").read_text())
                 rules = {rule["type"]: rule.get("parameters") for rule in ruleset["rules"]}
                 required = [check["context"] for check in rules["required_status_checks"]["required_status_checks"]]
-                self.assertEqual(["check", "lint", "loop:approvals"], required)
+                self.assertEqual(["check", "lint", "loop-check", "loop:approvals"], required)
                 self.assertEqual("check", jobs["check"].get("name", "check"))  # the check run's name, not just the key
                 self.assertEqual(15368, rules["required_status_checks"]["required_status_checks"][0]["integration_id"])  # GitHub Actions
                 self.assertIn("for context in loop:approvals gatekeeper", tasks["ci:approvals"]["run"])
@@ -1571,11 +1587,11 @@ class AgentLayerGenerationTest(unittest.TestCase):
         ci = yaml.safe_load((queue / ".github/workflows/ci.yml").read_text())
         self.assertEqual("${{ github.base_ref || github.event.merge_group.base_sha || github.event.before }}",
                          ci["jobs"]["part"]["steps"][-1]["env"]["BASE_REF"])
-        tasks = tomllib.loads((queue / "mise.toml").read_text())["tasks"]
+        tasks = mise_config(queue)["tasks"]
         self.assertIn('if [ "$EVENT" = merge_group ]', tasks["ci:approvals"]["run"])
         self.assertNotIn("gh pr merge", tasks["ci:approvals"]["run"])
         # Without the loop the question is never asked, and its default leaves CI without a queue trigger.
-        bare = render(engineering_loop=False)
+        bare = render(loop=False)
         self.assertNotIn("merge_group", (bare / ".github/workflows/ci.yml").read_text())
 
     def test_node_coverage_gate_compares_against_the_commit_ci_passes(self) -> None:
@@ -1615,11 +1631,11 @@ class AgentLayerGenerationTest(unittest.TestCase):
                         self.assertNotIn("smoke", (project / name).read_text())
 
     def test_loop_off_renders_no_loop_files(self) -> None:
-        for answers in ({"engineering_loop": False}, {"include_engineering_workflow": False}):
+        for answers in ({"loop": False}, {"include_engineering_workflow": False}):
             with self.subTest(**answers):
                 project = render(**answers)
 
-                tasks = tomllib.loads((project / "mise.toml").read_text())["tasks"]
+                tasks = mise_config(project)["tasks"]
                 self.assertFalse((project / "docs/agents").exists())
                 self.assertEqual(set(), {"loop:approvals", "loop:land", "ci:approvals", "setup:github"} & set(tasks))
                 self.assertFalse((project / ".github/workflows/approvals.yml").exists())
@@ -1638,7 +1654,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertEqual(["approvals.yml", "approvals_relay.yml", "renovate.yml", "ship.yml"], sorted(path.name for path in (project / ".github/workflows").iterdir()))
         self.assertFalse((project / ".github/check-paths.yml").exists())
         self.assertTrue((project / "renovate.json").exists())  # not CI
-        tasks = tomllib.loads((project / "mise.toml").read_text())["tasks"]
+        tasks = mise_config(project)["tasks"]
         self.assertEqual(set(), {"ci:parts", "ci:check"} & set(tasks))
         self.assertIn("ci:approvals", tasks)
 
@@ -1686,7 +1702,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
                 self.assertEqual("approvals-17" if runs else f"approvals-skipped-{name}", group)
 
         # The project's own workflow linters, at its pinned versions, pass the rendered workflow.
-        tools = tomllib.loads((project / "mise.toml").read_text())["tools"]
+        tools = mise_config(project)["tools"]
         for linter in ("actionlint", "zizmor"):
             with self.subTest(linter=linter):
                 result = subprocess.run(
@@ -1767,7 +1783,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
     def test_content_leaf_gate_is_only_mise_run_check(self) -> None:
         project = render("authoring/content")
 
-        mise = tomllib.loads((project / "mise.toml").read_text())
+        mise = mise_config(project)
         self.assertIn("aqua:lycheeverse/lychee", mise["tools"])
         self.assertEqual("lychee --no-progress --extensions md .", mise["tasks"]["test:fast"]["run"])
         self.assertEqual(["test:unit"], mise["tasks"]["check:unit"]["depends"])
@@ -1833,14 +1849,14 @@ class AgentLayerGenerationTest(unittest.TestCase):
         git("worktree", "add", "-q", "-b", "bare-branch", str(other))
         git("add", "-A")
         git("commit", "-q", "--no-verify", "-m", "adopt")
-        setup = tomllib.loads((project / "mise.toml").read_text())["tasks"]["setup:dev"]["run"]
+        setup = mise_config(project)["tasks"]["setup:dev"]["run"]
         subprocess.run(["sh", "-c", setup], cwd=project, env=env, check=True, capture_output=True)
         (other / "note.txt").write_text("x\n")
         git("add", "note.txt", cwd=other)
         committed = subprocess.run(["git", "commit", "-q", "-m", "note"], cwd=other, env=env, capture_output=True, text=True)
         self.assertEqual(0, committed.returncode, committed.stdout + committed.stderr)
         for leaf in ("software/python", "software/node", "software/java", "data/dbt", "ai/skills", "infra/terraform", "apple/xcode"):
-            run = tomllib.loads((render(leaf) / "mise.toml").read_text())["tasks"]["setup:dev"]["run"]
+            run = mise_config(render(leaf))["tasks"]["setup:dev"]["run"]
             self.assertIn("pre-commit install --allow-missing-config --install-hooks", run, leaf)
         self.assertEqual(2, (ROOT / "_post_gen.sh").read_text().count("--allow-missing-config --install-hooks"))
 
@@ -1948,7 +1964,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
             include_fnox=False,
         )
 
-        mise = tomllib.loads((project / "mise.toml").read_text())
+        mise = mise_config(project)
         self.assertEqual("3.14", mise["tools"].get("python"))
 
     def test_task_descriptions_do_not_claim_fnox_when_it_is_disabled(self) -> None:
@@ -1958,7 +1974,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
             include_fnox=False,
         )
 
-        tasks = tomllib.loads((project / "mise.toml").read_text())["tasks"]
+        tasks = mise_config(project)["tasks"]
         self.assertEqual(
             "Converge project-owned coding agent configuration.",
             tasks["agent:sync"]["description"],
@@ -2053,7 +2069,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
         self.assertNotIn("gate_script", (render("software/python") / ".copier-answers.yml").read_text())
         project = render("apple/xcode", gate_script="tools/gate.sh")
         self.assertIn("gate_script: tools/gate.sh", (project / ".copier-answers.yml").read_text())
-        self.assertEqual("./tools/gate.sh", tomllib.loads((project / "mise.toml").read_text())["tasks"]["test:fast"]["run"])
+        self.assertEqual("./tools/gate.sh", mise_config(project)["tasks"]["test:fast"]["run"])
         self.assertTrue(os.access(project / "tools/gate.sh", os.X_OK))
         for unsafe in ("Scripts/merge gate.sh", "/abs/gate.sh", "Scripts/gate'.sh", "Scripts/gate.sh\n"):
             with self.subTest(gate_script=unsafe), self.assertRaises(subprocess.CalledProcessError):
@@ -2095,7 +2111,7 @@ class AgentLayerGenerationTest(unittest.TestCase):
             ("software/node", ("lint:eof", "lint:whitespace", "lint:biome")),
         ):
             with self.subTest(project_type=project_type):
-                mise = tomllib.loads((render(project_type=project_type) / "mise.toml").read_text())
+                mise = mise_config(render(project_type=project_type))
                 managed = re.compile(mise["env"]["APM_MANAGED"])
                 for task in fixers:
                     self.assertIn('--skip "${APM_MANAGED:-}"', mise["tasks"][task]["run"], task)
@@ -2154,7 +2170,7 @@ class RenovateGenerationTest(unittest.TestCase):
         maintenance = config["lockFileMaintenance"]
         self.assertEqual((True, rules["tools and libraries"]["schedule"], True),
                          (maintenance["enabled"], maintenance["schedule"], maintenance["automerge"]))
-        tasks = tomllib.loads((project / "mise.toml").read_text())["tasks"]
+        tasks = mise_config(project)["tasks"]
         self.assertIn("deps:renovate", tasks)
         self.assertIn("^mise run agent:sync -- --refresh$", tasks["deps:renovate"]["run"])
 
@@ -2203,7 +2219,7 @@ class RenovateGenerationTest(unittest.TestCase):
         self.assertNotRegex(text, r"\$\{\{[^}]*(github\.token|GITHUB_TOKEN)")
         self.assertIn("run: mise run deps:renovate-weekly", text)
         # The missing secret is a notice, never a failure.
-        task = tomllib.loads((project / "mise.toml").read_text())["tasks"]["deps:renovate-weekly"]["run"]
+        task = mise_config(project)["tasks"]["deps:renovate-weekly"]["run"]
         self.assertIn("::notice", task)
         self.assertNotIn("exit 1", task)
         self.assertIn("mise run deps:renovate\n", task)
@@ -2214,7 +2230,7 @@ class RenovateGenerationTest(unittest.TestCase):
                 self.assertFalse((render(**answers) / workflow).exists())
         for linter, args in (("actionlint", ()), ("zizmor", ("--offline",))):
             with self.subTest(linter=linter):
-                tools = tomllib.loads((project / "mise.toml").read_text())["tools"]
+                tools = mise_config(project)["tools"]
                 result = subprocess.run(
                     [MISE, "exec", f"{linter}@{tools[linter]}", "--", linter, *args, workflow],
                     cwd=project, capture_output=True, text=True,
@@ -2324,7 +2340,7 @@ class PackVersionOwnershipTest(unittest.TestCase):
         scratch = self.scratch()
         # Today's template: the hidden answer, written into apm.yml, and the regex in renovate.json.
         before = template_repo(scratch, "template", "v0.14.2", {
-            "copier.yml": ("# An unasked question keeps its default", 'engineering_capability_ref:\n  type: str\n  when: false\n  default: "engineering-v0.35.10"\n\n# An unasked question keeps its default'),
+            "copier.yml": ("_exclude:\n", 'engineering_capability_ref:\n  type: str\n  when: false\n  default: "engineering-v0.35.10"\n\n_exclude:\n'),
             "templates/_base/_apm_yml.part": ("  apm:\n\n    - {{ engineering_capability_source }}\n\n{% else %}", "  apm:\n{% if engineering_capability_ref %}\n    - git: {{ engineering_capability_source }}\n      ref: {{ engineering_capability_ref }}\n{% else %}\n    - {{ engineering_capability_source }}\n{% endif %}\n{% else %}"),
         })
         project = scratch / "project"

@@ -1,0 +1,68 @@
+{% set components_by_type = {
+  'ai/mcp': [("server", "the MCP server under `src/`"), ("tests", "the tests under `tests/`")],
+  'ai/skills': [("skill", "the skill's `SKILL.md` and the files it names")],
+  'apple/xcode': [("app", "the app targets and their Xcode project"), ("packages", "the Swift packages")],
+  'authoring/content': [("content", "the pages under `docs/`")],
+  'data/dbt': [("models", "the dbt models under `models/`")],
+  'infra/terraform': [("infra", "the Terraform configuration (`*.tf`)")],
+  'software/java': [("src", "the code under `src/main/`"), ("tests", "the tests under `src/test/`")],
+  'software/node': [("src", "the code under `src/`"), ("tests", "the tests under `tests/`")],
+  'software/python': [("src", "the package under `src/`"), ("tests", "the tests under `tests/`")],
+} -%}
+{% set components = components_by_type[project_type] -%}
+Tracker: GitHub (engineering-loop's github.md)
+
+## Settings
+
+The loop's label and board facts, a block `mise run loop:approvals`,
+`mise run setup:github` (the labels) and the loop's board moves read; the
+engineering loop's SKILL.md § Settings has every key. It is YAML, each section
+`name: text` lines; a section or key the loop doesn't know is refused, naming
+it. Uncomment an optional section to use it.
+
+- `components`: where a change lands, each an `area:` label (`area:<name>`
+  or the bare name) and what it covers. Every issue carries at least one. Edit
+  the list to the project's parts; `mise run setup:github` creates each label.
+- `categories`: optional, categories beyond the method's four (`kind:bug`,
+  `kind:enhancement`, `kind:chore`, `kind:documentation`), each `kind:<name>`
+  and what it means.
+- `labels`: optional, labels this project adds beyond the pack's, each in
+  full and what it means.
+- `renames`: optional, labels to rename in place so every issue keeps them,
+  the old name then the new, such as `frontend: area:web`. The pack's own
+  renames (`bug`, `enhancement`, `chore` and `documentation` to their `kind:`
+  names) need no line.
+- `board`: the board column each loop column shows in. Rename the right side
+  to the board's own column; several loop columns may share one, and a loop
+  column left out keeps its own name.
+
+```yaml
+components:
+{% for name, text in components %}  area:{{ name }}: {{ text }}
+{% endfor %}  area:tooling: mise tasks, git hooks, CI workflows and agent configuration
+  area:docs: the README and the docs outside `docs/agents/`
+
+# categories:
+#   kind:ops: runbooks and alerts.
+
+# labels:
+#   customer-reported: filed from a support ticket.
+
+# renames:
+#   frontend: area:web
+
+board:
+  Intent: Intent
+  Needs owner: Needs owner
+  Ready: Ready
+  Build: Build
+  Verify: Verify
+  Sign-off: Sign-off
+  Done: Done
+```
+
+## Never on GitHub
+
+What must never appear in an issue, comment, commit message or PR, such as
+customer data, credentials or private figures, and what to write instead.
+"None" is an answer.

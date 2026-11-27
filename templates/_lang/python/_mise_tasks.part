@@ -20,11 +20,6 @@ run = "uv run pytest"
 description = "Runs only the tests whose code changed since the last run (pytest-testmon); its first run runs them all."
 run = "uv run pytest --testmon"
 
-[tasks."test:affected"]
-description = "The loop's `Affected tests:` command: the whole-repo lints, then the tests the change affects (here every unit test)."
-# ponytail: pytest-testmon keeps its selection in a local .testmondata DB, which a fresh checkout lacks, so this runs the whole unit suite; swap in the pack's `affected-tests` selector once kzarzycki/agent-skills#2217 ships.
-run = "mise run --skip-tools check:lint && uv run pytest"
-
 [tasks."check:unit"]
 description = "Runs test:unit in a host gate slot (gate-slot) with coverage, then fails on any changed line not covered (diff-cover)."
 run = '''

@@ -10,7 +10,7 @@ from pathlib import Path
 
 import yaml
 
-from tests.test_agent_layer_generation import LEAVES, MISE, ROOT, render
+from tests.test_agent_layer_generation import mise_config, LEAVES, MISE, ROOT, render
 
 GHALINT = "aqua:suzuki-shunsuke/ghalint@1.6.0"
 # A release or deploy workflow must not cancel in progress: a run stopped halfway leaves things half-published.
@@ -29,7 +29,7 @@ def generated_workflows() -> list[tuple[str, Path]]:
     found = []
     for project_type, answers in LEAVES:
         for loop in (True, False):
-            project = render(project_type, engineering_loop=loop, **answers)
+            project = render(project_type, loop=loop, **answers)
             found += [(f"{project_type} loop={loop}", path) for path in workflows(project)]
     return found
 
@@ -98,7 +98,7 @@ class WorkflowPolicyTest(unittest.TestCase):
         seen = set()
         for project_type, answers in LEAVES:
             for loop in (True, False):
-                project = render(project_type, engineering_loop=loop, **answers)
+                project = render(project_type, loop=loop, **answers)
                 seen.add(project_type)
                 with self.subTest(template=project_type, loop=loop):
                     result = ghalint(project)
@@ -123,7 +123,7 @@ class WorkflowPolicyTest(unittest.TestCase):
 
     def test_the_generated_project_pins_ghalint_and_runs_it_in_check_lint(self) -> None:
         project = render("software/python")
-        tools = tomllib.loads((project / "mise.toml").read_text())
+        tools = mise_config(project)
         self.assertEqual("1.6.0", tools["tools"]["ghalint"])
         self.assertIn("ghalint run", tools["tasks"]["lint:ghalint"]["run"])
         self.assertIn("lint:ghalint", (project / ".pre-commit-config.yaml").read_text())

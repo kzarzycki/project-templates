@@ -125,7 +125,7 @@ jobs:
           args=(--name ci-proj --type "$PROJECT_TYPE" --dest _out/ci-proj)
           [ -n "$LANGUAGE" ] && args+=(--language "$LANGUAGE")
           args+=(include_agent_layer=true include_engineering_workflow=true include_fnox=true)
-          args+=(engineering_loop=true)
+          args+=(loop=true)
           if [ "$PROJECT_TYPE" = "infra/terraform" ]; then
             mise exec terraform@1.15.8 tflint@0.63.1 -- \
               skills/bootstrap-project/scripts/bootstrap.sh "${args[@]}"
@@ -149,10 +149,11 @@ jobs:
           grep -q '^\[tasks."agent:codex"\]$' mise.toml
           grep -q '^\[tasks.check\]$' mise.toml
           grep -q 'run: mise run ci:parts' .github/workflows/ci.yml
-          grep -q '^\[tasks."loop:approvals"\]$' mise.toml
-          grep -q '^\[tasks."loop:land"\]$' mise.toml
+          grep -q '^\[tasks."loop:approvals"\]$' .mise/conf.d/loop.toml
+          grep -q '^\[tasks."loop:land"\]$' .mise/conf.d/loop.toml
+          ! grep -q 'loop:' mise.toml
           grep -q 'run: mise run ci:approvals' .github/workflows/approvals.yml
-          grep -q '^\[tasks."setup:github"\]$' mise.toml
+          grep -q '^\[tasks."setup:github"\]$' .mise/conf.d/loop.toml
           # merge_queue defaults to false: no workflow listens to a queue
           ! grep -rq 'merge_group' .github/workflows/
           ! grep -q '"merge_queue"' .github/rulesets/main.json
@@ -162,7 +163,9 @@ jobs:
           test -f docs/agents/loop.md
           test -f docs/agents/issue-tracker.md
           test -f docs/agents/coding-standards.md
-          grep -q 'engineering-loop' .apm/instructions/project.instructions.md
+          grep -q 'engineering-loop' .apm/instructions/loop.instructions.md
+          test -f .github/workflows/loop-ci.yml
+          grep -q 'loop-check' .github/rulesets/main.json
       - name: Run every check the generated CI runs
         working-directory: _out/ci-proj
         run: mise run check:all

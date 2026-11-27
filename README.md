@@ -269,11 +269,25 @@ committed to the repo.
 
 ## Engineering loop
 
-With the pack on, `engineering_loop=true` (the default) turns on the pack's
-`engineering-loop` skill: one line in `.apm/instructions/project.instructions.md`,
-which `agent:sync` compiles into `AGENTS.md` (in `CLAUDE.md` with the vendored
-layer), says every change that lands as a PR runs it, unless a developer's personal
-instructions say `Engineering loop: off` and gatekeeper.md allows it. Deleting that line turns the loop off. The loop reads this project's
+With the pack on, the question `loop` (default yes) turns on the pack's
+`engineering-loop` skill. It is one answer in the project's one `.copier-answers.yml`:
+`copier update -d loop=false` turns the loop off and removes its files and lines,
+`copier update -d loop=true` turns it back on, and either keeps your own edits to the
+template's other files. The loop's files live once, in `templates/_loop/`, and each
+template links to them; a loop-off project has no loop, gatekeeper or approvals file
+or text. The loop adds its own files and edits no shared one:
+`.apm/instructions/loop.instructions.md` (the line that says every change that lands as a PR runs
+the skill, unless a developer's personal instructions say `Engineering loop: off` and
+gatekeeper.md allows it, and the Evidence sentence that was in the PR template),
+`.mise/conf.d/loop.toml` (its mise tasks, including `ci:narrowed`),
+`.github/workflows/loop-ci.yml` (the narrowed run, the nightly and the `loop-check`
+required check, which the loop's ruleset lists), the approvals workflows and the
+ruleset. CI's own `plan` job calls a `ci:narrowed` task when the project has one. A project that
+answered `engineering_loop` before keeps that answer as `loop` with one plain `copier update`;
+the update adds `loop-ci.yml`, `.mise/conf.d/loop.toml` and `loop.instructions.md` and the
+ruleset gains `loop-check` (run `mise run setup:github` to apply it). The loop can be turned on only in
+a project made from this template. With the vendored layer the loop's line is the top of
+`docs/agents/loop.md`, since `CLAUDE.md` is yours. The loop reads this project's
 facts from four files, seeded with a heading and a short prompt per fact:
 
 - `docs/agents/gatekeeper.md`: a `## Policy` block of YAML the pack's `approvals.py`

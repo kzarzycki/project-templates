@@ -1,0 +1,112 @@
+# Loop facts
+{% if agent_layer_mode | default('compiled') == 'vendored' %}
+Every change that lands as a PR runs the `engineering-loop` skill, unless your personal instructions say `Engineering loop: off` and `docs/agents/gatekeeper.md` sets `opt_out: true` under `loop`. Its project facts are in `docs/agents/`.
+{% endif %}
+The `engineering-loop` skill reads this file at every step but the gate.
+Replace each prompt with this project's fact; keep the headings. The policy is in `gatekeeper.md`.
+
+## Owner
+
+Who owns this repository and answers the loop's questions (a GitHub handle).
+
+## Proof on a branch
+
+The commands that run this change where a person can see it working before
+review, and where the result is (a URL, a file, a command's output).
+
+Keep this line: a demo goes on the PR through the `demo` skill's script; when it refuses, stop and report.
+
+## Acceptance references
+
+What a new result is checked against, in order of preference: references the
+code did not produce, such as the owner's evidence, an external source, a
+recomputation or an invariant.
+
+## Approvals
+
+Only people approve; the rest is the standing policy in `docs/agents/gatekeeper.md`, which
+`mise run loop:approvals` evaluates. `spec.auto` with `bug`, `follow-up` and
+`sub-issue` approves the spec of a bug, a `Found while #<n>` follow-up, or a writer's sub-issue of an epic the
+owner approved; any other spec waits for the owner. A PR lands on its gates
+unless it is high risk: `risk:high` on the PR or its issue, the `risk` rule
+matches, or the verifier's cap was reached with a blocker or major open. A
+high-risk merge waits for the owner's `approved:merge` label, added after the
+head's push.
+
+The seed's `risk` rule lets the verifier judge every change and keeps a few
+paths the owner's whatever it says. `verifier: true` holds when the verifier's
+newest pass on the head says anything but `Risk: low`, so the owner sees only
+what no check can settle. The paths hold on their own: CI's workflows and
+rulesets under `.github/`, `CODEOWNERS`, and this file, since each decides what
+the gates require and who approves. `risk` also takes `labels` (such as
+`size:XL` or `area:<name>`, one per line) and `always: true`, which holds every
+merge for the owner. `cap: <n>` under `loop` changes the verifier's pass cap
+from the skill's default, and a `plan` section with `labels` asks for the
+owner's approval of a matching plan. Required reviews go in branch protection,
+which the loop obeys. The template ships no `CODEOWNERS`: GitHub would ask its
+owners to review every PR the loop opens. Keep paths to a team with a push
+ruleset instead, and ask someone for a review by name when it needs one.
+
+Three settings the seed leaves out of gatekeeper.md change this. `auto: true` under `spec`, in place of
+the list, approves every spec by policy, epics included, except
+one the `risk` rule matches or one opened by an account without write access,
+which waits for the owner; the rule then holds the spec instead of the merge,
+so that merge needs no `approved:merge`, but for its `verifier` term, which the
+gate still judges at the merge. A `signoff` section, read as `risk` is, has
+the owner sign off a matching change in use after it lands: its spec says
+`Sign-off: owner` or `Sign-off: none`, and its PR links the issue with
+`Implements #<n>`, which leaves it open for the sign-off. `opt_out: true` under
+`loop` lets a developer whose personal instructions say
+`Engineering loop: off` keep their PRs out of the loop: a PR with no loop trail
+passes `loop:approvals`, its author merges it, and no risk rule holds it.
+Renovate (`mise run deps:renovate`) labels `verify` the updates an agent
+reviews: the template, the agent packages and every major. Its routine group
+runs on the developer's token, so its PRs are the developer's and a verifier
+reviews them too. The commented `bot.renovate` entry in gatekeeper.md exempts them
+instead: it names Renovate by its `renovate/` branch, and holds only when every
+commit is the developer's (`deps:renovate` sets Renovate's git author to
+your git identity) and every file matches its `paths`. The `risk` rule still holds a match on its own paths, so
+a workflow update keeps waiting for the owner until `.github/**` narrows to
+what it means to keep, such as `.github/rulesets/**`.
+{% if not include_ci %}
+`ci: false` says this project has no CI: the merge proof is the local check
+`uv run .agents/skills/gatekeeper/scripts/gatekeeper.py record checks <pr>`
+records on the head. A check that reads environment variables names them in
+`local_ci_env`, one per line.
+{% endif %}
+{% if include_ci %}
+{% set seeded = project_type in ['software/python', 'software/node', 'software/java', 'ai/mcp'] %}
+CI narrows a pull request's and a push to main's check when this file has an
+`Affected tests: <command>` line: the `affected` job runs `approvals.py affected-tests`
+in place of the check: parts, and a nightly run of the full parts opens an issue naming
+the merges since the last green when it ends red. {% if seeded %}This seed's line names `test:affected`, which
+runs the whole-repo lints, then the tests the change affects against `GATE_BASE`{% if project_type == 'software/node' or (project_type == 'ai/mcp' and language == 'node') %}
+(vitest `--changed`){% else %}; this language has no base-relative selector, so it runs
+the whole unit suite until the pack's selector (kzarzycki/agent-skills#2217) replaces it{% endif %}.
+{% else %}Write your selector's command there; this project has no seeded line. {% endif %}The line `Gate: full` returns every gate to the
+full check, so a project with a weak selector can keep it while the selector is fixed.
+{% if seeded %}
+Affected tests: mise run test:affected
+{% endif %}{% endif %}
+## Risk criteria
+
+Optional. What makes a change risky here beyond the `risk` rule, in words,
+which the verifier reads when it judges a change's risk.
+
+## In use
+
+Who and what uses this project, and so how a finding is judged: by what a user
+or the pipeline hits in use, or also by what a hostile input could do.
+
+## Worktree
+
+The command that creates a worktree for a branch, and anything to run before
+removing one.
+
+## Ledger
+
+The path of the file that lists known limitations, one line each.
+
+## Verifier checklist
+
+The path of any checks the verifier runs beyond the gate, or "None".

@@ -54,7 +54,7 @@ script.
    `license` (default none; Proprietary, MIT or Apache-2.0), `include_mise` (default true),
    `include_agent_layer` (default true with mise), `include_fnox` (default true
    with the coding-agent integration), `include_engineering_workflow` (default
-   true with the coding-agent integration), `engineering_loop` (default true
+   true with the coding-agent integration), `loop` (default true
    with the pack), and the runtime version
    (`python_version`/`node_version`/`java_version`/`terraform_version`) default
    sensibly — see the root `copier.yml` for the full question set. Pass an
@@ -106,7 +106,7 @@ Native CLI authentication stays native; a working `gh auth login` does not need 
 copied token.
 
 Every project with mise gets its checks as mise tasks: `mise run check` (lint and unit tests) before a push, `mise run check:all` for every part CI runs, one `lint:<tool>` task per linter that the commit hooks call.
-With `engineering_loop=true` the scaffold also turns the engineering loop on
+With `loop=true` the scaffold also turns the engineering loop on
 and seeds `docs/agents/gatekeeper.md`, `loop.md`, `issue-tracker.md` and `coding-standards.md`
 for the owner to fill in.
 
